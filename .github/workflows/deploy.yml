@@ -92,5 +92,10 @@ jobs:
           corepack prepare yarn@4.9.2 --activate
           echo "Yarn version after Corepack: $(yarn --version)"
 
+      - name: Build Docker image (same as production)
+        run: |
+         docker build --platform linux/amd64 -t test-image .
+         docker run --rm test-image node --version
+
 
       
