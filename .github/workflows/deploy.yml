@@ -21,7 +21,7 @@ jobs:
   deploy:
     name: Deploy to main
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev')
+    if: github.ref == 'refs/heads/feature/CI-implementation' || (github.event_name == 'workflow_dispatch')
     permissions:
       id-token: write
       contents: read
