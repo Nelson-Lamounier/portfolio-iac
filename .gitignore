@@ -13,6 +13,7 @@
 !.yarn/sdks
 !.yarn/versions
 .pnp.*
+yarn.lock
 
 # testing
 /coverage
@@ -45,3 +46,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# additional files
+YARN_MIGRATION.md
