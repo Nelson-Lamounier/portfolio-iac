@@ -5,6 +5,9 @@ on:
     branches:
       - main
       - 'feature/**'
+  pull_request:
+    branches:
+      - main
     paths:
       - '.github/workflows/**'
       - 'scripts/**'
@@ -31,7 +34,6 @@ jobs:
   deploy:
     name: Deploy to main
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/feature/CI-implementation' || (github.event_name == 'workflow_dispatch')
     permissions:
       id-token: write
       contents: read
