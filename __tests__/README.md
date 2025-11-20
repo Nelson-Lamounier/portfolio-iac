@@ -7,9 +7,11 @@ This directory contains all unit and integration tests for the application, foll
 ```
 __tests__/
 ├── app/
-│   ├── page.test.tsx           # Home page tests
-│   └── about/
-│       └── page.test.tsx       # About page tests
+│   ├── page.test.tsx           # Home page tests (13 tests)
+│   ├── about/
+│   │   └── page.test.tsx       # About page tests (17 tests)
+│   └── articles/
+│       └── page.test.tsx       # Articles page tests (17 tests)
 └── README.md                   # This file
 ```
 
@@ -19,6 +21,7 @@ Tests are organized to mirror the `src/app` directory structure:
 
 - `__tests__/app/page.test.tsx` → tests `src/app/page.tsx`
 - `__tests__/app/about/page.test.tsx` → tests `src/app/about/page.tsx`
+- `__tests__/app/articles/page.test.tsx` → tests `src/app/articles/page.tsx`
 
 This structure follows the [Next.js testing documentation](https://nextjs.org/docs/app/building-your-application/testing/jest) recommendation to place tests in a `__tests__` folder at the project root.
 
@@ -60,6 +63,17 @@ yarn test __tests__/app/page.test.tsx
 - ✅ Content structure
 - ✅ Accessibility features
 - ✅ Layout and styling
+
+### Articles Page (`__tests__/app/articles/page.test.tsx`)
+
+- ✅ Page structure and headings
+- ✅ Article list rendering
+- ✅ Article links and navigation
+- ✅ Date formatting and display
+- ✅ Responsive layout classes
+- ✅ Accessibility (semantic HTML, ARIA)
+- ✅ Content organization
+- ✅ Empty state handling
 
 ## Testing Tools
 
