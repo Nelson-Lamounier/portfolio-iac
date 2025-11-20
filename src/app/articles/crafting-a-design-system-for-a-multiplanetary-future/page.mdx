@@ -1,12 +1,13 @@
 import { ArticleLayout } from '@/components/ArticleLayout'
-import designSystem from './planetaria-design-system.png'
+import designSystem from './aws-certified-devops-engineer-professional.png'
+import systemManager from './aws_systems_manager_architecture.png'
 
 export const article = {
-  author: 'Adam Wathan',
-  date: '2022-09-05',
-  title: 'Crafting a design system for a multiplanetary future',
+  author: 'Nelson Lamounier',
+  date: '2025-11-20',
+  title: 'AWS DevOps Professional: A Study Strategy That Actually Worked',
   description:
-    'Most companies try to stay ahead of the curve when it comes to visual design, but for Planetaria we needed to create a brand that would still inspire us 100 years from now when humanity has spread across our entire solar system.',
+    'After scoring 726 on my first attempt—just shy of the 750 required—I realized the AWS DevOps Professional exam demanded more than familiarity with AWS services. It tested whether I could evaluate competing solutions under pressure, apply architectural thinking, and navigate multi-service scenarios with confidence. What follows is the refined strategy that enabled me to pass on my second attempt, accompanied by illustrative ASCII diagrams to help you visualize the core concepts.',
 }
 
 export const metadata = {
@@ -16,26 +17,59 @@ export const metadata = {
 
 export default (props) => <ArticleLayout article={article} {...props} />
 
-Most companies try to stay ahead of the curve when it comes to visual design, but for Planetaria we needed to create a brand that would still inspire us 100 years from now when humanity has spread across our entire solar system.
+After scoring 726 on my first attempt—just shy of the 750 required—I realized the AWS DevOps Professional exam demanded more than familiarity with AWS services. It tested whether I could evaluate competing solutions under pressure, apply architectural thinking, and navigate multi-service scenarios with confidence.
 
-<Image src={designSystem} alt="" />
+<div className="my-8 flex justify-center">
+  <div className="w-full max-w-xs sm:max-w-sm md:max-w-md">
+    <Image
+      src={designSystem}
+      alt="AWS Certified DevOps Engineer - Professional certification badge"
+      className="h-auto w-full"
+    />
+  </div>
+</div>
 
-I knew that to get it right I was going to have to replicate the viewing conditions of someone from the future, so I grabbed my space helmet from the closet, created a new Figma document, and got to work.
+What follows is the refined strategy that enabled me to pass on my second attempt, accompanied by illustrative ASCII diagrams to help you visualize the core concepts.
 
-## Sermone fata
+## The Real Problem: I Was Thinking Like a Developer, Not an Architect
 
-Lorem markdownum, bracchia in redibam! Terque unda puppi nec, linguae posterior
-in utraque respicere candidus Mimasque formae; quae conantem cervice. Parcite
-variatus, redolentia adeunt. Tyrioque dies, naufraga sua adit partibus celanda
-torquere temptata, erit maneat et ramos, [iam](#) ait dominari
-potitus! Tibi litora matremque fumantia condi radicibus opusque.
+When I saw **726** flash on my screen after my first AWS DevOps Professional exam attempt (passing score: 750), I felt the sting of being so close yet falling short. Working at AWS, I had hands-on experience with the services. I could deploy infrastructure, configure pipelines, troubleshoot production issues.
 
-Deus feram verumque, fecit, ira tamen, terras per alienae victum. Mutantur
-levitate quas ubi arcum ripas oculos abest. Adest [commissaque
-victae](#) in gemitus nectareis ire diva
-dotibus ora, et findi huic invenit; fatis? Fractaque dare superinposita
-nimiumque simulatoremque sanguine, at voce aestibus diu! Quid veterum hausit tu
-nil utinam paternos ima, commentaque.
+But the exam exposed a critical gap: **I knew what services did, but not how to think like an AWS DevOps architect making decisions under constraints.**
+
+The exam doesn't ask "What does CodeDeploy do?" It asks:
+
+> _"You have a 3-tier application with a database that can't have downtime, a frontend that needs A/B testing capability, and a compliance requirement for audit trails. Traffic must shift gradually with automated rollback. Which deployment strategy optimally addresses ALL requirements?"_
+
+That's when I realized: this isn't a knowledge test—it's a **decision-making simulation**.
+
+## What Didn't Work (First Attempt)
+
+### Surface-Level Service Knowledge
+
+I knew what services did, but not the nuanced differences between similar solutions. Understanding when to use **AWS Systems Manager Parameter Store** versus **AWS Secrets Manager** isn't about features—it's about understanding rotation requirements, versioning needs, and cost implications in context.
+
+<div className="my-8 flex justify-center">
+  <div className="w-full max-w-xs sm:max-w-sm md:max-w-md">
+    <Image
+      src={systemManager}
+      alt="AWS Systems Manager Architecture"
+      className="h-auto w-full"
+    />
+  </div>
+</div>
+
+### Rushing Through Practice Questions
+
+I'd focus on my score rather than understanding _why_ incorrect answers were wrong. This left knowledge gaps that the real exam expertly exposed.
+
+### Ignoring the "AWS Way"
+
+I approached problems with a general DevOps mindset rather than understanding AWS's preferred architectural patterns and Well-Architected principles.
+
+Seeing a 726 pop onto the screen was humbling. It wasn’t a lack of experience—working with AWS daily gave me plenty of hands-on exposure—but the exam evaluates how you think, not what you’ve memorized.
+
+The exam rewards individuals who can interpret architectural constraints, evaluate trade-offs, and select the “most appropriate” solution among several technically correct options. My first attempt made it clear: I was thinking like a developer, not a DevOps architect.
 
 ```c
 exbibyte_wins = gigahertz(3);
