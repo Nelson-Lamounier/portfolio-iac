@@ -8,6 +8,8 @@ const nextConfig = {
   outputFileTracingIncludes: {
     '/articles/*': ['./src/app/articles/**/*.mdx'],
   },
+  // Keep standalone for server components
+  output: 'standalone',
 }
 
 const withMDX = nextMDX({

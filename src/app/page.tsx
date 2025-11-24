@@ -1,5 +1,4 @@
 import Image, { type ImageProps } from 'next/image'
-import Link from 'next/link'
 import clsx from 'clsx'
 
 import { Button } from '@/components/Button'
@@ -100,13 +99,18 @@ function Article({ article }: { article: ArticleWithSlug }) {
 function SocialLink({
   icon: Icon,
   ...props
-}: React.ComponentPropsWithoutRef<typeof Link> & {
+}: React.ComponentPropsWithoutRef<'a'> & {
   icon: React.ComponentType<{ className?: string }>
 }) {
   return (
-    <Link className="group -m-1 p-1" {...props}>
+    <a
+      className="group -m-1 p-1"
+      target="_blank"
+      rel="noopener noreferrer"
+      {...props}
+    >
       <Icon className="h-6 w-6 fill-zinc-500 transition group-hover:fill-zinc-600 dark:fill-zinc-400 dark:group-hover:fill-zinc-300" />
-    </Link>
+    </a>
   )
 }
 
@@ -277,13 +281,15 @@ export default async function Home() {
       <Container className="mt-9">
         <div className="max-w-2xl">
           <h1 className="text-4xl font-bold tracking-tight text-zinc-800 sm:text-5xl dark:text-zinc-100">
-            Software designer, founder, and amateur astronaut.
+            Cloud infrastructure builder, AWS problem solver, and DevOps
+            educator
           </h1>
           <p className="mt-6 text-base text-zinc-600 dark:text-zinc-400">
-            I’m Spencer, a software designer and entrepreneur based in New York
-            City. I’m the founder and CEO of Planetaria, where we develop
-            technologies that empower regular people to explore space on their
-            own terms.
+            I&apos;m Nelson, an AWS Certified DevOps Engineer Professional in
+            Dublin. I design secure, cost optimised multienvironment
+            infrastructures using AWS CDK and containerisation—while creating
+            educational content that breaks down complex AWS concepts into
+            digestible tutorials (and yes, memorable study songs).
           </p>
           <div className="mt-6 flex gap-6">
             <SocialLink href="#" aria-label="Follow on X" icon={XIcon} />
@@ -293,12 +299,12 @@ export default async function Home() {
               icon={InstagramIcon}
             />
             <SocialLink
-              href="#"
+              href="https://github.com/Nelson-Lamounier"
               aria-label="Follow on GitHub"
               icon={GitHubIcon}
             />
             <SocialLink
-              href="#"
+              href="https://www.linkedin.com/in/nelson-lamounier-leao/"
               aria-label="Follow on LinkedIn"
               icon={LinkedInIcon}
             />
