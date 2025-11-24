@@ -42,79 +42,84 @@ export const metadata = {
 export default function Uses() {
   return (
     <SimpleLayout
-      title="Software I use, gadgets I love, and other things I recommend."
-      intro="I get asked a lot about the things I use to build software, stay productive, or buy to fool myself into thinking I’m being productive when I’m really just procrastinating. Here’s a big list of all of my favorite stuff."
+      title="Tools I Deploy With, Infrastructure I Trust, and Other Recommendations"
+      intro="I am often asked about the tools I use to build cloud infrastructure, maintain CI/CD pipelines, or simply experiment with to convince myself I'm optimising costs (when I'm likely just over-engineering). Below is a comprehensive list of the hardware, software, and utilities that make up my daily driver stack."
     >
       <div className="space-y-20">
         <ToolsSection title="Workstation">
-          <Tool title="16” MacBook Pro, M1 Max, 64GB RAM (2021)">
-            I was using an Intel-based 16” MacBook Pro prior to this and the
-            difference is night and day. I’ve never heard the fans turn on a
-            single time, even under the incredibly heavy loads I put it through
-            with our various launch simulations.
+          <Tool title="MacBook Pro 14”, M3 Pro, 36GB RAM (2024)">
+            The transition from an Intel-based machine to Apple Silicon was
+            transformative. Whether I'm building Docker images for
+            multi-architecture deployments, running CDK synth operations, or
+            spinning up local Kubernetes clusters, this machine handles it all
+            without breaking a sweat. As a bonus, the ARM architecture offers
+            significantly better parity with AWS Graviton instances.
           </Tool>
-          <Tool title="Apple Pro Display XDR (Standard Glass)">
-            The only display on the market if you want something HiDPI and
-            bigger than 27”. When you’re working at planetary scale, every pixel
-            you can get counts.
-          </Tool>
-          <Tool title="IBM Model M SSK Industrial Keyboard">
-            They don’t make keyboards the way they used to. I buy these any time
-            I see them go up for sale and keep them in storage in case I need
-            parts or need to retire my main.
-          </Tool>
-          <Tool title="Apple Magic Trackpad">
-            Something about all the gestures makes me feel like a wizard with
-            special powers. I really like feeling like a wizard with special
-            powers.
-          </Tool>
-          <Tool title="Herman Miller Aeron Chair">
-            If I’m going to slouch in the worst ergonomic position imaginable
-            all day, I might as well do it in an expensive chair.
+          <Tool title="LG 34” UltraWide 5K2K Monitor">
+            When you are simultaneously debugging CloudFormation stacks with
+            over 200 resources, reviewing GitHub Actions workflows, and
+            monitoring CloudWatch dashboards, screen real estate isn't a
+            luxury—it’s a necessity. The 21:9 aspect ratio is ideal for running
+            side-by-side terminal sessions without constant window switching.
           </Tool>
         </ToolsSection>
         <ToolsSection title="Development tools">
-          <Tool title="Sublime Text 4">
-            I don’t care if it’s missing all of the fancy IDE features everyone
-            else relies on, Sublime Text is still the best text editor ever
-            made.
+          <Tool title="Visual Studio Code">
+            Armed with the AWS Toolkit, CDK snippets, and Docker extensions, VS
+            Code has become my infrastructure command center. The integrated
+            terminal ensures I never have to leave the editor to run cdk deploy
+            or check container logs.
           </Tool>
-          <Tool title="iTerm2">
-            I’m honestly not even sure what features I get with this that aren’t
-            just part of the macOS Terminal but it’s what I use.
+          <Tool title="AWS CLI v2 + Session Manager Plugin">
+            This is the foundation of everything I do. Combined with named
+            profiles for different environments, it allows me to seamlessly
+            navigate between development, staging, and production without
+            friction.
           </Tool>
-          <Tool title="TablePlus">
-            Great software for working with databases. Has saved me from
-            building about a thousand admin interfaces for my various projects
-            over the years.
-          </Tool>
-        </ToolsSection>
-        <ToolsSection title="Design">
-          <Tool title="Figma">
-            We started using Figma as just a design tool but now it’s become our
-            virtual whiteboard for the entire company. Never would have expected
-            the collaboration features to be the real hook.
+          <Tool title="Kiro (AWS AI-powered IDE)">
+            I am currently experimenting with Kiro for CDK generation. While
+            powerful, it requires careful review; as I discovered with some
+            unnecessary VPC endpoints, AI-generated infrastructure can be
+            syntactically correct but financially expensive.
           </Tool>
         </ToolsSection>
-        <ToolsSection title="Productivity">
-          <Tool title="Alfred">
-            It’s not the newest kid on the block but it’s still the fastest. The
-            Sublime Text of the application launcher world.
+        <ToolsSection title="Infrastructure & Deployment">
+          <Tool title="AWS CDK (TypeScript)">
+            After working directly with CloudFormation templates, adopting CDK
+            felt like switching from assembly code to a high-level language.
+            Type safety for infrastructure is a beautiful thing.
           </Tool>
-          <Tool title="Reflect">
-            Using a daily notes system instead of trying to keep things
-            organized by topics has been super powerful for me. And with
-            Reflect, it’s still easy for me to keep all of that stuff
-            discoverable by topic even though all of my writing happens in the
-            daily note.
+          <Tool title="Docker Desktop">
+            This is essential for local development and testing before pushing
+            to ECR. The recent improvements in M3 compatibility have made
+            cross-platform builds much smoother.
           </Tool>
-          <Tool title="SavvyCal">
-            Great tool for scheduling meetings while protecting my calendar and
-            making sure I still have lots of time for deep work during the week.
+          <Tool title="GitHub Actions">
+            The backbone of our CI/CD. The OIDC integration with AWS removes the
+            need for long-lived credentials, while the matrix builds handle our
+            multi-region deployments with elegance.
           </Tool>
-          <Tool title="Focus">
-            Simple tool for blocking distracting websites when I need to just do
-            the work and get some momentum going.
+          <Tool title="AWS CloudFormation">
+            While I am "CDK-first," I still manage legacy projects running on
+            CloudFormation. Maintaining proficiency in both is the
+            infrastructure equivalent of being bilingual.
+          </Tool>
+        </ToolsSection>
+        <ToolsSection title="Monitoring & Debugging">
+          <Tool title="K9s">
+            When you need to dive into EKS clusters, this terminal UI makes
+            Kubernetes actually enjoyable. Think of it as htop, but for your
+            containers.
+          </Tool>
+          <Tool title="CloudWatch Logs Insights">
+            This is a criminally underrated tool. Once you master the query
+            syntax, finding a needle in the haystack of distributed logs becomes
+            a manageable task.
+          </Tool>
+          <Tool title="AWS X-Ray">
+            I use X-Ray for tracking down performance bottlenecks in serverless
+            architectures. The service map alone has saved me hours of time that
+            would have otherwise been spent on architectural documentation.
           </Tool>
         </ToolsSection>
       </div>
