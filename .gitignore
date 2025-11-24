@@ -49,3 +49,4 @@ next-env.d.ts
 
 # additional files
 YARN_MIGRATION.md
+docs/*
