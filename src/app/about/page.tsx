@@ -70,49 +70,51 @@ export default function About() {
         </div>
         <div className="lg:order-first lg:row-span-2">
           <h1 className="text-4xl font-bold tracking-tight text-zinc-800 sm:text-5xl dark:text-zinc-100">
-            I&apos;m Nelson. I live in Dublin, where I build cloud
-            infrastructures that span the entire application lifecycle.
+            I&apos;m Nelson. Based in Dublin, I build cloud infrastructures that
+            span the entire application lifecycle.
           </h1>
           <div className="mt-6 space-y-7 text-base text-zinc-600 dark:text-zinc-400">
             <p>
-              My path to DevOps wasn&apos;t traditional. I graduated with a
+              My path to DevOps was unconventional. After graduating with a
               Computer Science degree focused on web development and cloud
-              computing, then joined AWS as a Technical Customer Service
-              Associate the front line of customer infrastructure problems.
-              Every support case was a lesson in architecture decisions, scaling
-              challenges, and what separates reliable systems from fragile ones.
+              computing, I joined AWS as a Technical Customer Service Associate.
+              This role placed me on the front lines of customer infrastructure
+              problems. Every support case was a masterclass in architectural
+              decisions, scaling challenges, and the critical differences
+              between reliable systems and fragile ones.
             </p>
             <p>
-              But understanding AWS services and implementing DevOps practices
-              are different skills. Early in my career, I focused purely on
-              frontend development building interfaces without fully
-              understanding the deployment, monitoring, and operational side of
-              applications. As a solo developer working on projects, I was
-              overwhelmed by the sheer number of tools, services, and
-              approaches. Which CI/CD tool should I use? How do I structure
-              environments? What&apos;s the right balance between features and
-              cost?
+              However, I quickly learned that understanding AWS services and
+              implementing DevOps practices are two very different skills. Early
+              in my career, I focused primarily on frontend development,
+              building interfaces without fully grasping the operational side of
+              applications. As a solo developer, I found myself overwhelmed by
+              the sheer volume of tools and methodologies available. Which CI/CD
+              tool was best? How should I structure my environments? What was
+              the right balance between feature velocity and cost?
             </p>
             <p>
               The turning point came when I decided to build my own portfolio
-              website not just the frontend, but the complete application
-              lifecycle. Development to deployment. Automated CI/CD pipelines
-              with GitHub Actions. Infrastructure-as-code using AWS CDK
-              TypeScript. Containerisation with Docker and ECS. Monitoring and
-              cost optimisation through CloudWatch and proper resource
-              management. Suddenly, DevOps wasn&apos;t abstract concepts it was
-              solving real problems for my own applications.
+              website. I didn&apos;t just want to build the frontend; I wanted
+              to master the complete application lifecycle, from development to
+              deployment. I implemented automated CI/CD pipelines with GitHub
+              Actions, utilised Infrastructure-as-Code (IaC) with AWS CDK
+              TypeScript, and handled containerisation using Docker and ECS. I
+              also integrated CloudWatch for monitoring and focused heavily on
+              resource management to optimise costs. Suddenly, DevOps was no
+              longer a collection of abstract concepts—it was the practical
+              solution to my own development problems.
             </p>
             <p>
-              Today, I architect secure, cost optimised cloud infrastructures
+              Today, I architect secure, cost-optimised cloud infrastructures
               and help other developers navigate the same challenges I faced. My
-              articles aren&apos;t theoretical they&apos;re born from actual
-              struggles as a solo developer making infrastructure decisions. I
-              write about the tools, patterns, and AWS services that work,
-              cutting through the noise so others can build confidently. Because
-              I&apos;ve learned that great DevOps isn&apos;t just about
-              automation it&apos;s about making informed decisions across the
-              entire application lifecycle.
+              articles aren&apos;t theoretical; they are born from my actual
+              struggles as a solo developer making hard infrastructure
+              decisions. I write about the tools, patterns, and AWS services
+              that actually work, cutting through the noise so others can build
+              with confidence. I&apos;ve learned that great DevOps isn&apos;t
+              just about automation—it&apos;s about making informed decisions
+              across the entire application lifecycle.
             </p>
           </div>
         </div>
