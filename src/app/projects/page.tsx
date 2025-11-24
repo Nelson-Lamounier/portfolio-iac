@@ -89,17 +89,20 @@ const projects = [
 const categories = ['All', 'CI/CD', 'Infrastructure', 'Monitoring', 'Security']
 
 export const metadata: Metadata = {
-  title: 'Projects',
-  description: "Things I've made trying to put my dent in the universe.",
+  title:
+    'Cloud Infrastructure & DevOps Portfolio | Kubernetes, CloudFormation & CI/CD',
+  description:
+    'Explore DevOps projects featuring Kubernetes GitOps, CloudFormation IaC, and automated security pipelines. See how I build scalable, self-healing cloud infrastructure.',
 }
 
 export default function Projects() {
   return (
     <SimpleLayout
-      title="Things I've made trying to put my dent in the universe."
-      intro="I've worked on tons of little projects over the years but these are the ones that I'm most proud of. Many of them are open-source, so if you see something that piques your interest, check out the code and contribute if you have ideas for how it can be improved."
+      title="Engineering Scalable Cloud Infrastructure"
+      intro="Welcome to my technical showcase. Here, I break down complex infrastructure challenges into automated, resilient solutions. From architecting self-healing Kubernetes clusters to designing multi-cloud disaster recovery strategies, these projects demonstrate my approach to modern DevOps: Infrastructure as Code, security-first automation, and observability at scale."
     >
       <ProjectsList projects={projects} categories={categories} />
     </SimpleLayout>
   )
 }
+// "text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500"
