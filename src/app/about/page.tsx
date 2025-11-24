@@ -70,17 +70,17 @@ export default function About() {
         </div>
         <div className="lg:order-first lg:row-span-2">
           <h1 className="text-4xl font-bold tracking-tight text-zinc-800 sm:text-5xl dark:text-zinc-100">
-            I'm Nelson. I live in Dublin, where I build cloud infrastructures
-            that span the entire application lifecycle.
+            I&apos;m Nelson. I live in Dublin, where I build cloud
+            infrastructures that span the entire application lifecycle.
           </h1>
           <div className="mt-6 space-y-7 text-base text-zinc-600 dark:text-zinc-400">
             <p>
-              My path to DevOps wasn't traditional. I graduated with a Computer
-              Science degree focused on web development and cloud computing,
-              then joined AWS as a Technical Customer Service Associate the
-              front line of customer infrastructure problems. Every support case
-              was a lesson in architecture decisions, scaling challenges, and
-              what separates reliable systems from fragile ones.
+              My path to DevOps wasn&apos;t traditional. I graduated with a
+              Computer Science degree focused on web development and cloud
+              computing, then joined AWS as a Technical Customer Service
+              Associate the front line of customer infrastructure problems.
+              Every support case was a lesson in architecture decisions, scaling
+              challenges, and what separates reliable systems from fragile ones.
             </p>
             <p>
               But understanding AWS services and implementing DevOps practices
@@ -90,7 +90,8 @@ export default function About() {
               applications. As a solo developer working on projects, I was
               overwhelmed by the sheer number of tools, services, and
               approaches. Which CI/CD tool should I use? How do I structure
-              environments? What's the right balance between features and cost?
+              environments? What&apos;s the right balance between features and
+              cost?
             </p>
             <p>
               The turning point came when I decided to build my own portfolio
@@ -99,18 +100,19 @@ export default function About() {
               with GitHub Actions. Infrastructure-as-code using AWS CDK
               TypeScript. Containerisation with Docker and ECS. Monitoring and
               cost optimisation through CloudWatch and proper resource
-              management. Suddenly, DevOps wasn't abstract concepts it was
+              management. Suddenly, DevOps wasn&apos;t abstract concepts it was
               solving real problems for my own applications.
             </p>
             <p>
               Today, I architect secure, cost optimised cloud infrastructures
               and help other developers navigate the same challenges I faced. My
-              articles aren't theoretical they're born from actual struggles as
-              a solo developer making infrastructure decisions. I write about
-              the tools, patterns, and AWS services that work, cutting through
-              the noise so others can build confidently. Because I've learned
-              that great DevOps isn't just about automation it's about making
-              informed decisions across the entire application lifecycle.
+              articles aren&apos;t theoretical they&apos;re born from actual
+              struggles as a solo developer making infrastructure decisions. I
+              write about the tools, patterns, and AWS services that work,
+              cutting through the noise so others can build confidently. Because
+              I&apos;ve learned that great DevOps isn&apos;t just about
+              automation it&apos;s about making informed decisions across the
+              entire application lifecycle.
             </p>
           </div>
         </div>
