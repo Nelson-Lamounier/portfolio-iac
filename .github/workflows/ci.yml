@@ -28,13 +28,36 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'yarn'
 
+      - name: Verify Node.js version
+        run: |
+          echo "Node.js version: $(node -v)"
+          echo "Expected version: ${{ env.NODE_VERSION }}"
+          echo "Environment NODE_VERSION: $NODE_VERSION"
+          echo "All environment variables:"
+          env | grep NODE || echo "No NODE variables found"
       - name: Enable Corepack
         run: |
           corepack enable
           corepack prepare yarn@4.9.2 --activate
+      - name: Get yarn cache directory
+        id: yarn-cache-dir-path
+        run: echo "dir=$(yarn config get cacheFolder)" >> $GITHUB_OUTPUT
 
+      - name: Cache yarn dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ${{ steps.yarn-cache-dir-path.outputs.dir }}
+            .yarn/unplugged
+            .yarn/install-state.gz
+            node_modules
+          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock', '.yarnrc.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-
       - name: Install dependencies
-        run: yarn install --immutable
+        run: |
+          echo "Yarn version: $(yarn --version)"
+          yarn install --immutable
 
       - name: Run ESLint
         run: yarn lint

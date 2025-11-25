@@ -1,4 +1,6 @@
 import { ArticleLayout } from '@/components/ArticleLayout'
+import { ScenarioKeywords } from '@/components/ScenarioKeywords'
+import { EliminationList } from '@/components/EliminationList'
 import designSystem from './aws-certified-devops-engineer-professional.png'
 import systemManager from './aws_systems_manager_architecture.png'
 import spiderMethod from './SPIDER_Method.jpeg'
@@ -14,8 +16,7 @@ export const article = {
   title:
     '24 Points from Heartbreak: How I Failed the AWS DevOps Pro and Returned to Conquer It',
   description:
-    'After scoring 726 on my first attempt—just shy of the 750 required—I realized the AWS DevOps Professional exam demanded more than familiarity with AWS services. It tested whether I could evaluate competing solutions under pressure, apply architectural thinking, and navigate multi-service scenarios with confidence. What follows is the refined strategy that enabled me to pass on my second attempt, accompanied by illustrative ASCII diagrams to help you visualize the core concepts.',
-
+    'After scoring 726 on my first attempt—just shy of the 750 required—I realized the AWS DevOps Professional exam demanded more than familiarity with AWS services. It tested whether I could evaluate competing solutions under pressure, apply architectural thinking, and navigate multi-service scenarios with confidence. What follows is the refined strategy that enabled me to pass on my second attempt, accompanied by illustrative diagrams to help you visualize the core concepts.',
 }
 
 export const metadata = {
@@ -83,16 +84,42 @@ The biggest enemy on exam day isn't the content; it is the clock. Complex, multi
 
 **Scenario Keywords:**
 
-- "minimize downtime" → Blue/Green deployment
-- "gradual traffic shift" → CodeDeploy with canary/linear configs
-- "automated rollback" → CloudWatch alarms + deployment triggers
-- "audit compliance" → CloudTrail integration
+<ScenarioKeywords
+  keywords={[
+    { keyword: 'minimize downtime', solution: 'Blue/Green deployment' },
+    {
+      keyword: 'gradual traffic shift',
+      solution: 'CodeDeploy with canary/linear configs',
+    },
+    {
+      keyword: 'automated rollback',
+      solution: 'CloudWatch alarms + deployment triggers',
+    },
+    { keyword: 'audit compliance', solution: 'CloudTrail integration' },
+  ]}
+/>
 
 **Elimination Process:**
 
-- ❌ Rolling updates → Can't guarantee zero downtime for DB
-- ❌ All-at-once → Violates gradual shift requirement
-- ✅ Blue/Green with CodeDeploy → Meets all constraints
+<EliminationList
+  items={[
+    {
+      text: 'Rolling updates',
+      isCorrect: false,
+      reason: "Can't guarantee zero downtime for DB",
+    },
+    {
+      text: 'All-at-once',
+      isCorrect: false,
+      reason: 'Violates gradual shift requirement',
+    },
+    {
+      text: 'Blue/Green with CodeDeploy',
+      isCorrect: true,
+      reason: 'Meets all constraints',
+    },
+  ]}
+/>
 
 This method helped me manage time effectively—I finished with **30 minutes to review** on my second attempt.
 
