@@ -8,6 +8,10 @@ dist
 .cdk.staging
 cdk.out
 
+# Test coverage
+coverage
+*.lcov
+
 # Yarn
 .yarn/*
 !.yarn/patches
