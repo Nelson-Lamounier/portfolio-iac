@@ -35,8 +35,9 @@ function Tool({
 }
 
 export const metadata = {
-  title: 'Uses',
-  description: 'Software I use, gadgets I love, and other things I recommend.',
+  title: 'Nelson’s Setup | AWS Tools, Hardware & VS Code',
+  description:
+    'A curated list of my daily driver stack. Discover the workstation, VS Code extensions, and CI/CD tools I use to build cost-optimised AWS infrastructure.',
 }
 
 export default function Uses() {

@@ -49,9 +49,9 @@ function MailIcon(props: React.ComponentPropsWithoutRef<'svg'>) {
 }
 
 export const metadata: Metadata = {
-  title: 'About',
+  title: 'About Nelson | Cloud Architect & DevOps Engineer',
   description:
-    'I’m Nelson. I live in Dublin, where I build cloud infrastructures that span the entire application lifecycle.',
+    'I’m Nelson, a Dublin-based Cloud Architect. Master AWS, DevOps, and cost-optimization with my practical guides on the entire application lifecycle.',
 }
 
 export default function About() {
