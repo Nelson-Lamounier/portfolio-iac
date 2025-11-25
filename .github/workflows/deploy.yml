@@ -60,14 +60,8 @@ jobs:
         run: |
           echo "Fetching parameters from AWS Systems Manager Parameter Store..."
 
-          AWS_ACCOUNT_ID_DEV=$(aws ssm get-parameter --name "/github/aws-account-id-dev" --query "Parameter.Value" --output text)
-          AWS_ACCOUNT_ID_STAGING=$(aws ssm get-parameter --name "/github/aws-account-id-staging" --query "Parameter.Value" --output text)
-          AWS_ACCOUNT_ID_PROD=$(aws ssm get-parameter --name "/github/aws-account-id-prod" --query "Parameter.Value" --output text)
-          AWS_PIPELINE_ACCOUNT_ID=$(aws ssm get-parameter --name "/github/aws-pipeline-account-id" --query "Parameter.Value" --output text)
+          AWS_PIPELINE_ACCOUNT_ID=$(aws ssm get-parameter --name "/github-actions/accounts/pipeline" --query "Parameter.Value" --output text)
 
-          echo "AWS_ACCOUNT_ID_DEV=$AWS_ACCOUNT_ID_DEV" >> $GITHUB_ENV
-          echo "AWS_ACCOUNT_ID_STAGING=$AWS_ACCOUNT_ID_STAGING" >> $GITHUB_ENV
-          echo "AWS_ACCOUNT_ID_PROD=$AWS_ACCOUNT_ID_PROD" >> $GITHUB_ENV
           echo "AWS_PIPELINE_ACCOUNT_ID=$AWS_PIPELINE_ACCOUNT_ID" >> $GITHUB_ENV
 
       - name: CDK Synth
