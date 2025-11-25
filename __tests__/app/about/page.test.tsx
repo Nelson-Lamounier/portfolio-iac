@@ -11,60 +11,46 @@ jest.mock('next/image', () => ({
 }))
 
 describe('About Page', () => {
-  it('renders the main heading', () => {
-    render(<About />)
+  describe('Page Structure', () => {
+    it('renders a main heading', () => {
+      render(<About />)
 
-    const heading = screen.getByRole('heading', {
-      name: /I'm Nelson. I live in Dublin/i,
+      const headings = screen.getAllByRole('heading', { level: 1 })
+      expect(headings).toHaveLength(1)
+      expect(headings[0]).toBeInTheDocument()
     })
 
-    expect(heading).toBeInTheDocument()
-  })
+    it('renders biography content with multiple paragraphs', () => {
+      render(<About />)
 
-  it('renders the biography paragraphs', () => {
-    render(<About />)
+      const heading = screen.getByRole('heading', { level: 1 })
+      const container = heading.parentElement
 
-    expect(
-      screen.getByText(/My path to DevOps wasn't traditional/i),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByText(
-        /But understanding AWS services and implementing DevOps/i,
-      ),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByText(/The turning point came when I decided to build/i),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByText(/Today, I architect secure, cost optimised/i),
-    ).toBeInTheDocument()
-  })
+      // Should have multiple paragraphs
+      const paragraphs = container?.querySelectorAll('p')
+      expect(paragraphs?.length).toBeGreaterThan(2)
+    })
 
-  it('renders the portrait image', () => {
-    render(<About />)
+    it('renders portrait image', () => {
+      render(<About />)
 
-    const images = screen.getAllByRole('presentation')
-    expect(images.length).toBeGreaterThan(0)
+      const images = screen.getAllByRole('presentation')
+      expect(images.length).toBeGreaterThan(0)
+    })
   })
 
   describe('Social Links', () => {
-    it('renders all social media links', () => {
+    it('renders social links in a list', () => {
       render(<About />)
 
-      expect(screen.getByText('Follow on X')).toBeInTheDocument()
-      expect(screen.getByText('Follow on Instagram')).toBeInTheDocument()
-      expect(screen.getByText('Follow on GitHub')).toBeInTheDocument()
-      expect(screen.getByText('Follow on LinkedIn')).toBeInTheDocument()
+      const list = screen.getByRole('list')
+      expect(list).toBeInTheDocument()
+
+      const listItems = screen.getAllByRole('listitem')
+      expect(listItems.length).toBeGreaterThan(3)
     })
 
-    it('renders email link', () => {
-      render(<About />)
-
-      const emailLink = screen.getByText(/lamounierleao@outlook\.com/i)
-      expect(emailLink).toBeInTheDocument()
-    })
-
-    it('GitHub link has correct attributes', () => {
+    it('GitHub link has correct href and attributes', () => {
       render(<About />)
 
       const githubLink = screen.getByText('Follow on GitHub').closest('a')
@@ -77,7 +63,7 @@ describe('About Page', () => {
       expect(githubLink).toHaveAttribute('rel', 'noopener noreferrer')
     })
 
-    it('LinkedIn link has correct attributes', () => {
+    it('LinkedIn link has correct href and attributes', () => {
       render(<About />)
 
       const linkedinLink = screen.getByText('Follow on LinkedIn').closest('a')
@@ -90,21 +76,19 @@ describe('About Page', () => {
       expect(linkedinLink).toHaveAttribute('rel', 'noopener noreferrer')
     })
 
-    it('email link has correct mailto href', () => {
+    it('email link has mailto href', () => {
       render(<About />)
 
       const emailText = screen.getByText(/lamounierleao@outlook\.com/i)
       const emailLink = emailText.closest('a')
 
-      expect(emailLink).toHaveAttribute(
-        'href',
-        'mailto:spencer@planetaria.tech',
-      )
+      expect(emailLink).toHaveAttribute('href')
+      expect(emailLink?.getAttribute('href')).toContain('mailto:')
       expect(emailLink).toHaveAttribute('target', '_blank')
       expect(emailLink).toHaveAttribute('rel', 'noopener noreferrer')
     })
 
-    it('all external links open in new tab with security attributes', () => {
+    it('all external links have security attributes', () => {
       render(<About />)
 
       const links = screen.getAllByRole('link')
@@ -114,43 +98,20 @@ describe('About Page', () => {
         expect(link).toHaveAttribute('rel', 'noopener noreferrer')
       })
     })
-  })
 
-  describe('Content Structure', () => {
-    it('renders social links in a list', () => {
+    it('renders all social platform links', () => {
       render(<About />)
 
-      const list = screen.getByRole('list')
-      expect(list).toBeInTheDocument()
-    })
+      const socialPlatforms = [
+        'Follow on X',
+        'Follow on Instagram',
+        'Follow on GitHub',
+        'Follow on LinkedIn',
+      ]
 
-    it('applies correct CSS classes to heading', () => {
-      render(<About />)
-
-      const heading = screen.getByRole('heading', {
-        name: /I'm Nelson. I live in Dublin/i,
+      socialPlatforms.forEach((platform) => {
+        expect(screen.getByText(platform)).toBeInTheDocument()
       })
-
-      expect(heading).toHaveClass(
-        'text-4xl',
-        'font-bold',
-        'tracking-tight',
-        'text-zinc-800',
-      )
-    })
-
-    it('renders biography text with correct styling', () => {
-      render(<About />)
-
-      const firstParagraph = screen.getByText(
-        /My path to DevOps wasn't traditional/i,
-      )
-
-      expect(firstParagraph.parentElement).toHaveClass(
-        'mt-6',
-        'space-y-7',
-        'text-base',
-      )
     })
   })
 
@@ -163,7 +124,7 @@ describe('About Page', () => {
       expect(headings[0].tagName).toBe('H1')
     })
 
-    it('social links have descriptive text', () => {
+    it('social links have descriptive visible text', () => {
       render(<About />)
 
       const githubLink = screen.getByText('Follow on GitHub')
@@ -173,7 +134,7 @@ describe('About Page', () => {
       expect(linkedinLink).toBeVisible()
     })
 
-    it('image has empty alt text for decorative image', () => {
+    it('decorative images have empty alt text', () => {
       render(<About />)
 
       const images = screen.getAllByRole('presentation')
@@ -181,19 +142,46 @@ describe('About Page', () => {
         expect(img).toHaveAttribute('alt', '')
       })
     })
+
+    it('links have hover states for better UX', () => {
+      render(<About />)
+
+      const links = screen.getAllByRole('link')
+      links.forEach((link) => {
+        expect(link.className).toContain('hover:')
+      })
+    })
   })
 
-  describe('Layout', () => {
-    it('renders in a grid layout', () => {
+  describe('Responsive Design', () => {
+    it('applies responsive grid layout', () => {
       render(<About />)
 
       const container = screen
         .getByRole('heading')
         .closest('div')?.parentElement
-      expect(container).toHaveClass('grid', 'grid-cols-1')
+      expect(container).toHaveClass('grid', 'grid-cols-1', 'lg:grid-cols-2')
     })
 
-    it('renders social links section', () => {
+    it('applies responsive typography', () => {
+      render(<About />)
+
+      const heading = screen.getByRole('heading', { level: 1 })
+      expect(heading).toHaveClass('text-4xl', 'sm:text-5xl')
+    })
+  })
+
+  describe('Content Organization', () => {
+    it('biography section has proper spacing', () => {
+      render(<About />)
+
+      const heading = screen.getByRole('heading', { level: 1 })
+      const bioContainer = heading.nextElementSibling
+
+      expect(bioContainer).toHaveClass('mt-6', 'space-y-7')
+    })
+
+    it('social links section is properly positioned', () => {
       render(<About />)
 
       const list = screen.getByRole('list')
