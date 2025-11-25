@@ -7,12 +7,12 @@ import '@/styles/tailwind.css'
 
 export const metadata: Metadata = {
   title: {
-    template: '%s - Spencer Sharp',
+    template: '%s - Nelson Lamounier',
     default:
-      'Spencer Sharp - Software designer, founder, and amateur astronaut',
+      'Expert Cloud infrastructure builder & AWS problem solver. Explore deep-dive DevOps tutorials and engineering projects. Build better cloud systems today.',
   },
   description:
-    'I’m Spencer, a software designer and entrepreneur based in New York City. I’m the founder and CEO of Planetaria, where we develop technologies that empower regular people to explore space on their own terms.',
+    'I’m Nelson, an AWS Certified DevOps Engineer Professional based in Dublin. I architect secure, cost-optimised multi-environment infrastructures using AWS CDK and containerisation. Beyond the build, I’m a passionate educator—breaking down complex AWS concepts into digestible tutorials (and yes, memorable study songs).',
   alternates: {
     types: {
       'application/rss+xml': `${process.env.NEXT_PUBLIC_SITE_URL}/feed.xml`,
