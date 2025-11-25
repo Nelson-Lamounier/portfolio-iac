@@ -22,3 +22,6 @@ cdk.out
 
 # OS
 .DS_Store
+
+# Docs
+docs/*
