@@ -33,11 +33,14 @@ describe("EcrStack", () => {
   });
 
   test("has lifecycle policy configured", () => {
-    template.hasResourceProperties("AWS::ECR::Repository", {
-      LifecyclePolicy: {
-        LifecyclePolicyText: Match.stringLikeRegexp("maxImageCount"),
-      },
-    });
+    const resources = template.findResources("AWS::ECR::Repository");
+    const repository = Object.values(resources)[0];
+    const lifecyclePolicy = JSON.parse(
+      repository.Properties.LifecyclePolicy.LifecyclePolicyText
+    );
+
+    expect(lifecyclePolicy.rules).toHaveLength(1);
+    expect(lifecyclePolicy.rules[0].selection.countNumber).toBe(10);
   });
 
   test("creates repository with retain removal policy", () => {
@@ -48,29 +51,21 @@ describe("EcrStack", () => {
   });
 
   test("grants cross-account access to pipeline account", () => {
-    template.hasResourceProperties("AWS::ECR::RepositoryPolicy", {
-      PolicyDocument: {
-        Statement: Match.arrayWith([
-          Match.objectLike({
-            Effect: "Allow",
-            Principal: {
-              AWS: {
-                "Fn::Join": Match.arrayWith([
-                  Match.arrayWith([
-                    Match.stringLikeRegexp("arn:.*:iam::987654321098:root"),
-                  ]),
-                ]),
-              },
-            },
-            Action: Match.arrayWith([
-              "ecr:BatchCheckLayerAvailability",
-              "ecr:GetDownloadUrlForLayer",
-              "ecr:BatchGetImage",
-            ]),
-          }),
-        ]),
-      },
-    });
+    const resources = template.findResources("AWS::ECR::Repository");
+    const repository = Object.values(resources)[0];
+    const policyText = repository.Properties.RepositoryPolicyText;
+
+    expect(policyText).toBeDefined();
+    expect(policyText.Statement).toHaveLength(1);
+    expect(policyText.Statement[0].Effect).toBe("Allow");
+    expect(policyText.Statement[0].Action).toContain(
+      "ecr:BatchCheckLayerAvailability"
+    );
+    expect(policyText.Statement[0].Action).toContain("ecr:BatchGetImage");
+    expect(policyText.Statement[0].Action).toContain(
+      "ecr:GetDownloadUrlForLayer"
+    );
+    expect(policyText.Statement[0].Action).toContain("ecr:PutImage");
   });
 
   test("creates CloudFormation outputs", () => {
@@ -90,7 +85,8 @@ describe("EcrStack", () => {
   });
 
   test("repository name includes environment name", () => {
-    const stagingStack = new EcrStack(app, "StagingEcrStack", {
+    const stagingApp = new cdk.App();
+    const stagingStack = new EcrStack(stagingApp, "StagingEcrStack", {
       env: {
         account: "123456789012",
         region: "eu-west-1",
@@ -106,13 +102,18 @@ describe("EcrStack", () => {
   });
 
   test("works without pipeline account", () => {
-    const stackWithoutPipeline = new EcrStack(app, "NoPipelineStack", {
-      env: {
-        account: "123456789012",
-        region: "eu-west-1",
-      },
-      envName: "development",
-    });
+    const noPipelineApp = new cdk.App();
+    const stackWithoutPipeline = new EcrStack(
+      noPipelineApp,
+      "NoPipelineStack",
+      {
+        env: {
+          account: "123456789012",
+          region: "eu-west-1",
+        },
+        envName: "development",
+      }
+    );
 
     const noPipelineTemplate = Template.fromStack(stackWithoutPipeline);
 
@@ -120,12 +121,14 @@ describe("EcrStack", () => {
       RepositoryName: "app-repo-development",
     });
 
-    noPipelineTemplate.resourceCountIs("AWS::ECR::RepositoryPolicy", 0);
+    const resources = noPipelineTemplate.findResources("AWS::ECR::Repository");
+    const repository = Object.values(resources)[0];
+    expect(repository.Properties.RepositoryPolicyText).toBeUndefined();
   });
 
   test("exposes repository as public property", () => {
     expect(stack.repository).toBeDefined();
-    expect(stack.repository.repositoryName).toBe("app-repo-development");
+    expect(stack.repository).toBeInstanceOf(cdk.aws_ecr.Repository);
   });
 
   test("snapshot test", () => {

@@ -50,11 +50,13 @@ describe("EcrConstruct", () => {
 
     const template = Template.fromStack(stack);
 
-    template.hasResourceProperties("AWS::ECR::Repository", {
-      LifecyclePolicy: {
-        LifecyclePolicyText: expect.stringContaining('"countNumber":10'),
-      },
-    });
+    const resources = template.findResources("AWS::ECR::Repository");
+    const repository = Object.values(resources)[0];
+    const lifecyclePolicy = JSON.parse(
+      repository.Properties.LifecyclePolicy.LifecyclePolicyText
+    );
+
+    expect(lifecyclePolicy.rules[0].selection.countNumber).toBe(10);
   });
 
   test("creates lifecycle rule with custom max image count", () => {
@@ -65,11 +67,13 @@ describe("EcrConstruct", () => {
 
     const template = Template.fromStack(stack);
 
-    template.hasResourceProperties("AWS::ECR::Repository", {
-      LifecyclePolicy: {
-        LifecyclePolicyText: expect.stringContaining('"countNumber":5'),
-      },
-    });
+    const resources = template.findResources("AWS::ECR::Repository");
+    const repository = Object.values(resources)[0];
+    const lifecyclePolicy = JSON.parse(
+      repository.Properties.LifecyclePolicy.LifecyclePolicyText
+    );
+
+    expect(lifecyclePolicy.rules[0].selection.countNumber).toBe(5);
   });
 
   test("grants pipeline account access when specified", () => {
@@ -80,7 +84,21 @@ describe("EcrConstruct", () => {
 
     const template = Template.fromStack(stack);
 
-    template.resourceCountIs("AWS::ECR::RepositoryPolicy", 1);
+    const resources = template.findResources("AWS::ECR::Repository");
+    const repository = Object.values(resources)[0];
+    const policyText = repository.Properties.RepositoryPolicyText;
+
+    expect(policyText).toBeDefined();
+    expect(policyText.Statement).toHaveLength(1);
+    expect(policyText.Statement[0].Effect).toBe("Allow");
+    expect(policyText.Statement[0].Action).toContain(
+      "ecr:BatchCheckLayerAvailability"
+    );
+    expect(policyText.Statement[0].Action).toContain("ecr:BatchGetImage");
+    expect(policyText.Statement[0].Action).toContain(
+      "ecr:GetDownloadUrlForLayer"
+    );
+    expect(policyText.Statement[0].Action).toContain("ecr:PutImage");
   });
 
   test("does not create repository policy without pipeline account", () => {
@@ -90,7 +108,10 @@ describe("EcrConstruct", () => {
 
     const template = Template.fromStack(stack);
 
-    template.resourceCountIs("AWS::ECR::RepositoryPolicy", 0);
+    const resources = template.findResources("AWS::ECR::Repository");
+    const repository = Object.values(resources)[0];
+
+    expect(repository.Properties.RepositoryPolicyText).toBeUndefined();
   });
 
   test("exposes repository as public property", () => {
