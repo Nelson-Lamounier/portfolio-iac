@@ -60,22 +60,34 @@ jobs:
 
           ENV_NAME="${{ github.event.inputs.environment || 'development' }}"
 
-          AWS_ACCOUNT_ID=$(aws ssm get-parameter --name "/github-actions/accounts/${ENV_NAME}" --query "Parameter.Value" --output text)
+          # Map environment names to parameter names
+          case "$ENV_NAME" in
+            "development")
+              PARAM_NAME="dev"
+              ENV_VAR_NAME="AWS_ACCOUNT_ID_DEV"
+              ;;
+            "staging")
+              PARAM_NAME="test"
+              ENV_VAR_NAME="AWS_ACCOUNT_ID_STAGING"
+              ;;
+            "production")
+              PARAM_NAME="prod"
+              ENV_VAR_NAME="AWS_ACCOUNT_ID_PROD"
+              ;;
+            *)
+              echo "Unknown environment: $ENV_NAME"
+              exit 1
+              ;;
+          esac
+
+          AWS_ACCOUNT_ID=$(aws ssm get-parameter --name "/github-actions/accounts/${PARAM_NAME}" --query "Parameter.Value" --output text)
           AWS_PIPELINE_ACCOUNT_ID=$(aws ssm get-parameter --name "/github-actions/accounts/pipeline" --query "Parameter.Value" --output text)
 
-          # Mask sensitive values in logs
+          echo "✓ Found account ID for ${ENV_NAME} environment"
           echo "::add-mask::$AWS_ACCOUNT_ID"
           echo "::add-mask::$AWS_PIPELINE_ACCOUNT_ID"
 
-          # Set environment variables based on environment
-          if [ "$ENV_NAME" = "development" ]; then
-            echo "AWS_ACCOUNT_ID_DEV=$AWS_ACCOUNT_ID" >> $GITHUB_ENV
-          elif [ "$ENV_NAME" = "staging" ]; then
-            echo "AWS_ACCOUNT_ID_STAGING=$AWS_ACCOUNT_ID" >> $GITHUB_ENV
-          elif [ "$ENV_NAME" = "production" ]; then
-            echo "AWS_ACCOUNT_ID_PROD=$AWS_ACCOUNT_ID" >> $GITHUB_ENV
-          fi
-
+          echo "${ENV_VAR_NAME}=$AWS_ACCOUNT_ID" >> $GITHUB_ENV
           echo "AWS_PIPELINE_ACCOUNT_ID=$AWS_PIPELINE_ACCOUNT_ID" >> $GITHUB_ENV
 
       - name: CDK Synth
