@@ -1,0 +1,75 @@
+name: Deploy CDK Stack
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'development' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Build
+        run: yarn build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: CDK Synth
+        run: yarn cdk synth
+        env:
+          ENVIRONMENT: ${{ github.event.inputs.environment || 'development' }}
+          AWS_ACCOUNT_ID_DEV: ${{ secrets.AWS_ACCOUNT_ID_DEV }}
+          AWS_ACCOUNT_ID_STAGING: ${{ secrets.AWS_ACCOUNT_ID_STAGING }}
+          AWS_ACCOUNT_ID_PROD: ${{ secrets.AWS_ACCOUNT_ID_PROD }}
+          AWS_PIPELINE_ACCOUNT_ID: ${{ secrets.AWS_PIPELINE_ACCOUNT_ID }}
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: CDK Deploy
+        if: github.event_name != 'pull_request'
+        run: yarn cdk deploy --all --require-approval never
+        env:
+          ENVIRONMENT: ${{ github.event.inputs.environment || 'development' }}
+          AWS_ACCOUNT_ID_DEV: ${{ secrets.AWS_ACCOUNT_ID_DEV }}
+          AWS_ACCOUNT_ID_STAGING: ${{ secrets.AWS_ACCOUNT_ID_STAGING }}
+          AWS_ACCOUNT_ID_PROD: ${{ secrets.AWS_ACCOUNT_ID_PROD }}
+          AWS_PIPELINE_ACCOUNT_ID: ${{ secrets.AWS_PIPELINE_ACCOUNT_ID }}
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
