@@ -41,6 +41,17 @@ jobs:
       - name: Check TypeScript
         run: yarn tsc --noEmit
 
+      - name: Run tests
+        run: yarn test:coverage
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./coverage/lcov.info
+          flags: unittests
+          fail_ci_if_error: false
+
   cdk-diff:
     runs-on: ubuntu-latest
     needs: lint-and-build
