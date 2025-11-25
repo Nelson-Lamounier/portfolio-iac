@@ -1,21 +1,24 @@
 /** @format */
 
+// Isolates ECR resources, enables independent deployment and testing
+
 import * as cdk from "aws-cdk-lib";
 import { Construct } from "constructs";
 import { EcrConstruct } from "../constructs/ecr-construct";
 
 export interface EcrStackProps extends cdk.StackProps {
-  envName: string;
-  pipelineAccount?: string;
+  envName: string; // Used for resource naming and identification
+  pipelineAccount?: string; // CI/CD account for cross-account access
 }
 
 export class EcrStack extends cdk.Stack {
+  // Allows other stacks to reference this repository
   public readonly repository: cdk.aws_ecr.Repository;
 
   constructor(scope: Construct, id: string, props: EcrStackProps) {
     super(scope, id, props);
 
-    // ECR repository
+    // Include envName to distinguish repos across environments
     const ecr = new EcrConstruct(this, "Ecr", {
       repositoryName: `app-repo-${props.envName}`,
       pipelineAccount: props.pipelineAccount,
@@ -23,7 +26,8 @@ export class EcrStack extends cdk.Stack {
 
     this.repository = ecr.repository;
 
-    // Outputs
+    // CloudFormation outputs allow other stacks/services to reference repository
+    // exportName enables cross-stack references via CloudFormation imports
     new cdk.CfnOutput(this, "RepositoryUri", {
       value: ecr.repository.repositoryUri,
       description: "ECR Repository URI",
