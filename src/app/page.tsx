@@ -14,6 +14,8 @@ import logoAirbnb from '@/images/logos/airbnb.svg'
 import logoFacebook from '@/images/logos/facebook.svg'
 import logoPlanetaria from '@/images/logos/planetaria.svg'
 import logoStarbucks from '@/images/logos/starbucks.svg'
+import logoaws from '@/images/logos/aws.png'
+import logsedwick from '@/images/logos/sedwick.png'
 import image1 from '@/images/photos/image-1.jpg'
 import image2 from '@/images/photos/image-2.jpg'
 import image3 from '@/images/photos/image-3.jpg'
@@ -195,7 +197,7 @@ function Resume() {
     {
       company: 'Amazon Web Services (AWS)',
       title: 'Technical Customer Service Associate',
-      logo: logoPlanetaria,
+      logo: logoaws,
       start: '2022',
       end: {
         label: 'Present',
@@ -222,7 +224,7 @@ function Resume() {
     {
       company: 'Sedgwick',
       title: 'Insurance Agent',
-      logo: logoFacebook,
+      logo: logsedwick,
       start: '2019',
       end: '2021',
     },
