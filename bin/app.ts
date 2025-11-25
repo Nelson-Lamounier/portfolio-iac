@@ -36,5 +36,5 @@ new EcrStack(app, `EcrStack-${config.envName}`, {
   pipelineAccount: config.pipelineAccount,
 });
 
-// Converts CDK code to CloudFormation templates
+// Converts CDK code to CloudFormation templates.
 app.synth();
