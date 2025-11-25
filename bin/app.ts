@@ -2,6 +2,7 @@
 /** @format */
 
 import "source-map-support/register";
+import "dotenv/config";
 import * as cdk from "aws-cdk-lib";
 import { EcrStack } from "../lib/stacks/ecr-stack";
 import { environments } from "../config/environments";

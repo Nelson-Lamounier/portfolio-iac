@@ -1,16 +1,11 @@
 # @format
 
-name: Deploy CDK Stack
+name: Deploy
 
 on:
   push:
     branches:
       - main
-      - develop
-  pull_request:
-    branches:
-      - main
-      - develop
   workflow_dispatch:
     inputs:
       environment:
@@ -30,6 +25,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'development' }}
+    concurrency:
+      group: deploy-${{ github.event.inputs.environment || 'development' }}
+      cancel-in-progress: false
 
     steps:
       - name: Checkout code
@@ -39,6 +37,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "yarn"
 
       - name: Enable Corepack
         run: corepack enable
@@ -60,7 +59,23 @@ jobs:
         run: |
           echo "Fetching parameters from AWS Systems Manager Parameter Store..."
 
+          ENV_NAME="${{ github.event.inputs.environment || 'development' }}"
+
+          AWS_ACCOUNT_ID=$(aws ssm get-parameter --name "/github-actions/accounts/${ENV_NAME}" --query "Parameter.Value" --output text)
           AWS_PIPELINE_ACCOUNT_ID=$(aws ssm get-parameter --name "/github-actions/accounts/pipeline" --query "Parameter.Value" --output text)
+
+          # Mask sensitive values in logs
+          echo "::add-mask::$AWS_ACCOUNT_ID"
+          echo "::add-mask::$AWS_PIPELINE_ACCOUNT_ID"
+
+          # Set environment variables based on environment
+          if [ "$ENV_NAME" = "development" ]; then
+            echo "AWS_ACCOUNT_ID_DEV=$AWS_ACCOUNT_ID" >> $GITHUB_ENV
+          elif [ "$ENV_NAME" = "staging" ]; then
+            echo "AWS_ACCOUNT_ID_STAGING=$AWS_ACCOUNT_ID" >> $GITHUB_ENV
+          elif [ "$ENV_NAME" = "production" ]; then
+            echo "AWS_ACCOUNT_ID_PROD=$AWS_ACCOUNT_ID" >> $GITHUB_ENV
+          fi
 
           echo "AWS_PIPELINE_ACCOUNT_ID=$AWS_PIPELINE_ACCOUNT_ID" >> $GITHUB_ENV
 
@@ -70,8 +85,13 @@ jobs:
           ENVIRONMENT: ${{ github.event.inputs.environment || 'development' }}
           AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
 
+      - name: Require approval for production
+        if: github.event.inputs.environment == 'production'
+        run: |
+          echo "::warning::Deploying to PRODUCTION environment"
+          echo "This deployment requires manual approval via GitHub Environment protection rules"
+
       - name: CDK Deploy
-        if: github.event_name != 'pull_request'
         run: yarn cdk deploy --all --require-approval never
         env:
           ENVIRONMENT: ${{ github.event.inputs.environment || 'development' }}
