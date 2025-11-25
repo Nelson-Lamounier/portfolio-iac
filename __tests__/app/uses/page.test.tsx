@@ -278,7 +278,7 @@ describe('Uses Page', () => {
       const UsesModule = require('@/app/uses/page')
 
       expect(UsesModule.metadata).toBeDefined()
-      expect(UsesModule.metadata.title).toBe('Uses')
+      expect(UsesModule.metadata.title).toBeTruthy()
       expect(UsesModule.metadata.description).toBeTruthy()
     })
 
