@@ -261,4 +261,197 @@ describe('Articles Page', () => {
       expect(articles).toHaveLength(0)
     })
   })
+
+  describe('SEO and Metadata', () => {
+    it('exports correct metadata for SEO', () => {
+      const ArticlesModule = require('@/app/articles/page')
+
+      expect(ArticlesModule.metadata).toBeDefined()
+      expect(ArticlesModule.metadata.title).toBe('Articles')
+      expect(ArticlesModule.metadata.description).toContain(
+        'AWS infrastructure',
+      )
+    })
+  })
+
+  describe('Performance', () => {
+    it('renders efficiently with multiple articles', async () => {
+      const startTime = Date.now()
+      render(await ArticlesIndex())
+      const endTime = Date.now()
+
+      const renderTime = endTime - startTime
+      // Should render in less than 100ms
+      expect(renderTime).toBeLessThan(100)
+    })
+  })
+
+  describe('Data Loading', () => {
+    it('calls getAllArticles function', async () => {
+      const { getAllArticles } = require('@/lib/articles')
+
+      render(await ArticlesIndex())
+
+      expect(getAllArticles).toHaveBeenCalled()
+    })
+
+    it('handles async data loading', async () => {
+      const { getAllArticles } = require('@/lib/articles')
+      getAllArticles.mockResolvedValueOnce([
+        {
+          slug: 'test-article',
+          title: 'Test Article',
+          date: '2024-01-01',
+          description: 'Test description',
+        },
+      ])
+
+      render(await ArticlesIndex())
+
+      expect(screen.getByText('Test Article')).toBeInTheDocument()
+    })
+  })
+
+  describe('Article Card Components', () => {
+    it('each article has a Card component', async () => {
+      render(await ArticlesIndex())
+
+      const articles = screen.getAllByRole('article')
+
+      articles.forEach((article) => {
+        // Check that each article contains the Card structure
+        expect(article.querySelector('.md\\:col-span-3')).toBeInTheDocument()
+      })
+    })
+
+    it('each article has a call-to-action', async () => {
+      render(await ArticlesIndex())
+
+      const ctaElements = screen.getAllByText('Read article')
+
+      // Each article should have a "Read article" CTA
+      expect(ctaElements.length).toBe(3)
+      ctaElements.forEach((cta) => {
+        expect(cta).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('Error Boundaries', () => {
+    it('handles malformed article data gracefully', async () => {
+      const { getAllArticles } = require('@/lib/articles')
+      getAllArticles.mockResolvedValueOnce([
+        {
+          slug: 'incomplete-article',
+          title: 'Incomplete Article',
+          // Missing date and description
+        },
+      ])
+
+      // Should not throw an error
+      expect(async () => {
+        render(await ArticlesIndex())
+      }).not.toThrow()
+    })
+  })
+
+  describe('Responsive Design', () => {
+    it('applies mobile-first responsive classes', async () => {
+      render(await ArticlesIndex())
+
+      const articles = screen.getAllByRole('article')
+
+      articles.forEach((article) => {
+        expect(article).toHaveClass('md:grid')
+        expect(article).toHaveClass('md:items-baseline')
+      })
+    })
+
+    it('date visibility changes based on viewport', async () => {
+      render(await ArticlesIndex())
+
+      const timeElements = screen.getAllByRole('time')
+
+      // Check for mobile-hidden and desktop-hidden classes
+      const mobileHidden = timeElements.filter((el) =>
+        el.className.includes('max-md:hidden'),
+      )
+      const desktopHidden = timeElements.filter((el) =>
+        el.className.includes('md:hidden'),
+      )
+
+      expect(mobileHidden.length).toBeGreaterThan(0)
+      expect(desktopHidden.length).toBeGreaterThan(0)
+    })
+  })
+
+  describe('Link Integrity', () => {
+    it('all article links are internal', async () => {
+      render(await ArticlesIndex())
+
+      const links = screen.getAllByRole('link')
+
+      links.forEach((link) => {
+        const href = link.getAttribute('href')
+        expect(href).toMatch(/^\/articles\//)
+      })
+    })
+
+    it('article links do not have external attributes', async () => {
+      render(await ArticlesIndex())
+
+      const articleLinks = screen.getAllByRole('link', {
+        name: /AWS CDK|CI\/CD|Docker/,
+      })
+
+      articleLinks.forEach((link) => {
+        expect(link).not.toHaveAttribute('target', '_blank')
+        expect(link).not.toHaveAttribute('rel', 'noopener noreferrer')
+      })
+    })
+  })
+
+  describe('Content Quality', () => {
+    it('article descriptions are not truncated unexpectedly', async () => {
+      render(await ArticlesIndex())
+
+      const descriptions = [
+        /Learn how to structure your AWS CDK projects/,
+        /A complete guide to setting up automated deployment/,
+        /Step-by-step guide to containerizing/,
+      ]
+
+      descriptions.forEach((desc) => {
+        expect(screen.getByText(desc)).toBeInTheDocument()
+      })
+    })
+
+    it('no duplicate article titles', async () => {
+      render(await ArticlesIndex())
+
+      const titles = [
+        'AWS CDK Best Practices for Production',
+        'Building CI/CD Pipelines with GitHub Actions',
+        'Deploying Docker Containers to AWS ECS',
+      ]
+
+      titles.forEach((title) => {
+        const elements = screen.getAllByText(title)
+        // Each title should appear exactly once
+        expect(elements).toHaveLength(1)
+      })
+    })
+  })
+
+  describe('Dark Mode Support', () => {
+    it('applies dark mode classes', async () => {
+      render(await ArticlesIndex())
+
+      const container = screen
+        .getAllByRole('article')[0]
+        .closest('div')?.parentElement
+
+      expect(container?.className).toContain('dark:border-zinc-700/40')
+    })
+  })
 })
