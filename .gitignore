@@ -29,3 +29,6 @@ coverage
 
 # Docs
 docs/*
+
+# Helper scripts
+scripts/*
