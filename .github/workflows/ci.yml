@@ -43,6 +43,10 @@ jobs:
       - name: Run tests
         run: yarn test:coverage
 
+      - name: Security audit
+        run: yarn audit --audit-level moderate
+        continue-on-error: true
+
       - name: Upload coverage reports
         uses: codecov/codecov-action@v4
         if: always()
@@ -98,6 +102,43 @@ jobs:
 
           echo "AWS_ACCOUNT_ID_DEV=$AWS_ACCOUNT_ID" >> $GITHUB_ENV
           echo "AWS_PIPELINE_ACCOUNT_ID=$AWS_PIPELINE_ACCOUNT_ID" >> $GITHUB_ENV
+          echo "TARGET_ACCOUNT_ID=$AWS_ACCOUNT_ID" >> $GITHUB_ENV
+
+      - name: Verify CDK Bootstrap
+        run: |
+          REGION="${{ vars.AWS_REGION || 'eu-west-1' }}"
+
+          echo "Verifying CDK bootstrap for development environment..."
+          echo "Target Account: ${{ env.TARGET_ACCOUNT_ID }}"
+          echo "Region: ${REGION}"
+
+          # Check if CDKToolkit stack exists
+          if aws cloudformation describe-stacks \
+            --stack-name CDKToolkit \
+            --region ${REGION} 2>/dev/null; then
+            
+            echo "✓ CDK bootstrap stack found"
+            
+            # Get bootstrap version
+            BOOTSTRAP_VERSION=$(aws cloudformation describe-stacks \
+              --stack-name CDKToolkit \
+              --region ${REGION} \
+              --query 'Stacks[0].Outputs[?OutputKey==`BootstrapVersion`].OutputValue' \
+              --output text 2>/dev/null || echo "unknown")
+            
+            echo "✓ Bootstrap version: ${BOOTSTRAP_VERSION}"
+            
+          else
+            echo "⚠ Warning: CDK bootstrap stack not found!"
+            echo "CDK diff may fail. Bootstrap the account with:"
+            echo ""
+            echo "  cdk bootstrap aws://${{ env.TARGET_ACCOUNT_ID }}/${REGION} \\"
+            echo "    --profile dev-sso \\"
+            echo "    --trust ${{ env.AWS_PIPELINE_ACCOUNT_ID }} \\"
+            echo "    --cloudformation-execution-policies arn:aws:iam::aws:policy/AdministratorAccess"
+            echo ""
+            echo "See docs/BOOTSTRAP.md for instructions."
+          fi
 
       - name: CDK Synth
         run: yarn cdk synth
@@ -129,20 +170,32 @@ jobs:
               diff = 'No changes detected or diff unavailable';
             }
 
+            // Escape special characters and limit size
+            const sanitizedDiff = diff
+              .slice(0, 60000)
+              .replace(/\\/g, '\\\\')
+              .replace(/`/g, '\\`')
+              .replace(/\$/g, '\\$');
+
             const output = `#### CDK Diff Results
             <details><summary>Show Diff</summary>
 
             \`\`\`
-            ${diff.slice(0, 60000)}
+            ${sanitizedDiff}
             \`\`\`
 
             </details>
 
             *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
 
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: output
-            });
+            try {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: output
+              });
+            } catch (error) {
+              console.log('Failed to post comment:', error.message);
+              console.log('Diff output was:', diff.length, 'characters');
+            }

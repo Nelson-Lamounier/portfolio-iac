@@ -82,6 +82,37 @@ describe("EcrStack", () => {
         Name: "development-ecr-repository-arn",
       },
     });
+
+    template.hasOutput("RepositoryName", {
+      Description: "ECR Repository Name",
+      Export: {
+        Name: "development-ecr-repository-name",
+      },
+    });
+  });
+
+  test("stores repository information in SSM Parameter Store", () => {
+    // Check that SSM parameters are created
+    template.hasResourceProperties("AWS::SSM::Parameter", {
+      Name: "/ecr/development/repository-uri",
+      Type: "String",
+      Description: "ECR Repository URI for development environment",
+    });
+
+    template.hasResourceProperties("AWS::SSM::Parameter", {
+      Name: "/ecr/development/repository-arn",
+      Type: "String",
+      Description: "ECR Repository ARN for development environment",
+    });
+
+    template.hasResourceProperties("AWS::SSM::Parameter", {
+      Name: "/ecr/development/repository-name",
+      Type: "String",
+      Description: "ECR Repository Name for development environment",
+    });
+
+    // Verify we have exactly 3 SSM parameters
+    template.resourceCountIs("AWS::SSM::Parameter", 3);
   });
 
   test("repository name includes environment name", () => {

@@ -27,8 +27,8 @@ coverage
 # OS
 .DS_Store
 
-# Docs
+# Documentation (generated/personal notes)
 docs/*
 
-# Helper scripts
+# Helper scripts (local development)
 scripts/*

@@ -89,6 +89,62 @@ jobs:
 
           echo "${ENV_VAR_NAME}=$AWS_ACCOUNT_ID" >> $GITHUB_ENV
           echo "AWS_PIPELINE_ACCOUNT_ID=$AWS_PIPELINE_ACCOUNT_ID" >> $GITHUB_ENV
+          echo "TARGET_ACCOUNT_ID=$AWS_ACCOUNT_ID" >> $GITHUB_ENV
+
+      - name: Verify CDK Bootstrap
+        run: |
+          ENV_NAME="${{ github.event.inputs.environment || 'development' }}"
+          REGION="${{ vars.AWS_REGION || 'eu-west-1' }}"
+
+          echo "Verifying CDK bootstrap for ${ENV_NAME} environment..."
+          echo "Target Account: ${{ env.TARGET_ACCOUNT_ID }}"
+          echo "Region: ${REGION}"
+
+          # Check if CDKToolkit stack exists
+          if aws cloudformation describe-stacks \
+            --stack-name CDKToolkit \
+            --region ${REGION} 2>/dev/null; then
+            
+            echo "✓ CDK bootstrap stack found"
+            
+            # Get bootstrap version
+            BOOTSTRAP_VERSION=$(aws cloudformation describe-stacks \
+              --stack-name CDKToolkit \
+              --region ${REGION} \
+              --query 'Stacks[0].Outputs[?OutputKey==`BootstrapVersion`].OutputValue' \
+              --output text 2>/dev/null || echo "unknown")
+            
+            echo "✓ Bootstrap version: ${BOOTSTRAP_VERSION}"
+            
+            # Verify trust relationship with pipeline account
+            TRUSTED_ACCOUNTS=$(aws cloudformation describe-stacks \
+              --stack-name CDKToolkit \
+              --region ${REGION} \
+              --query 'Stacks[0].Parameters[?ParameterKey==`TrustedAccounts`].ParameterValue' \
+              --output text 2>/dev/null || echo "")
+            
+            if echo "$TRUSTED_ACCOUNTS" | grep -q "${{ env.AWS_PIPELINE_ACCOUNT_ID }}"; then
+              echo "✓ Trust relationship configured with pipeline account"
+            else
+              echo "⚠ Warning: Pipeline account may not be trusted"
+              echo "  Run: cdk bootstrap --trust ${{ env.AWS_PIPELINE_ACCOUNT_ID }}"
+            fi
+            
+          else
+            echo "ERROR: CDK bootstrap stack not found!"
+            echo ""
+            echo "The target account is not bootstrapped for CDK deployments."
+            echo ""
+            echo "To fix this, run the following command:"
+            echo ""
+            echo "  cdk bootstrap aws://${{ env.TARGET_ACCOUNT_ID }}/${REGION} \\"
+            echo "    --profile your-sso-profile \\"
+            echo "    --trust ${{ env.AWS_PIPELINE_ACCOUNT_ID }} \\"
+            echo "    --cloudformation-execution-policies arn:aws:iam::aws:policy/AdministratorAccess"
+            echo ""
+            echo "See docs/BOOTSTRAP.md for detailed instructions."
+            exit 1
+          fi
 
       - name: CDK Synth
         run: yarn cdk synth
@@ -107,3 +163,23 @@ jobs:
         env:
           ENVIRONMENT: ${{ github.event.inputs.environment || 'development' }}
           AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
+
+      - name: Verify SSM Parameters (Optional)
+        if: success()
+        run: |
+          ENV_NAME="${{ github.event.inputs.environment || 'development' }}"
+
+          echo "Verifying ECR repository parameters were created..."
+
+          REPO_URI=$(aws ssm get-parameter \
+            --name "/ecr/${ENV_NAME}/repository-uri" \
+            --query "Parameter.Value" \
+            --output text 2>/dev/null || echo "")
+
+          if [ -n "$REPO_URI" ]; then
+            echo "✓ ECR repository URI: $REPO_URI"
+            echo "✓ Parameters available at: /ecr/${ENV_NAME}/*"
+            echo "✓ Other pipelines can now retrieve repository information"
+          else
+            echo "⚠ Warning: ECR parameters not found (may take a moment to propagate)"
+          fi
