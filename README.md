@@ -64,6 +64,14 @@ This project demonstrates production-ready AWS infrastructure management using m
 
 ### Multi-Account Setup
 
+<!--
+TODO: Add architecture diagram image here
+Suggested: Create a diagram showing the multi-account setup
+Tool recommendations: draw.io, Lucidchart, or AWS Architecture Icons
+Save as: .github/assets/architecture.png
+Then uncomment: ![Architecture Diagram](.github/assets/architecture.png)
+-->
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ GitHub Repository                                            │
@@ -195,6 +203,13 @@ Steps:
 - Concurrency control prevents simultaneous deployments
 
 ### Pipeline Flow Diagram
+
+<!--
+TODO: Add CI/CD pipeline screenshot here
+Suggested: Screenshot of successful GitHub Actions run
+Save as: .github/assets/pipeline-success.png
+Then uncomment: ![CI/CD Pipeline](.github/assets/pipeline-success.png)
+-->
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -1026,6 +1041,17 @@ This is a foundational infrastructure project. As the application grows, additio
 - RDS/DynamoDB for data persistence
 - CloudWatch dashboards and alarms
 - VPC with public/private subnets
+
+### Adding Visuals to This README
+
+Want to make this README even more impressive? Consider adding:
+
+- 📊 Architecture diagram (multi-account setup)
+- 📸 CI/CD pipeline screenshots
+- 🎥 Demo video walkthrough
+- 📈 Test coverage reports
+
+See `.github/VISUAL_GUIDE.md` for detailed instructions on adding images and videos.
 
 ### Contact
 
