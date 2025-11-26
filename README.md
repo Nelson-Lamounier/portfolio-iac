@@ -4,7 +4,7 @@
 
 Production-ready AWS infrastructure using CDK with automated CI/CD pipelines for multi-account deployments.
 
-## 📋 Table of Contents
+## Table of Contents
 
 - [Overview](#overview)
 - [Architecture](#architecture)
@@ -15,7 +15,7 @@ Production-ready AWS infrastructure using CDK with automated CI/CD pipelines for
 - [Development Workflow](#development-workflow)
 - [Troubleshooting](#troubleshooting)
 
-## 🎯 Overview
+## Overview
 
 This project demonstrates production-ready AWS infrastructure management using modern DevOps practices. Built as a portfolio piece to showcase CI/CD pipeline expertise, infrastructure as code, and AWS multi-account architecture.
 
