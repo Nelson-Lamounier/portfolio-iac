@@ -44,7 +44,7 @@ jobs:
         run: yarn test:coverage
 
       - name: Security audit
-        run: yarn audit --audit-level moderate
+        run: yarn npm audit --audit-level moderate
         continue-on-error: true
 
       - name: Upload coverage reports
