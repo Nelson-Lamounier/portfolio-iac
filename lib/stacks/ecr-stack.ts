@@ -3,6 +3,7 @@
 // Isolates ECR resources, enables independent deployment and testing
 
 import * as cdk from "aws-cdk-lib";
+import * as ssm from "aws-cdk-lib/aws-ssm";
 import { Construct } from "constructs";
 import { EcrConstruct } from "../constructs/ecr-construct";
 
@@ -26,8 +27,30 @@ export class EcrStack extends cdk.Stack {
 
     this.repository = ecr.repository;
 
-    // CloudFormation outputs allow other stacks/services to reference repository
-    // exportName enables cross-stack references via CloudFormation imports
+    // Store ECR repository information in SSM Parameter Store
+    // Allows other pipelines (frontend, backend) to retrieve repository details
+    new ssm.StringParameter(this, "RepositoryUriParameter", {
+      parameterName: `/ecr/${props.envName}/repository-uri`,
+      stringValue: ecr.repository.repositoryUri,
+      description: `ECR Repository URI for ${props.envName} environment`,
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
+    new ssm.StringParameter(this, "RepositoryArnParameter", {
+      parameterName: `/ecr/${props.envName}/repository-arn`,
+      stringValue: ecr.repository.repositoryArn,
+      description: `ECR Repository ARN for ${props.envName} environment`,
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
+    new ssm.StringParameter(this, "RepositoryNameParameter", {
+      parameterName: `/ecr/${props.envName}/repository-name`,
+      stringValue: ecr.repository.repositoryName,
+      description: `ECR Repository Name for ${props.envName} environment`,
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
+    // CloudFormation outputs for manual reference and cross-stack imports
     new cdk.CfnOutput(this, "RepositoryUri", {
       value: ecr.repository.repositoryUri,
       description: "ECR Repository URI",
@@ -38,6 +61,12 @@ export class EcrStack extends cdk.Stack {
       value: ecr.repository.repositoryArn,
       description: "ECR Repository ARN",
       exportName: `${props.envName}-ecr-repository-arn`,
+    });
+
+    new cdk.CfnOutput(this, "RepositoryName", {
+      value: ecr.repository.repositoryName,
+      description: "ECR Repository Name",
+      exportName: `${props.envName}-ecr-repository-name`,
     });
   }
 }
