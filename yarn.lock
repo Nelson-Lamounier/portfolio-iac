@@ -995,7 +995,7 @@ __metadata:
     "@types/jest": "npm:^29.5.11"
     "@types/node": "npm:^20.10.0"
     aws-cdk: "npm:^2.150.0"
-    aws-cdk-lib: "npm:^2.150.0"
+    aws-cdk-lib: "npm:^2.229.1"
     constructs: "npm:^10.3.0"
     dotenv: "npm:^16.3.1"
     jest: "npm:^29.7.0"
@@ -1005,9 +1005,9 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"aws-cdk-lib@npm:^2.150.0":
-  version: 2.229.0
-  resolution: "aws-cdk-lib@npm:2.229.0"
+"aws-cdk-lib@npm:^2.229.1":
+  version: 2.229.1
+  resolution: "aws-cdk-lib@npm:2.229.1"
   dependencies:
     "@aws-cdk/asset-awscli-v1": "npm:2.2.242"
     "@aws-cdk/asset-node-proxy-agent-v6": "npm:^2.1.0"
@@ -1025,7 +1025,7 @@ __metadata:
     yaml: "npm:1.10.2"
   peerDependencies:
     constructs: ^10.0.0
-  checksum: 0a103015a49207502e2f8ef765ec4c17ce7a1a80d42bf9bc06fb50d4c1469c18e6de42e56e440ba2367946e6d9adf039cde5abda249c5feac4205abf12732a83
+  checksum: 63ec5c5c160b65650b9a25414ab089dbff83d79158e9db06d3893d1f0338fe561a6bc7792f403b4288d1a0a7e309bd99e47cf6d6711e5f4fac1dbb94a9e95e43
   languageName: node
   linkType: hard
 
