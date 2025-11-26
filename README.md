@@ -4,6 +4,34 @@
 
 Production-ready AWS infrastructure using CDK with automated CI/CD pipelines for multi-account deployments.
 
+---
+
+## Project Phases
+
+This project is developed in phases, each demonstrating different aspects of cloud infrastructure and DevOps.
+
+| Phase       | Focus                   | Status   | Link                                                                                   |
+| ----------- | ----------------------- | -------- | -------------------------------------------------------------------------------------- |
+| **Phase 1** | CI/CD Pipeline          | Complete | [View Code](https://github.com/Nelson-Lamounier/portfolio-iac/tree/v1.0-cicd-pipeline) |
+| **Phase 2** | Container Orchestration | Planned  | Coming Soon                                                                            |
+| **Phase 3** | Data Layer              | Planned  | Coming Soon                                                                            |
+
+### Phase 1: CI/CD Pipeline (Current)
+
+Automated deployment pipelines with GitHub Actions, multi-account AWS setup, and security best practices.
+
+**Highlights:**
+
+- GitHub Actions CI/CD workflows
+- OIDC authentication (no long-lived credentials)
+- Multi-environment deployment (dev/staging/prod)
+- Automated testing with 100% coverage
+- CDK diff preview in PR comments
+
+[View Phase 1 Documentation](PHASE1_CICD.md)
+
+---
+
 ## Table of Contents
 
 - [Overview](#overview)
