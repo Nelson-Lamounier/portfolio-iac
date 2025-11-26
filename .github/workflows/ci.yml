@@ -170,20 +170,32 @@ jobs:
               diff = 'No changes detected or diff unavailable';
             }
 
+            // Escape special characters and limit size
+            const sanitizedDiff = diff
+              .slice(0, 60000)
+              .replace(/\\/g, '\\\\')
+              .replace(/`/g, '\\`')
+              .replace(/\$/g, '\\$');
+
             const output = `#### CDK Diff Results
             <details><summary>Show Diff</summary>
 
             \`\`\`
-            ${diff.slice(0, 60000)}
+            ${sanitizedDiff}
             \`\`\`
 
             </details>
 
             *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
 
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: output
-            });
+            try {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: output
+              });
+            } catch (error) {
+              console.log('Failed to post comment:', error.message);
+              console.log('Diff output was:', diff.length, 'characters');
+            }
