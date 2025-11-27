@@ -122,5 +122,4 @@ describe("EcrConstruct", () => {
     expect(construct.repository).toBeDefined();
     expect(construct.repository).toBeInstanceOf(ecr.Repository);
   });
-
 });
