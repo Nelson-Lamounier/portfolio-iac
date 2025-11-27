@@ -3,7 +3,7 @@
 import * as cdk from "aws-cdk-lib";
 import { Template } from "aws-cdk-lib/assertions";
 import * as ecr from "aws-cdk-lib/aws-ecr";
-import { EcrConstruct } from "../../lib/constructs/ecr-construct";
+import { EcrConstruct } from "../../lib/constructs/storage/ecr-construct";
 
 describe("EcrConstruct", () => {
   let app: cdk.App;
@@ -123,13 +123,4 @@ describe("EcrConstruct", () => {
     expect(construct.repository).toBeInstanceOf(ecr.Repository);
   });
 
-  test("snapshot test", () => {
-    new EcrConstruct(stack, "TestEcr", {
-      repositoryName: "test-repo",
-      pipelineAccount: "123456789012",
-    });
-
-    const template = Template.fromStack(stack);
-    expect(template.toJSON()).toMatchSnapshot();
-  });
 });
