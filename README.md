@@ -46,6 +46,20 @@ yarn test --watch
 yarn lint
 ```
 
+## Branching Strategy
+
+This project uses a **two-branch strategy** for professional development workflow:
+
+- **`main`** - Production branch (deploys to prod)
+- **`develop`** - Development branch (deploys to dev)
+- **`feature/*`** - Feature branches (CI validation only)
+
+**Documentation:**
+
+- [Git Workflow Commands](docs/GIT_WORKFLOW.md) - Daily Git commands
+- [Branching Strategy](docs/BRANCHING_STRATEGY.md) - Complete strategy guide
+- [Setup Guide](docs/SETUP_DEVELOP_BRANCH.md) - Initial setup steps
+
 ## Deployment
 
 This project uses GitHub Actions to automatically build, test, and deploy Docker images to Amazon ECR. The ECR repository is managed by your infrastructure repository and accessed via AWS Parameter Store.

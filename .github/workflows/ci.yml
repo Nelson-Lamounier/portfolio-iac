@@ -4,10 +4,10 @@ on:
   pull_request:
     branches:
       - main
+      - develop
   push:
     branches:
       - 'feature/**'
-      - 'develop'
 
 env:
   NODE_VERSION: '22'
