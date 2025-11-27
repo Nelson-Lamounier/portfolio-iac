@@ -6,7 +6,7 @@ import "source-map-support/register";
 // Loads .env file for local development (not used in CI/CD)
 import "dotenv/config";
 import * as cdk from "aws-cdk-lib";
-import { EcrStack } from "../lib/stacks/ecr-stack";
+import { InfrastructureStack } from "../lib/infrastructure-stack";
 import { environments } from "../config/environments";
 
 const app = new cdk.App();
@@ -27,7 +27,7 @@ if (!config) {
 // Environment-specific stack names allow multiple environments in same account
 // Explicit account/region required for cross-account deployments
 // pipelineAccount enables CI/CD to push/pull images
-new EcrStack(app, `EcrStack-${config.envName}`, {
+new InfrastructureStack(app, `InfrastructureStack-${config.envName}`, {
   env: {
     account: config.account,
     region: config.region,
