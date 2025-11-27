@@ -192,36 +192,38 @@ jobs:
 
       - name: Generate deployment summary
         run: |
-          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### ✅ Status: COMPLETED" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Environment:** \`${{ env.ENVIRONMENT }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** COMPLETED" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ env.ENVIRONMENT }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Quality Gates" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Linting: PASSED" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Tests (248): PASSED" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Build: PASSED" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Docker Build: PASSED" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ ECR Push: PASSED" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Linting | PASSED |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tests | PASSED (248) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build | PASSED |" >> $GITHUB_STEP_SUMMARY
+          echo "| Docker Build | PASSED |" >> $GITHUB_STEP_SUMMARY
+          echo "| ECR Push | PASSED |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🐳 Image Details" >> $GITHUB_STEP_SUMMARY
-          echo "- **Repository:** \`${{ steps.get-ecr-repo.outputs.repository-name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Registry:** \`${{ steps.get-ecr-repo.outputs.registry }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Region:** \`${{ env.AWS_REGION }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "### Image Details" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Repository | ${{ steps.get-ecr-repo.outputs.repository-name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Registry | ${{ steps.get-ecr-repo.outputs.registry }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Region | ${{ env.AWS_REGION }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🏷️ Image Tags" >> $GITHUB_STEP_SUMMARY
+          echo "### Image Tags" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "${{ steps.image-info.outputs.image-uri }}" >> $GITHUB_STEP_SUMMARY
           echo "${{ steps.get-ecr-repo.outputs.repository-url }}:latest" >> $GITHUB_STEP_SUMMARY
           echo "${{ steps.get-ecr-repo.outputs.repository-url }}:${{ env.ENVIRONMENT }}-latest" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📦 Next Steps" >> $GITHUB_STEP_SUMMARY
-          echo "Image is ready for deployment via infrastructure repository" >> $GITHUB_STEP_SUMMARY
+          echo "### Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "Image is ready for deployment via infrastructure repository." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Deployment Command:**" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "# Update your infrastructure to use:" >> $GITHUB_STEP_SUMMARY
           echo "IMAGE_URI=${{ steps.image-info.outputs.image-uri }}" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

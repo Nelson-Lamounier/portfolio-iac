@@ -101,13 +101,24 @@ gh workflow run deploy.yml -f environment=prod
 - **[Deployment Setup](docs/DEPLOYMENT_SETUP.md)** - Detailed configuration
 - **[Deployment Checklist](docs/DEPLOYMENT_CHECKLIST.md)** - Pre-deployment validation
 - **[Production Ready Summary](docs/PRODUCTION_READY_SUMMARY.md)** - Complete overview
+- **[Dynamic Port Configuration](docs/DYNAMIC_PORT_CONFIGURATION.md)** - Port configuration guide
 
-### Validation
+### Local Testing
 
-Run the validation script to check your setup:
+Test your setup locally before pushing:
 
 ```bash
-./.github/scripts/validate-deployment.sh
+# Run tests
+yarn test --ci
+
+# Run linter
+yarn lint
+
+# Build application
+yarn build
+
+# Test Docker build
+docker build -t portfolio:test .
 ```
 
 ## License
