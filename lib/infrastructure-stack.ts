@@ -6,6 +6,7 @@ import { Construct } from "constructs";
 
 import { VpcConstruct } from "./constructs/networking/vpc-construct";
 import { EcrConstruct } from "./constructs/storage/ecr-construct";
+import { EcsConstruct } from "./constructs/compute/ecs-construct";
 
 export interface InfrastructureStackProps extends cdk.StackProps {
   envName: string;
@@ -15,6 +16,7 @@ export interface InfrastructureStackProps extends cdk.StackProps {
 export class InfrastructureStack extends cdk.Stack {
   public readonly repository: cdk.aws_ecr.Repository;
   public readonly vpc: cdk.aws_ec2.IVpc;
+  public readonly ecsCluster: cdk.aws_ecs.ICluster;
 
   constructor(scope: Construct, id: string, props: InfrastructureStackProps) {
     super(scope, id, props);
@@ -32,6 +34,22 @@ export class InfrastructureStack extends cdk.Stack {
       pipelineAccount: props.pipelineAccount,
     });
     this.repository = ecrConstruct.repository;
+
+    // Create ECS Cluster with EC2 capacity
+    const ecsConstruct = new EcsConstruct(this, "Ecs", {
+      vpc: vpcConstruct.vpc,
+      envName: props.envName,
+      instanceType: new cdk.aws_ec2.InstanceType("t3.nano"),
+      minCapacity: 1,
+      maxCapacity: 2,
+      desiredCapacity: 1,
+      // Use ECR image
+      containerImage: cdk.aws_ecs.ContainerImage.fromEcrRepository(
+        ecrConstruct.repository,
+        "latest"
+      ),
+    });
+    this.ecsCluster = ecsConstruct.cluster;
 
     // Store VPC information in SSM Parameter Store
     new ssm.StringParameter(this, "VpcIdParameter", {
@@ -60,6 +78,28 @@ export class InfrastructureStack extends cdk.Stack {
       parameterName: `/ecr/${props.envName}/respository-name`,
       stringValue: ecrConstruct.repository.repositoryName,
       description: `ECR Repository NAme for ${props.envName} environment`,
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
+    // Store ECS information in SSM Parameter Store
+    new ssm.StringParameter(this, "EcsClusterNameParameter", {
+      parameterName: `/ecs/${props.envName}/cluster-name`,
+      stringValue: ecsConstruct.cluster.clusterName,
+      description: `ECS Cluster Name for ${props.envName} environment`,
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
+    new ssm.StringParameter(this, "EcsClusterArnParameter", {
+      parameterName: `/ecs/${props.envName}/cluster-arn`,
+      stringValue: ecsConstruct.cluster.clusterArn,
+      description: `ECS Cluster ARN for ${props.envName} environment`,
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
+    new ssm.StringParameter(this, "EcsServiceNameParameter", {
+      parameterName: `/ecs/${props.envName}/service-name`,
+      stringValue: ecsConstruct.service.serviceName,
+      description: `ECS Service Name for ${props.envName} environment`,
       tier: ssm.ParameterTier.STANDARD,
     });
 
@@ -92,6 +132,24 @@ export class InfrastructureStack extends cdk.Stack {
       value: ecrConstruct.repository.repositoryName,
       description: "ECR Repository Name",
       exportName: `${props.envName}-ecr-repositort-name`,
+    });
+
+    new cdk.CfnOutput(this, "EcsClusterName", {
+      value: ecsConstruct.cluster.clusterName,
+      description: "ECS Cluster Name",
+      exportName: `${props.envName}-ecs-cluster-name`,
+    });
+
+    new cdk.CfnOutput(this, "EcsClusterArn", {
+      value: ecsConstruct.cluster.clusterArn,
+      description: "ECS Cluster ARN",
+      exportName: `${props.envName}-ecs-cluster-arn`,
+    });
+
+    new cdk.CfnOutput(this, "EcsServiceName", {
+      value: ecsConstruct.service.serviceName,
+      description: "ECS Service Name",
+      exportName: `${props.envName}-ecs-service-name`,
     });
   }
 }
