@@ -5,8 +5,13 @@ RUN corepack enable && \
 # Dependencies stage
 FROM base AS deps
 WORKDIR /app
+
+# Copy package files
 COPY package.json yarn.lock .yarnrc.yml ./
-COPY .yarn ./.yarn
+
+# Install dependencies
+# Note: .yarn directory is not needed as Corepack manages Yarn
+# and yarn install will create necessary files
 RUN yarn install --immutable
 
 # Builder stage
@@ -32,7 +37,10 @@ RUN addgroup --system --gid 1001 nodejs && \
 # Copy built application
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+
+# Copy public directory if it exists (optional for static assets)
+# Note: This project doesn't use a public directory - static assets are in src/app/
+# COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
 # Switch to non-root user
 USER nextjs

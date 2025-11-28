@@ -13,7 +13,8 @@
 !.yarn/sdks
 !.yarn/versions
 .pnp.*
-yarn.lock
+# Note: yarn.lock should be committed for reproducible builds
+# yarn.lock
 
 # testing
 /coverage
