@@ -38,3 +38,5 @@ new InfrastructureStack(app, `InfrastructureStack-${config.envName}`, {
 
 // Converts CDK code to CloudFormation templates.
 app.synth();
+
+// test
