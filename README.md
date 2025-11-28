@@ -98,16 +98,19 @@ The infrastructure repository creates the ECR repository and stores its URL in P
 
 ### Deployment Flow
 
-Every push to `main`:
+Every push to `develop` or `main`:
 
 1. ✅ Runs ESLint
 2. ✅ Runs 248 tests with coverage
 3. ✅ Builds Next.js application
-4. ✅ Authenticates with AWS via OIDC
-5. ✅ Fetches ECR URL from Parameter Store
-6. ✅ Builds optimized Docker image
-7. ✅ Pushes to Amazon ECR with multiple tags
-8. ✅ Verifies deployment
+4. ✅ Validates Docker build (dev only)
+5. ✅ Authenticates with AWS via OIDC
+6. ✅ Fetches ECR URL from Parameter Store
+7. ✅ Builds optimized Docker image
+8. ✅ Pushes to Amazon ECR with multiple tags
+9. ✅ Verifies deployment
+
+**Quality Gate:** Deployment only happens if all tests pass.
 
 ### Multi-Environment Support
 
