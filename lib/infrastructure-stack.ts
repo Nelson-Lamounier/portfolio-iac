@@ -142,7 +142,7 @@ export class InfrastructureStack extends cdk.Stack {
     new cdk.CfnOutput(this, "VpcId", {
       value: vpcConstruct.vpc.vpcId,
       description: "VPC ID",
-      exportName: `${props.envName}-vpc-cidr`,
+      exportName: `${props.envName}-vpc-id`,
     });
 
     new cdk.CfnOutput(this, "VpcCidr", {
