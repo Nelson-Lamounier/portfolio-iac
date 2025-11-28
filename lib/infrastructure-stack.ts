@@ -42,9 +42,18 @@ export class InfrastructureStack extends cdk.Stack {
     this.repository = ecrConstruct.repository;
 
     // Create ECS Cluster with EC2 capacity
-    // Use IMAGE_TAG environment variable or default to "initial"
+    // Use IMAGE_TAG environment variable or default to public nginx image
     // For immutable ECR, each deployment should use a unique tag (commit SHA, version, etc.)
-    const imageTag = process.env.IMAGE_TAG || "initial";
+    const imageTag = process.env.IMAGE_TAG;
+
+    // Use public nginx image for initial deployment if no IMAGE_TAG specified
+    // After first deployment, push your image to ECR and redeploy with IMAGE_TAG
+    const containerImage = imageTag
+      ? cdk.aws_ecs.ContainerImage.fromEcrRepository(
+          ecrConstruct.repository,
+          imageTag
+        )
+      : cdk.aws_ecs.ContainerImage.fromRegistry("nginx:alpine");
 
     const ecsConstruct = new EcsConstruct(this, "Ecs", {
       vpc: vpcConstruct.vpc,
@@ -53,11 +62,8 @@ export class InfrastructureStack extends cdk.Stack {
       minCapacity: 1,
       maxCapacity: 2,
       desiredCapacity: 1,
-      // Use ECR image with dynamic tag
-      containerImage: cdk.aws_ecs.ContainerImage.fromEcrRepository(
-        ecrConstruct.repository,
-        imageTag
-      ),
+      // Use dynamic container image
+      containerImage: containerImage,
     });
     this.ecsCluster = ecsConstruct.cluster;
 
