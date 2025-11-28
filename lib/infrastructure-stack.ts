@@ -7,10 +7,16 @@ import { Construct } from "constructs";
 import { VpcConstruct } from "./constructs/networking/vpc-construct";
 import { EcrConstruct } from "./constructs/storage/ecr-construct";
 import { EcsConstruct } from "./constructs/compute/ecs-construct";
+import { MonitoringConstruct } from "./constructs/monitoring/monitoring-construct";
+import { EventBridgeConstruct } from "./constructs/monitoring/eventbridge-construct";
+import * as logs from "aws-cdk-lib/aws-logs";
 
 export interface InfrastructureStackProps extends cdk.StackProps {
   envName: string;
   pipelineAccount?: string;
+  enableMonitoring?: boolean;
+  enableEventBridge?: boolean;
+  alertEmail?: string;
 }
 
 export class InfrastructureStack extends cdk.Stack {
@@ -50,6 +56,31 @@ export class InfrastructureStack extends cdk.Stack {
       ),
     });
     this.ecsCluster = ecsConstruct.cluster;
+
+    // Create Monitoring (optional)
+    if (props.enableMonitoring) {
+      const monitoring = new MonitoringConstruct(this, "Monitoring", {
+        envName: props.envName,
+        ecsClusterName: ecsConstruct.cluster.clusterName,
+        ecsServiceName: ecsConstruct.service.serviceName,
+        alertEmail: props.alertEmail,
+        enableDashboard: props.envName === "production",
+        logRetentionDays:
+          props.envName === "production"
+            ? logs.RetentionDays.ONE_MONTH
+            : logs.RetentionDays.ONE_WEEK,
+      });
+
+      // Create EventBridge cross-account monitoring (optional)
+      if (props.enableEventBridge) {
+        new EventBridgeConstruct(this, "EventBridge", {
+          envName: props.envName,
+          isPipelineAccount: false,
+          pipelineAccountId: props.pipelineAccount,
+          alarmTopic: monitoring.alarmTopic,
+        });
+      }
+    }
 
     // Store VPC information in SSM Parameter Store
     new ssm.StringParameter(this, "VpcIdParameter", {
