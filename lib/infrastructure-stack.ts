@@ -42,6 +42,17 @@ export class InfrastructureStack extends cdk.Stack {
     this.repository = ecrConstruct.repository;
 
     // Create ECS Cluster with EC2 capacity
+    // Use nginx:alpine for initial deployment (ECR image doesn't exist yet)
+    // After first image push, you can switch to ECR image
+    const imageTag = process.env.IMAGE_TAG || "nginx:alpine";
+    const containerImage =
+      imageTag === "nginx:alpine"
+        ? cdk.aws_ecs.ContainerImage.fromRegistry(imageTag)
+        : cdk.aws_ecs.ContainerImage.fromEcrRepository(
+            ecrConstruct.repository,
+            imageTag
+          );
+
     const ecsConstruct = new EcsConstruct(this, "Ecs", {
       vpc: vpcConstruct.vpc,
       envName: props.envName,
@@ -49,11 +60,7 @@ export class InfrastructureStack extends cdk.Stack {
       minCapacity: 1,
       maxCapacity: 2,
       desiredCapacity: 1,
-      // Use ECR image
-      containerImage: cdk.aws_ecs.ContainerImage.fromEcrRepository(
-        ecrConstruct.repository,
-        "latest"
-      ),
+      containerImage: containerImage,
     });
     this.ecsCluster = ecsConstruct.cluster;
 
@@ -138,7 +145,7 @@ export class InfrastructureStack extends cdk.Stack {
     new cdk.CfnOutput(this, "VpcId", {
       value: vpcConstruct.vpc.vpcId,
       description: "VPC ID",
-      exportName: `${props.envName}-vpc-cidr`,
+      exportName: `${props.envName}-vpc-id`,
     });
 
     new cdk.CfnOutput(this, "VpcCidr", {
