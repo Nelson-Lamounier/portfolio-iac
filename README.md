@@ -48,17 +48,37 @@ yarn lint
 
 ## Branching Strategy
 
-This project uses a **two-branch strategy** for professional development workflow:
+This project uses a **simplified two-branch strategy** optimized for solo development:
 
-- **`main`** - Production branch (deploys to prod)
-- **`develop`** - Development branch (deploys to dev)
-- **`feature/*`** - Feature branches (CI validation only)
+- **`develop`** - Active development branch (auto-deploys to development environment)
+- **`main`** - Production branch (auto-deploys to production environment)
+
+### Strategy Evolution
+
+**Previous Approach:** Initially used a three-branch strategy with feature branches (`feature/*` → `develop` → `main`).
+
+**Current Approach:** Simplified to two branches for solo development efficiency.
+
+**Reason for Change:** Feature branches added unnecessary complexity for a solo developer. The overhead of creating, managing, and merging feature branches slowed down development velocity without providing meaningful benefits. The two-branch strategy maintains professional deployment practices (environment separation, automated testing, CI/CD) while eliminating the friction of feature branch management.
+
+**Workflow:**
+
+```bash
+# Daily development
+git checkout develop
+git commit -m "feat: Add feature"
+git push origin develop  # Auto-deploys to development
+
+# Production release
+git checkout main
+git merge develop
+git push origin main  # Auto-deploys to production
+```
 
 **Documentation:**
 
 - [Git Workflow Commands](docs/GIT_WORKFLOW.md) - Daily Git commands
-- [Branching Strategy](docs/BRANCHING_STRATEGY.md) - Complete strategy guide
-- [Setup Guide](docs/SETUP_DEVELOP_BRANCH.md) - Initial setup steps
+- [Branching Strategy](docs/BRANCHING_STRATEGY.md) - Complete strategy guide and rationale
 
 ## Deployment
 
