@@ -10,10 +10,8 @@ import {
   LinkedInIcon,
   XIcon,
 } from '@/components/SocialIcons'
-import logoAirbnb from '@/images/logos/airbnb.svg'
 import logoFacebook from '@/images/logos/facebook.svg'
 import logoPlanetaria from '@/images/logos/planetaria.svg'
-import logoStarbucks from '@/images/logos/starbucks.svg'
 import logoaws from '@/images/logos/aws.png'
 import logsedwick from '@/images/logos/sedwick.png'
 import image1 from '@/images/photos/image-1.jpg'
@@ -286,15 +284,14 @@ export default async function Home() {
       <Container className="mt-9">
         <div className="max-w-2xl">
           <h1 className="text-4xl font-bold tracking-tight text-zinc-800 sm:text-5xl dark:text-zinc-100">
-            Cloud infrastructure builder, AWS problem solver, and DevOps
-            educator
+            AWS Certified Cloud Architect & DevOps Mentor
           </h1>
           <p className="mt-6 text-base text-zinc-600 dark:text-zinc-400">
-            I&apos;m Nelson, an AWS Certified DevOps Engineer Professional in
-            Dublin. I design secure, cost optimised multienvironment
-            infrastructures using AWS CDK and containerisation—while creating
-            educational content that breaks down complex AWS concepts into
-            digestible tutorials (and yes, memorable study songs).
+            Hi, I&apos;m Nelson. As an AWS Certified DevOps Engineer
+            Professional in Dublin, I specialise in building secure,
+            cost-optimised cloud systems using AWS CDK and containerisation. I
+            also bridge the gap between code and classroom, turning complex
+            DevOps problems into clear tutorials and catchy study songs.
           </p>
           <div className="mt-6 flex gap-6">
             <SocialLink href="#" aria-label="Follow on X" icon={XIcon} />

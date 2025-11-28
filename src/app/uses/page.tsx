@@ -35,8 +35,9 @@ function Tool({
 }
 
 export const metadata = {
-  title: 'Uses',
-  description: 'Software I use, gadgets I love, and other things I recommend.',
+  title: "Nelson's Setup | AWS Tools, Hardware & VS Code",
+  description:
+    'A curated list of my daily driver stack. Discover the workstation, VS Code extensions, and CI/CD tools I use to build cost-optimised AWS infrastructure.',
 }
 
 export default function Uses() {
@@ -47,20 +48,21 @@ export default function Uses() {
     >
       <div className="space-y-20">
         <ToolsSection title="Workstation">
-          <Tool title="MacBook Pro 14”, M3 Pro, 36GB RAM (2024)">
+          <Tool title='MacBook Pro 14", M3 Pro, 36GB RAM (2024)'>
             The transition from an Intel-based machine to Apple Silicon was
-            transformative. Whether I'm building Docker images for
+            transformative. Whether I&apos;m building Docker images for
             multi-architecture deployments, running CDK synth operations, or
             spinning up local Kubernetes clusters, this machine handles it all
             without breaking a sweat. As a bonus, the ARM architecture offers
             significantly better parity with AWS Graviton instances.
           </Tool>
-          <Tool title="LG 34” UltraWide 5K2K Monitor">
+          <Tool title='LG 34" UltraWide 5K2K Monitor'>
             When you are simultaneously debugging CloudFormation stacks with
             over 200 resources, reviewing GitHub Actions workflows, and
-            monitoring CloudWatch dashboards, screen real estate isn't a
-            luxury—it’s a necessity. The 21:9 aspect ratio is ideal for running
-            side-by-side terminal sessions without constant window switching.
+            monitoring CloudWatch dashboards, screen real estate isn&apos;t a
+            luxury—it&apos;s a necessity. The 21:9 aspect ratio is ideal for
+            running side-by-side terminal sessions without constant window
+            switching.
           </Tool>
         </ToolsSection>
         <ToolsSection title="Development tools">
@@ -100,8 +102,8 @@ export default function Uses() {
             multi-region deployments with elegance.
           </Tool>
           <Tool title="AWS CloudFormation">
-            While I am "CDK-first," I still manage legacy projects running on
-            CloudFormation. Maintaining proficiency in both is the
+            While I am &quot;CDK-first,&quot; I still manage legacy projects
+            running on CloudFormation. Maintaining proficiency in both is the
             infrastructure equivalent of being bilingual.
           </Tool>
         </ToolsSection>
