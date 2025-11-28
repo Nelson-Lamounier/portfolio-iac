@@ -22,8 +22,7 @@ env:
   AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
   # Map branch to environment: develop -> development, main -> production
   ENVIRONMENT: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }}
-  ECR_PARAM_NAME: /app/ecr-repository-url
-
+  PARAM_NAME: '/ecr/${{ vars.ENVIRONMENT }}/repository-uri'
 # Required for OIDC authentication
 permissions:
   id-token: write
@@ -47,7 +46,6 @@ jobs:
         run: |
           corepack enable
           corepack prepare yarn@4.9.2 --activate
-
       - name: Install dependencies
         run: yarn install --immutable
 
@@ -96,7 +94,6 @@ jobs:
           echo "- ESLint validation" >> $GITHUB_STEP_SUMMARY
           echo "- Unit and integration tests (248 tests)" >> $GITHUB_STEP_SUMMARY
           echo "- Production build" >> $GITHUB_STEP_SUMMARY
-
   docker-validate:
     name: Validate Docker Build
     runs-on: ubuntu-latest
@@ -130,7 +127,6 @@ jobs:
           echo "- Platform: linux/amd64" >> $GITHUB_STEP_SUMMARY
           echo "- Tag: portfolio:validation" >> $GITHUB_STEP_SUMMARY
           echo "- Build Type: Validation (no push)" >> $GITHUB_STEP_SUMMARY
-
   push-to-ecr:
     name: Build & Push to ECR (${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }})
     runs-on: ubuntu-latest
@@ -150,38 +146,51 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
-          role-session-name: GitHubActions-${{ env.ENVIRONMENT }}-${{ github.run_id }}
-          role-duration-seconds: 3600
+          aws-region: ${{ vars.AWS_REGION }}
 
-      - name: Get ECR repository URI from Parameter Store
+      - name: Fetch ECR repository URI from Parameter Store
         id: get-ecr-repo
         run: |
-          # Fetch ECR repository URI from Parameter Store in target account
+          echo "Fetching ECR repository URI from Parameter Store..."
+
+          ENV_NAME="${{ env.ENVIRONMENT }}"
+
+          # Fetch ECR repository URI from Parameter Store
           # Parameter format: /ecr/{environment}/repository-uri
-          # Value format: {target-account-id}.dkr.ecr.{region}.amazonaws.com/app-repo-{environment}
+          # Value format: {account-id}.dkr.ecr.{region}.amazonaws.com/app-repo-{environment}
+          PARAM_NAME="/ecr/${ENV_NAME}/repository-uri"
 
-          PARAM_NAME="/ecr/${{ env.ENVIRONMENT }}/repository-uri"
-
-          echo "Fetching parameter: $PARAM_NAME"
+          echo "Parameter name: $PARAM_NAME"
+          echo "Region: ${{ vars.AWS_REGION || 'eu-west-1' }}"
 
           ECR_REPO_URI=$(aws ssm get-parameter \
             --name "$PARAM_NAME" \
             --query 'Parameter.Value' \
             --output text \
-            --region ${{ env.AWS_REGION }})
+            --region ${{ vars.AWS_REGION || 'eu-west-1' }})
 
-          # Extract components
+          if [ -z "$ECR_REPO_URI" ]; then
+            echo "Failed to fetch ECR repository URI"
+            exit 1
+          fi
+
+          # Extract components from ECR URI
+          # Format: {account-id}.dkr.ecr.{region}.amazonaws.com/{repository-name}
           ECR_REPO_NAME=$(echo "$ECR_REPO_URI" | awk -F'/' '{print $NF}')
           ECR_REGISTRY=$(echo "$ECR_REPO_URI" | sed 's|/[^/]*$||')
           TARGET_ACCOUNT=$(echo "$ECR_REGISTRY" | cut -d'.' -f1)
 
-          echo "ECR Repository URI: $ECR_REPO_URI"
-          echo "Repository Name: $ECR_REPO_NAME"
-          echo "Registry: $ECR_REGISTRY"
-          echo "Target Account: $TARGET_ACCOUNT"
+          # Mask sensitive information in logs
+          echo "::add-mask::$TARGET_ACCOUNT"
+          echo "::add-mask::$ECR_REPO_URI"
+          echo "::add-mask::$ECR_REGISTRY"
 
-          # Set outputs
+          echo "✓ Successfully fetched ECR repository URI"
+          echo "Repository Name: $ECR_REPO_NAME"
+          echo "Target Account: ***"
+          echo "Registry: ***"
+
+          # Set outputs for use in subsequent steps
           echo "repository-uri=${ECR_REPO_URI}" >> $GITHUB_OUTPUT
           echo "repository-name=${ECR_REPO_NAME}" >> $GITHUB_OUTPUT
           echo "registry=${ECR_REGISTRY}" >> $GITHUB_OUTPUT
@@ -201,14 +210,12 @@ jobs:
           IMAGE_TAG_SHA="${{ github.sha }}"
           IMAGE_TAG_LATEST="latest"
           IMAGE_TAG_ENV="${{ env.ENVIRONMENT }}-latest"
-
           ECR_REPO_URI="${{ steps.get-ecr-repo.outputs.repository-uri }}"
           TARGET_ACCOUNT="${{ steps.get-ecr-repo.outputs.target-account }}"
 
           echo "Building and pushing image to target account ECR"
-          echo "Target Account: $TARGET_ACCOUNT"
-          echo "ECR Repository: $ECR_REPO_URI"
-
+          echo "Target Account: ***"
+          echo "Building image..."
           # Build and push image
           docker buildx build \
             --platform linux/amd64 \
@@ -220,12 +227,10 @@ jobs:
             --cache-from type=registry,ref=${ECR_REPO_URI}:buildcache \
             --cache-to type=registry,ref=${ECR_REPO_URI}:buildcache,mode=max \
             .
-
           echo "Successfully pushed image with tags:"
           echo "  - ${IMAGE_TAG_SHA}"
           echo "  - ${IMAGE_TAG_LATEST}"
           echo "  - ${IMAGE_TAG_ENV}"
-
       - name: Set image info outputs
         id: image-info
         run: |
@@ -233,22 +238,18 @@ jobs:
           IMAGE_URI="${{ steps.get-ecr-repo.outputs.repository-uri }}:${IMAGE_TAG}"
           echo "image-tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
           echo "image-uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
-
       - name: Verify image in target account ECR
         run: |
           ECR_REPO_NAME="${{ steps.get-ecr-repo.outputs.repository-name }}"
           TARGET_ACCOUNT="${{ steps.get-ecr-repo.outputs.target-account }}"
 
           echo "Verifying image in target account ECR"
-          echo "Account: $TARGET_ACCOUNT"
           echo "Repository: $ECR_REPO_NAME"
-
           aws ecr describe-images \
             --repository-name "$ECR_REPO_NAME" \
             --image-ids imageTag=${{ github.sha }} \
             --region ${{ env.AWS_REGION }} \
             --output table
-
       - name: Generate deployment summary
         run: |
           echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
