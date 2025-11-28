@@ -13,7 +13,8 @@
 !.yarn/sdks
 !.yarn/versions
 .pnp.*
-yarn.lock
+# Note: yarn.lock should be committed for reproducible builds
+# yarn.lock
 
 # testing
 /coverage
@@ -50,3 +51,4 @@ next-env.d.ts
 # additional files
 YARN_MIGRATION.md
 docs/*
+.vscode
