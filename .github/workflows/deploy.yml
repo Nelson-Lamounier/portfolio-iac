@@ -86,8 +86,24 @@ jobs:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Check if infrastructure exists
+        id: check-infra
+        run: |
+          echo "Checking if infrastructure exists..."
+          PARAM_NAME="/ecr/${{ env.ENVIRONMENT }}/repository-uri"
+
+          if aws ssm get-parameter --name "$PARAM_NAME" --region ${{ env.AWS_REGION }} 2>/dev/null; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "✓ Infrastructure exists"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "⚠ Infrastructure not found - will deploy infrastructure first"
+            echo "::warning::ECR repository not found. Infrastructure must be deployed before frontend."
+          fi
+
       - name: Fetch ECR repository URI
         id: get-ecr-repo
+        if: steps.check-infra.outputs.exists == 'true'
         run: |
           echo "Fetching ECR repository URI from Parameter Store..."
 
@@ -121,12 +137,15 @@ jobs:
           echo "target-account=${TARGET_ACCOUNT}" >> $GITHUB_OUTPUT
 
       - name: Login to Amazon ECR
+        if: steps.check-infra.outputs.exists == 'true'
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Set up Docker Buildx
+        if: steps.check-infra.outputs.exists == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Build and push Docker image
+        if: steps.check-infra.outputs.exists == 'true'
         run: |
           IMAGE_TAG_SHA="${{ github.sha }}"
           IMAGE_TAG_LATEST="latest"
@@ -150,13 +169,24 @@ jobs:
 
       - name: Set image info outputs
         id: image-info
+        if: steps.check-infra.outputs.exists == 'true'
         run: |
           IMAGE_TAG="${{ github.sha }}"
           IMAGE_URI="${{ steps.get-ecr-repo.outputs.repository-uri }}:${IMAGE_TAG}"
           echo "image-tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
           echo "image-uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
 
+      - name: Skip frontend build notice
+        if: steps.check-infra.outputs.exists != 'true'
+        run: |
+          echo "::notice::Skipping frontend Docker build - infrastructure not deployed yet"
+          echo "## Frontend Build Skipped" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Infrastructure must be deployed first to create the ECR repository." >> $GITHUB_STEP_SUMMARY
+          echo "The infrastructure deployment will proceed automatically." >> $GITHUB_STEP_SUMMARY
+
       - name: Verify image in ECR
+        if: steps.check-infra.outputs.exists == 'true'
         run: |
           ECR_REPO_NAME="${{ steps.get-ecr-repo.outputs.repository-name }}"
 
@@ -173,7 +203,7 @@ jobs:
     needs: [detect-changes, build-frontend]
     if: |
       always() && 
-      needs.build-frontend.result == 'success' && 
+      (needs.build-frontend.result == 'success' || needs.build-frontend.result == 'skipped') && 
       needs.detect-changes.outputs.infrastructure == 'true'
     environment:
       name: approve-infrastructure-${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }}
@@ -181,12 +211,18 @@ jobs:
       - name: Manual approval required
         run: |
           echo "::notice::Infrastructure changes detected"
-          echo "::notice::Frontend deployment completed successfully"
+          if [ "${{ needs.build-frontend.result }}" == "success" ]; then
+            echo "::notice::Frontend deployment completed successfully"
+          fi
           echo "::notice::Waiting for manual approval to deploy infrastructure..."
           echo ""
           echo "## Infrastructure Deployment Approval" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Frontend deployed successfully" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.build-frontend.result }}" == "success" ]; then
+            echo "Frontend deployed successfully" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Frontend build skipped (infrastructure not yet deployed)" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "Infrastructure changes detected" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Action Required:** Approve this deployment to proceed with infrastructure changes" >> $GITHUB_STEP_SUMMARY
@@ -197,7 +233,7 @@ jobs:
     needs: [detect-changes, build-frontend, approve-infrastructure-deployment]
     if: |
       always() && 
-      needs.build-frontend.result == 'success' && 
+      (needs.build-frontend.result == 'success' || needs.build-frontend.result == 'skipped') && 
       (needs.approve-infrastructure-deployment.result == 'success' || needs.detect-changes.outputs.infrastructure != 'true')
     environment: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }}
     concurrency:
