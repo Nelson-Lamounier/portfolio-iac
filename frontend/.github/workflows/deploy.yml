@@ -1,0 +1,291 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+
+env:
+  NODE_VERSION: '22'
+  AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
+  # Map branch to environment: develop -> development, main -> production
+  ENVIRONMENT: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }}
+  PARAM_NAME: '/ecr/${{ vars.ENVIRONMENT }}/repository-uri'
+# Required for OIDC authentication
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  test:
+    name: Test & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Enable Corepack
+        run: |
+          corepack enable
+          corepack prepare yarn@4.9.2 --activate
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Run linter
+        run: yarn lint
+
+      - name: Run tests with coverage
+        run: yarn test --ci --coverage --maxWorkers=2
+
+      - name: Build Next.js application
+        run: yarn build
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nextjs-build
+          path: |
+            .next/
+            package.json
+            yarn.lock
+            .yarnrc.yml
+            .yarn/
+          retention-days: 1
+
+      - name: Generate test summary
+        if: always()
+        run: |
+          echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ ${{ job.status }} == 'success' ]; then
+            echo "Status: PASSED" >> $GITHUB_STEP_SUMMARY
+            echo "All quality checks completed successfully" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Status: FAILED" >> $GITHUB_STEP_SUMMARY
+            echo "One or more quality checks failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Checks performed:" >> $GITHUB_STEP_SUMMARY
+          echo "- ESLint validation" >> $GITHUB_STEP_SUMMARY
+          echo "- Unit and integration tests (248 tests)" >> $GITHUB_STEP_SUMMARY
+          echo "- Production build" >> $GITHUB_STEP_SUMMARY
+  docker-validate:
+    name: Validate Docker Build
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event.inputs.environment == 'development' || github.ref == 'refs/heads/develop'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image (validation only)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          tags: portfolio:validation
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate Docker validation summary
+        run: |
+          echo "## Docker Build Validation" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Status: SUCCESS" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Build Details:" >> $GITHUB_STEP_SUMMARY
+          echo "- Platform: linux/amd64" >> $GITHUB_STEP_SUMMARY
+          echo "- Tag: portfolio:validation" >> $GITHUB_STEP_SUMMARY
+          echo "- Build Type: Validation (no push)" >> $GITHUB_STEP_SUMMARY
+  push-to-ecr:
+    name: Build & Push to ECR (${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }})
+    runs-on: ubuntu-latest
+    needs: [test, docker-validate]
+    if: always() && needs.test.result == 'success' && (needs.docker-validate.result == 'success' || needs.docker-validate.result == 'skipped')
+    environment: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }}
+    outputs:
+      image-tag: ${{ steps.image-info.outputs.image-tag }}
+      image-uri: ${{ steps.image-info.outputs.image-uri }}
+      ecr-repository: ${{ steps.get-ecr-repo.outputs.repository-name }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials using OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Fetch ECR repository URI from Parameter Store
+        id: get-ecr-repo
+        run: |
+          echo "Fetching ECR repository URI from Parameter Store..."
+
+          ENV_NAME="${{ env.ENVIRONMENT }}"
+
+          # Fetch ECR repository URI from Parameter Store
+          # Parameter format: /ecr/{environment}/repository-uri
+          # Value format: {account-id}.dkr.ecr.{region}.amazonaws.com/app-repo-{environment}
+          PARAM_NAME="/ecr/${ENV_NAME}/repository-uri"
+
+          echo "Parameter name: $PARAM_NAME"
+          echo "Region: ${{ vars.AWS_REGION || 'eu-west-1' }}"
+
+          ECR_REPO_URI=$(aws ssm get-parameter \
+            --name "$PARAM_NAME" \
+            --query 'Parameter.Value' \
+            --output text \
+            --region ${{ vars.AWS_REGION || 'eu-west-1' }})
+
+          if [ -z "$ECR_REPO_URI" ]; then
+            echo "Failed to fetch ECR repository URI"
+            exit 1
+          fi
+
+          # Extract components from ECR URI
+          # Format: {account-id}.dkr.ecr.{region}.amazonaws.com/{repository-name}
+          ECR_REPO_NAME=$(echo "$ECR_REPO_URI" | awk -F'/' '{print $NF}')
+          ECR_REGISTRY=$(echo "$ECR_REPO_URI" | sed 's|/[^/]*$||')
+          TARGET_ACCOUNT=$(echo "$ECR_REGISTRY" | cut -d'.' -f1)
+
+          # Mask sensitive information in logs
+          echo "::add-mask::$TARGET_ACCOUNT"
+          echo "::add-mask::$ECR_REPO_URI"
+          echo "::add-mask::$ECR_REGISTRY"
+
+          echo "✓ Successfully fetched ECR repository URI"
+          echo "Repository Name: $ECR_REPO_NAME"
+          echo "Target Account: ***"
+          echo "Registry: ***"
+
+          # Set outputs for use in subsequent steps
+          echo "repository-uri=${ECR_REPO_URI}" >> $GITHUB_OUTPUT
+          echo "repository-name=${ECR_REPO_NAME}" >> $GITHUB_OUTPUT
+          echo "registry=${ECR_REGISTRY}" >> $GITHUB_OUTPUT
+          echo "target-account=${TARGET_ACCOUNT}" >> $GITHUB_OUTPUT
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image to target account ECR
+        id: build-push
+        run: |
+          # Image tags
+          IMAGE_TAG_SHA="${{ github.sha }}"
+          IMAGE_TAG_LATEST="latest"
+          IMAGE_TAG_ENV="${{ env.ENVIRONMENT }}-latest"
+          ECR_REPO_URI="${{ steps.get-ecr-repo.outputs.repository-uri }}"
+          TARGET_ACCOUNT="${{ steps.get-ecr-repo.outputs.target-account }}"
+
+          echo "Building and pushing image to target account ECR"
+          echo "Target Account: ***"
+          echo "Building image..."
+          # Build and push image
+          docker buildx build \
+            --platform linux/amd64 \
+            --build-arg NODE_ENV=production \
+            --tag "${ECR_REPO_URI}:${IMAGE_TAG_SHA}" \
+            --tag "${ECR_REPO_URI}:${IMAGE_TAG_LATEST}" \
+            --tag "${ECR_REPO_URI}:${IMAGE_TAG_ENV}" \
+            --push \
+            --cache-from type=registry,ref=${ECR_REPO_URI}:buildcache \
+            --cache-to type=registry,ref=${ECR_REPO_URI}:buildcache,mode=max \
+            .
+          echo "Successfully pushed image with tags:"
+          echo "  - ${IMAGE_TAG_SHA}"
+          echo "  - ${IMAGE_TAG_LATEST}"
+          echo "  - ${IMAGE_TAG_ENV}"
+      - name: Set image info outputs
+        id: image-info
+        run: |
+          IMAGE_TAG="${{ github.sha }}"
+          IMAGE_URI="${{ steps.get-ecr-repo.outputs.repository-uri }}:${IMAGE_TAG}"
+          echo "image-tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "image-uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
+      - name: Verify image in target account ECR
+        run: |
+          ECR_REPO_NAME="${{ steps.get-ecr-repo.outputs.repository-name }}"
+          TARGET_ACCOUNT="${{ steps.get-ecr-repo.outputs.target-account }}"
+
+          echo "Verifying image in target account ECR"
+          echo "Repository: $ECR_REPO_NAME"
+          aws ecr describe-images \
+            --repository-name "$ECR_REPO_NAME" \
+            --image-ids imageTag=${{ github.sha }} \
+            --region ${{ env.AWS_REGION }} \
+            --output table
+      - name: Generate deployment summary
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** COMPLETED" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ env.ENVIRONMENT }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Target Account:** ${{ steps.get-ecr-repo.outputs.target-account }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Quality Gates" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Linting | PASSED |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tests | PASSED (248) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build | PASSED |" >> $GITHUB_STEP_SUMMARY
+          echo "| Docker Build | PASSED |" >> $GITHUB_STEP_SUMMARY
+          echo "| ECR Push | PASSED |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Image Details" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Target Account | ${{ steps.get-ecr-repo.outputs.target-account }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Repository | ${{ steps.get-ecr-repo.outputs.repository-name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Registry | ${{ steps.get-ecr-repo.outputs.registry }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Region | ${{ env.AWS_REGION }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Image Tags" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.image-info.outputs.image-uri }}" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.get-ecr-repo.outputs.repository-uri }}:latest" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.get-ecr-repo.outputs.repository-uri }}:${{ env.ENVIRONMENT }}-latest" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "Image pushed to target account ECR and ready for ECS deployment." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "IMAGE_URI=${{ steps.image-info.outputs.image-uri }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

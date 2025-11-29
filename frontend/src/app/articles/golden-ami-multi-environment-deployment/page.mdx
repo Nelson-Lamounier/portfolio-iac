@@ -1,0 +1,253 @@
+import { ArticleLayout } from '@/components/ArticleLayout'
+import { EliminationList } from '@/components/EliminationList'
+import goldenAmiArchitecture from './generated-diagrams/golden_ami_architecture.png'
+import bootTimeConfigFlow from './generated-diagrams/boot_time_config_flow.png'
+
+export const article = {
+  author: 'Nelson Lamounier',
+  date: '2024-10-23',
+  title:
+    'The "Golden AMI" Trap: Decoding Multi-Environment Deploys for the AWS DevOps Pro Exam',
+  description:
+    'If you are preparing for the AWS DevOps Professional exam, you will inevitably encounter a "Scenario Question" that feels impossible to solve. These questions are designed to test your ability to balance competing requirements—security, consistency, and cost—without compromising on any of them.',
+}
+
+export const metadata = {
+  title: article.title,
+  description: article.description,
+}
+
+export default (props) => <ArticleLayout article={article} {...props} />
+
+If you are preparing for the AWS DevOps Professional exam, you will inevitably encounter a "Scenario Question" that feels impossible to solve. These questions are designed to test your ability to balance competing requirements—security, consistency, and cost—without compromising on any of them.
+
+One specific scenario appears time and time again. It usually involves a legacy migration, a furious development team, and a cost-conscious CFO.
+
+Let's break down the scenario, the constraints, and the "Golden AMI" architecture you need to master to pass.
+
+## The Scenario: A DevOps Nightmare
+
+Imagine you are migrating a legacy Insurance Portal. You are managing four distinct environments: Dev, Test, Staging, and Prod.
+
+The situation is tense:
+
+- The **Developers** are frustrated because bugs appearing in Prod are not showing up in Dev. They suspect configuration drift.
+- Your **Manager** demands that exactly the same machine image runs everywhere to ensure consistency.
+- The **Security Team** demands that Production credentials must never exist on a Development box.
+- The **CFO** has mandated a strict budget, telling you to "keep it cheap."
+
+## The Challenge: Freedom vs. Control
+
+How do you deploy the same Amazon Machine Image (AMI) across four environments while keeping configurations unique, secure, and cost-effective?
+
+If you bake four different AMIs, you fail the **Consistency** requirement. If you bake credentials into a single AMI, you fail the **Security** requirement.
+
+This requires the **"Golden AMI vs. Boot-Time Configuration"** pattern. Here is how to master it.
+
+<div className="my-8">
+  <Image
+    src={goldenAmiArchitecture}
+    alt="Golden AMI Multi-Environment Architecture - Shows how a single Golden AMI deploys across Dev, Test, Staging, and Production environments with environment-specific configurations from Parameter Store"
+    className="h-auto w-full rounded-lg"
+  />
+</div>
+
+## Understanding the Golden AMI Pattern
+
+This scenario represents one of the most common architectural patterns you'll encounter on the exam: the **"Golden AMI vs. Boot-Time Configuration"** pattern. The key is understanding that consistency doesn't mean identical configuration—it means identical binaries with environment-specific settings applied at runtime.
+
+## Phase 1: The Build (Baking the Golden Image)
+
+The first trap the exam sets is asking how to create the image. You will likely see options suggesting "Systems Manager Session Manager" or "SSM Patch Manager."
+
+**The answer is always AWS Systems Manager (SSM) Automation.**
+
+Here is why the other options fail:
+
+<EliminationList
+  items={[
+    {
+      text: 'Session Manager',
+      isCorrect: false,
+      reason:
+        'For interactive shell access (like SSH). It does not orchestrate workflows.',
+    },
+    {
+      text: 'Patch Manager',
+      isCorrect: false,
+      reason: 'For updating instances that are already running.',
+    },
+    {
+      text: 'SSM Automation',
+      isCorrect: true,
+      reason:
+        'An orchestration engine. It spins up an instance, runs commands (via documents like AWS-UpdateLinuxAmi), installs software, stops the instance, creates the AMI, and terminates the temporary instance.',
+    },
+  ]}
+/>
+
+**Exam Rule #1:** If the question asks you to "orchestrate the creation of a custom AMI," choose SSM Automation.
+
+## Phase 2: The Glue (Context-Aware Booting)
+
+Now you have one "Golden AMI" containing your application code and binary dependencies. However, this image is dumb. It does not know if it is in DEV or PROD, and it certainly does not have the database passwords.
+
+We solve this using **Tags + User Data.**
+
+<div className="my-8">
+  <Image
+    src={bootTimeConfigFlow}
+    alt="Boot-Time Configuration Flow - Shows the three-step process: EC2 instance identifies its environment through tags, fetches configuration from Parameter Store, and starts the application with environment-specific settings"
+    className="h-auto w-full rounded-lg border border-zinc-200 dark:border-zinc-800"
+  />
+</div>
+
+We do not hardcode configurations. Instead, we inject a script into the User Data that runs on the very first boot. This script acts as a detective:
+
+1. **"Who am I?"** (Check Instance Metadata)
+2. **"Where am I?"** (Check EC2 Tags)
+3. **"What secrets do I need?"** (Fetch from Parameter Store based on the tags)
+
+Here is the logic you will see in the correct exam answers:
+
+```bash
+#!/bin/bash
+
+# 1. Identify the Environment
+INSTANCE_ID=$(ec2-metadata --instance-id | cut -d " " -f 2)
+# Retrieve the Environment tag (e.g., 'Dev' or 'Prod')
+ENVIRONMENT=$(aws ec2 describe-tags \
+  --filters "Name=resource-id,Values=$INSTANCE_ID" \
+            "Name=key,Values=Environment" \
+  --query "Tags[0].Value" \
+  --output text)
+
+# 2. Fetch the SPECIFIC credentials for that environment
+# Notice how the path changes based on the $ENVIRONMENT variable
+DB_PASS=$(aws ssm get-parameter \
+  --name "/myapp/${ENVIRONMENT}/db-password" \
+  --with-decryption \
+  --query 'Parameter.Value' \
+  --output text)
+
+# 3. Start the app with the retrieved secret
+export DB_PASSWORD=$DB_PASS
+/opt/myapp/start.sh
+```
+
+## Phase 3: The Storage (Parameter Store vs. The Rest)
+
+The exam loves to confuse you regarding where to store the configuration. You will likely see options for Secrets Manager, Parameter Store, and AppConfig.
+
+Use this **Decision Matrix** to pick the right one:
+
+### 1. AWS Systems Manager Parameter Store (SecureString)
+
+**The Default Choice.**
+
+It supports encryption and hierarchies (perfect for `/dev/db_pass` vs `/prod/db_pass`).
+
+Crucially, **standard parameters are free**.
+
+**Exam Keyword:** "Cost-effective configuration storage."
+
+### 2. AWS Secrets Manager
+
+**The Premium Choice.**
+
+Use this ONLY if the question specifically mentions **"Automatic Rotation"** of RDS credentials.
+
+It costs roughly **$0.40 per secret per month**.
+
+**Exam Keyword:** "Automatic rotation."
+
+### 3. AWS AppConfig
+
+**The Dynamic Choice.**
+
+Use this for **feature flags** or changing configurations while the app is running without a restart.
+
+It is generally **NOT** the answer for storing database passwords required during boot time.
+
+## The "Wrong Answer" Autopsy
+
+To pass the DevOps Pro exam, you must instantly recognise why the distractors are incorrect. In this scenario, watch out for these traps:
+
+<EliminationList
+  items={[
+    {
+      text: 'Use Lambda triggered by User Data',
+      isCorrect: false,
+      reason:
+        'User Data is a script. It cannot "trigger" a Lambda directly without complex API calls. This is over-engineering. Keep it simple: let the EC2 instance talk directly to the Parameter Store.',
+    },
+    {
+      text: 'Use Marketplace AMIs',
+      isCorrect: false,
+      reason:
+        'The scenario specifies a custom legacy app. Marketplace is for generic software (like WordPress or Firewalls), not your proprietary code.',
+    },
+    {
+      text: 'Bake config into the AMI',
+      isCorrect: false,
+      reason:
+        'This forces you to make a new AMI for every environment change. This violates the "Same AMI everywhere" rule and breaks the consistency requirement.',
+    },
+  ]}
+/>
+
+## Summary: The Winning Architecture
+
+When you see a multi-environment deployment question, map it to this mental model:
+
+### The Three-Phase Approach:
+
+1. **Build:** SSM Automation creates One Golden AMI
+2. **Deploy:** Auto Scaling Groups launch EC2 instances with an Environment Tag (e.g., `Env=Prod`)
+3. **Configure:** A User Data script reads the Tag, then pulls the SecureString from the Parameter Store
+
+### Why This Architecture Wins:
+
+<EliminationList
+  items={[
+    {
+      text: 'Consistency',
+      isCorrect: true,
+      reason: 'The binary is identical everywhere.',
+    },
+    {
+      text: 'Security',
+      isCorrect: true,
+      reason:
+        'Prod secrets stay in the Prod Parameter Store; Dev instances cannot access them (controlled via IAM Roles).',
+    },
+    {
+      text: 'Speed',
+      isCorrect: true,
+      reason:
+        'The heavy lifting (installing OS/App) is pre-baked. Boot time is seconds, not minutes.',
+    },
+    {
+      text: 'Cost-Effective',
+      isCorrect: true,
+      reason:
+        'Standard Parameter Store parameters are free; there is no need for expensive alternatives.',
+    },
+  ]}
+/>
+
+## Key Takeaways for the Exam
+
+1. **SSM Automation** is your go-to for orchestrated AMI creation
+2. **Tags + User Data** enable environment-aware configuration
+3. **Parameter Store** is the default choice for cost-effective secrets management
+4. **IAM Roles** enforce security boundaries between environments
+5. **Golden AMI pattern** balances consistency with flexibility
+
+Mastering this flow covers approximately **15% of the logic** found in the Deployment domains of the exam. Understanding the **"why"** behind each decision is far more valuable than simply memorising the **"what."**
+
+---
+
+_Building cloud infrastructure in Dublin and helping others navigate AWS certifications. If you have questions about this pattern or the DevOps Pro exam, feel free to reach out._
+
+---
