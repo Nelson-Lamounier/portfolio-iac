@@ -1,0 +1,18 @@
+# Next.js specific ignores
+# (Common ignores are handled by root .gitignore)
+
+# Next.js build outputs
+/.next/
+/out/
+
+# Vercel
+.vercel
+
+# Next.js TypeScript
+next-env.d.ts
+
+# Frontend-specific documentation
+YARN_MIGRATION.md
+
+# Frontend-specific documentation
+docs/*

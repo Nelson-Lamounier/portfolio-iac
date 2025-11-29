@@ -1,16 +1,7 @@
-*.js
-!jest.config.js
-*.d.ts
-node_modules
-dist
-
-# CDK asset staging directory
-.cdk.staging
-cdk.out
-
-# Test coverage
-coverage
-*.lcov
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
 
 # Yarn
 .yarn/*
@@ -19,13 +10,39 @@ coverage
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+.pnp.*
 
-# Environment
+# Environment variables
 .env
-.env.local
+.env*.local
 
-# OS
+# OS files
 .DS_Store
+*.pem
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Test coverage
+coverage/
+*.lcov
+
+# Build outputs
+dist/
+build/
+
+# TypeScript
+*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+
+# CDK (infrastructure-specific)
+infrastructure/.cdk.staging
+infrastructure/cdk.out
 
 # Documentation (generated/personal notes)
 docs/*

@@ -16,8 +16,35 @@ permissions:
   pull-requests: write
 
 jobs:
-  lint-and-build:
+  # Detect which workspaces changed
+  detect-changes:
     runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      infrastructure: ${{ steps.filter.outputs.infrastructure }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for changes
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            frontend:
+              - 'frontend/**'
+              - 'package.json'
+              - 'yarn.lock'
+            infrastructure:
+              - 'infrastructure/**'
+              - 'package.json'
+              - 'yarn.lock'
+
+  # Frontend CI
+  frontend-ci:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true'
 
     steps:
       - name: Checkout code
@@ -34,31 +61,82 @@ jobs:
       - name: Install dependencies
         run: yarn install --immutable
 
-      - name: Build
-        run: yarn build
+      - name: Run frontend linter
+        run: yarn workspace frontend lint
 
-      - name: Check TypeScript
-        run: yarn tsc --noEmit
+      - name: Run frontend tests with coverage
+        run: yarn workspace frontend test --ci --coverage --maxWorkers=2
 
-      - name: Run tests
-        run: yarn test:coverage
+      - name: Build frontend
+        run: yarn workspace frontend build
 
-      - name: Security audit
-        run: yarn npm audit --audit-level moderate
-        continue-on-error: true
-
-      - name: Upload coverage reports
+      - name: Upload frontend coverage
         uses: codecov/codecov-action@v4
         if: always()
         with:
-          files: ./coverage/lcov.info
-          flags: unittests
+          files: ./frontend/coverage/lcov.info
+          flags: frontend
+          fail_ci_if_error: false
+
+      - name: Validate Docker build
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image (validation)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          platforms: linux/amd64
+          push: false
+          tags: portfolio-frontend:validation
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Infrastructure CI
+  infrastructure-ci:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.infrastructure == 'true'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Build infrastructure
+        run: yarn workspace infrastructure build
+
+      - name: Check TypeScript
+        run: yarn workspace infrastructure tsc --noEmit
+
+      - name: Run infrastructure tests
+        run: yarn workspace infrastructure test:coverage
+
+      - name: Security audit
+        run: yarn workspace infrastructure npm audit --audit-level moderate
+        continue-on-error: true
+
+      - name: Upload infrastructure coverage
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./infrastructure/coverage/lcov.info
+          flags: infrastructure
           fail_ci_if_error: false
 
   cdk-diff:
     runs-on: ubuntu-latest
-    needs: lint-and-build
-    if: github.event_name == 'pull_request'
+    needs: [detect-changes, infrastructure-ci]
+    if: github.event_name == 'pull_request' && needs.detect-changes.outputs.infrastructure == 'true'
     environment: development
     permissions:
       id-token: write
@@ -80,8 +158,8 @@ jobs:
       - name: Install dependencies
         run: yarn install --immutable
 
-      - name: Build
-        run: yarn build
+      - name: Build infrastructure
+        run: yarn workspace infrastructure build
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -113,14 +191,12 @@ jobs:
           echo "Target Account: ${{ env.TARGET_ACCOUNT_ID }}"
           echo "Region: ${REGION}"
 
-          # Check if CDKToolkit stack exists
           if aws cloudformation describe-stacks \
             --stack-name CDKToolkit \
             --region ${REGION} 2>/dev/null; then
             
             echo "✓ CDK bootstrap stack found"
             
-            # Get bootstrap version
             BOOTSTRAP_VERSION=$(aws cloudformation describe-stacks \
               --stack-name CDKToolkit \
               --region ${REGION} \
@@ -142,7 +218,7 @@ jobs:
           fi
 
       - name: CDK Synth
-        run: yarn cdk synth
+        run: yarn workspace infrastructure cdk synth
         env:
           ENVIRONMENT: development
           AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
@@ -151,7 +227,7 @@ jobs:
         id: cdk-diff
         run: |
           echo "Running CDK diff..."
-          yarn cdk diff 2>&1 | tee cdk-diff.txt
+          yarn workspace infrastructure cdk diff 2>&1 | tee cdk-diff.txt
         continue-on-error: true
         env:
           ENVIRONMENT: development
@@ -171,7 +247,6 @@ jobs:
               diff = 'No changes detected or diff unavailable';
             }
 
-            // Escape special characters and limit size
             const sanitizedDiff = diff
               .slice(0, 60000)
               .replace(/\\/g, '\\\\')

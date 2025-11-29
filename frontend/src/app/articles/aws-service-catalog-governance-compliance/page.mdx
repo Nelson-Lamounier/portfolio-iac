@@ -1,0 +1,217 @@
+import { ArticleLayout } from '@/components/ArticleLayout'
+import serviceCatalogWorkflow from './service-catalog-workflow.png'
+import serviceCatalogDetailed from './service-catalog-detailed.png'
+
+export const article = {
+  author: 'Nelson Lamounier',
+  date: '2024-11-10',
+  title:
+    'Scaling Governance: How to Balance Developer Freedom with Strict Compliance on AWS',
+  description:
+    'In the world of cloud infrastructure, there is an eternal tug-of-war between Development and Operations. Learn how to use AWS Service Catalog to guarantee compliance without becoming a bottleneck, creating a "paved road" that is both the easiest and most compliant way for developers to deploy.',
+}
+
+export const metadata = {
+  title: article.title,
+  description: article.description,
+}
+
+export default (props) => <ArticleLayout article={article} {...props} />
+
+In the world of cloud infrastructure, there is an eternal tug-of-war between Development and Operations. Developers want speed; they need to deploy various versions of an application without friction. Operations (and the business at large) demand control; they need to ensure costs are contained, security protocols are met, and resources are trackable.
+
+Imagine this common scenario: A business wants to leverage AWS CloudFormation to automate deployments. However, they have strict boundaries. They need to restrict deployments to only two specific regions and enforce a rigid tagging policy for cost allocation. Yet, they cannot lock the system down so tightly that developers cannot iterate on different application versions.
+
+How do you guarantee compliance without becoming a bottleneck? The answer lies not in restrictive manual reviews, but in **intelligent automation using AWS Service Catalog**.
+
+## The Challenge: Freedom vs. Control
+
+When scaling Infrastructure as Code (IaC), simply giving developers raw access to CloudFormation templates often leads to "Shadow IT" or compliance drift.
+
+If you rely solely on standard CloudFormation templates, you face significant risks:
+
+- **Region Sprawl**: Resources might be spun up in expensive or unapproved regions
+- **Tagging Inconsistencies**: Without strict enforcement, resources go untagged, making billing audits a nightmare
+- **Configuration Drift**: Unapproved configurations slip through the cracks
+
+The business needs a mechanism that creates a **"paved road"**—a path that is the easiest way for developers to deploy, which incidentally happens to be the most compliant way.
+
+## The Solution: AWS Service Catalog
+
+The most suitable solution to this dilemma is to utilise **AWS Service Catalog** to create products with approved CloudFormation templates.
+
+AWS Service Catalog acts as a centralised management layer. It allows organisations to create and manage catalogues of IT services that are approved for use on AWS. These services can include everything from virtual machine images and servers to software and databases.
+
+<div className="my-8 flex justify-center">
+  <div className="w-full">
+    <Image
+      src={serviceCatalogWorkflow}
+      alt="AWS Service Catalog Workflow - Shows the complete governance flow from Operations Team creating templates, through Portfolio with constraints, to Development Team deploying compliant CloudFormation stacks"
+      className="h-auto w-full rounded-lg border border-zinc-200 dark:border-zinc-800"
+    />
+  </div>
+</div>
+
+The architecture above illustrates the complete governance workflow:
+
+- **Operations Team**: Creates approved CloudFormation templates and defines policies
+- **Service Catalog Portfolio**: Contains products with multiple versions and applied constraints
+- **Constraints Layer**: Enforces region restrictions, required tags, and IAM roles
+- **Development Team**: Self-service access to browse and launch approved products
+- **Compliant Deployment**: CloudFormation stacks deployed with all governance rules enforced
+
+<div className="my-8 flex justify-center">
+  <div className="w-full">
+    <Image
+      src={serviceCatalogDetailed}
+      alt="AWS Service Catalog Detailed Architecture - Detailed view showing portfolio structure, product versions, constraint types, and the relationship between IAM roles, developers, and provisioned resources"
+      className="h-auto w-full rounded-lg border border-zinc-200 dark:border-zinc-800"
+    />
+  </div>
+</div>
+
+Here is why this is the ultimate tool for the scenario described above:
+
+### 1. Centralised Template Governance
+
+By using Service Catalog, you act as the gatekeeper. You upload approved CloudFormation templates that already contain the necessary configuration for tagging and infrastructure setups. Developers do not interact with the raw CloudFormation console; they interact with the Service Catalog "Product."
+
+### 2. Template Constraints
+
+This is the secret weapon for compliance. A product must be present within a Service Catalog portfolio to apply constraints. These constraints allow you to limit the options available to end-users.
+
+- **Region Restriction**: You can configure the product so it only deploys to the two specific regions mandated by the business
+- **Parameter Limits**: Just as you might restrict an EC2 instance type to prevent someone from spinning up a costly p3.16xlarge, you can restrict input parameters to ensure tagging schemas are adhered to
+
+### 3. Version Control
+
+The requirement to allow developers to deploy "various versions" is handled natively. Service Catalog allows you to maintain multiple versions of a "Product." A developer can choose to deploy v1.0 or v2.0 of the application stack, but both versions will still be wrapped in the same compliance guardrails you established.
+
+## Implementation Approach
+
+AWS Service Catalog can be configured and provisioned using CloudFormation templates or AWS CDK. These are text files formatted in JSON or YAML that describe the resources you want to provision.
+
+### Key Resources to Configure:
+
+1. **Service Catalog Portfolio** - Container for your approved products
+2. **CloudFormation Products** - Multiple versions of your application stack
+3. **Template Constraints** - Region restrictions and tagging rules
+4. **Launch Constraints** - IAM roles for controlled provisioning
+5. **Portfolio Access** - IAM groups for developer self-service
+
+### Understanding the Implementation Flow:
+
+### Step 1: Create the Portfolio
+
+The portfolio acts as a container for your products. It's the top-level organizational unit that groups related products together.
+
+**Why:** By creating a dedicated portfolio, you establish a clear boundary for what developers can access and deploy. This is your governance perimeter.
+
+### Step 2: Define Products with Multiple Versions
+
+Create CloudFormation products that represent different versions of your application stack (v1.0, v2.0, v3.0).
+
+**Why:** Multiple product versions allow developers to choose which version to deploy while maintaining the same governance controls. This enables gradual rollouts, A/B testing, and rollback capabilities without sacrificing compliance. Each version is a separate CloudFormation template, but all inherit the same constraints.
+
+### Step 3: Apply Template Constraints
+
+Configure constraints that enforce:
+
+- **Region restrictions** (e.g., us-east-1 and eu-west-1 only)
+- **Required tags** (Environment, CostCenter, Owner)
+- **Parameter validation** (instance types, configurations)
+
+**Why:** Template constraints are the enforcement mechanism. They validate parameters before deployment begins, preventing non-compliant stacks from being created. The region restriction ensures resources are only deployed in approved regions, while tag validation ensures proper cost allocation and resource tracking. These constraints are evaluated at launch time, providing immediate feedback to developers.
+
+### Step 4: Configure Launch Roles
+
+Create an IAM role that Service Catalog assumes when provisioning resources on behalf of users.
+
+**Why:** The launch role is crucial for security. It defines what permissions Service Catalog has when provisioning resources. By using a dedicated role, you implement the principle of least privilege—developers don't need direct CloudFormation permissions; they only need Service Catalog access. This prevents privilege escalation.
+
+### Step 5: Grant Developer Access
+
+Create IAM groups with `AWSServiceCatalogEndUserFullAccess` policy and associate them with the portfolio.
+
+**Why:** Granting access to groups (rather than individual users) simplifies management and follows IAM best practices. Developers can browse the catalog, launch approved products, and manage their provisioned resources—all without direct access to CloudFormation or the underlying AWS services.
+
+### Implementation Resources
+
+AWS provides comprehensive documentation and CloudFormation templates for Service Catalog:
+
+- [AWS Service Catalog Administrator Guide](https://docs.aws.amazon.com/servicecatalog/latest/adminguide/)
+- [CloudFormation Resource Reference](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/AWS_ServiceCatalog.html)
+- [AWS CDK Service Catalog Module](https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.aws_servicecatalog-readme.html)
+
+These resources provide complete examples of CloudFormation templates and CDK code for implementing portfolios, products, and constraints.
+
+## Why Other Methods Miss the Mark
+
+When designing a governance strategy, it is easy to confuse similar-sounding AWS tools. Here is why other common options fail to meet the specific requirements of proactive restriction and tagging enforcement:
+
+### CloudFormation StackSets
+
+While StackSets are excellent for deploying to multiple accounts and regions simultaneously, they are a **deployment mechanism**, not a governance tool. They do not inherently enforce tagging policies or prevent a user from modifying the template to deploy in a restricted region if they have the permissions to do so.
+
+**Use Case:** Multi-account, multi-region deployments  
+**Limitation:** No built-in constraint enforcement
+
+### AWS Trusted Advisor
+
+This is a **reactive monitoring tool**. It helps you optimise costs and security after resources exist. It cannot prevent the creation of unapproved resources, nor can it enforce custom tagging requirements during the deployment phase.
+
+**Use Case:** Post-deployment optimization recommendations  
+**Limitation:** Cannot prevent non-compliant deployments
+
+### Drift Detection
+
+Drift detection is vital for maintaining state, but it is purely **retroactive**. It identifies when a stack has changed after deployment. It cannot stop a non-compliant deployment from happening in the first place.
+
+**Use Case:** Detecting manual changes to CloudFormation-managed resources  
+**Limitation:** Only detects issues after they occur
+
+## Comparison Table
+
+| Feature                    | Service Catalog | StackSets  | Trusted Advisor    | Drift Detection |
+| -------------------------- | --------------- | ---------- | ------------------ | --------------- |
+| **Proactive Enforcement**  | ✅ Yes          | ❌ No      | ❌ No              | ❌ No           |
+| **Region Restrictions**    | ✅ Yes          | ❌ No      | ❌ No              | ❌ No           |
+| **Tag Enforcement**        | ✅ Yes          | ❌ No      | ⚠️ Recommendations | ❌ No           |
+| **Version Control**        | ✅ Yes          | ⚠️ Manual  | ❌ No              | ❌ No           |
+| **Developer Self-Service** | ✅ Yes          | ❌ No      | ❌ No              | ❌ No           |
+| **Audit Trail**            | ✅ Yes          | ⚠️ Limited | ❌ No              | ⚠️ Limited      |
+| **Cost**                   | Free            | Free       | Free               | Free            |
+
+## The Verdict
+
+To satisfy the need for strict tagging and region locking while maintaining developer velocity, **AWS Service Catalog is the clear winner**.
+
+It transforms your compliance policy from a document that people ignore into code that people use. By defining constraints on your CloudFormation templates, you ensure that every deployment—regardless of the version—is secure, tagged, and located exactly where it should be.
+
+### Key Benefits
+
+1. **Proactive Compliance**: Prevents non-compliant deployments before they happen
+2. **Developer Velocity**: Self-service portal reduces friction and ticket queues
+3. **Version Management**: Multiple versions with consistent governance
+4. **Audit Trail**: Complete visibility into who deployed what and when
+5. **Cost Control**: Enforced tagging enables accurate cost allocation
+6. **Security**: Launch roles implement least privilege access
+
+### Implementation Checklist
+
+- [ ] Create Service Catalog portfolio
+- [ ] Upload approved CloudFormation templates
+- [ ] Define template constraints (regions, tags)
+- [ ] Configure launch role with appropriate permissions
+- [ ] Create IAM groups for developer access
+- [ ] Associate products with portfolio
+- [ ] Test deployment with constraints
+- [ ] Document self-service process for developers
+- [ ] Set up monitoring and audit logging
+- [ ] Train development teams on Service Catalog usage
+
+---
+
+_Architecting compliant cloud infrastructure in Dublin. Building systems that enable developer velocity without sacrificing governance. Questions about implementing Service Catalog in your organization? Let's connect._
+
+---

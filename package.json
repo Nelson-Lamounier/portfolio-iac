@@ -1,31 +1,17 @@
 {
-  "name": "aws-cdk-app",
+  "name": "portfolio-monorepo",
   "version": "1.0.0",
   "private": true,
+  "workspaces": [
+    "frontend",
+    "infrastructure"
+  ],
   "scripts": {
-    "build": "tsc",
-    "watch": "tsc -w",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage",
-    "test:update": "jest -u",
-    "cdk": "cdk",
-    "deploy": "cdk deploy",
-    "synth": "cdk synth"
+    "frontend:dev": "yarn workspace frontend dev",
+    "frontend:build": "yarn workspace frontend build",
+    "infra:deploy": "yarn workspace infrastructure deploy",
+    "infra:synth": "yarn workspace infrastructure synth",
+    "infra:test": "yarn workspace infrastructure test"
   },
-  "devDependencies": {
-    "@types/jest": "^29.5.11",
-    "@types/node": "^20.10.0",
-    "aws-cdk": "^2.150.0",
-    "jest": "^29.7.0",
-    "ts-jest": "^29.1.1",
-    "typescript": "^5.3.0"
-  },
-  "dependencies": {
-    "aws-cdk-lib": "^2.150.0",
-    "constructs": "^10.3.0",
-    "dotenv": "^16.3.1",
-    "source-map-support": "^0.5.21"
-  },
-  "packageManager": "yarn@4.0.2"
+  "packageManager": "yarn@4.0.0"
 }
