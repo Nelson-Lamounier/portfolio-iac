@@ -19,6 +19,7 @@ node_modules/
 # Environment variables
 .env
 .env*.local
+.envrc
 
 # OS files
 .DS_Store
@@ -56,5 +57,3 @@ infrastructure/cdk.out
 # Documentation (generated/personal notes)
 docs/*
 
-# Helper scripts (local development)
-scripts/*
