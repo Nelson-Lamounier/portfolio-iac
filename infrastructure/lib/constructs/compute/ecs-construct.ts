@@ -3,8 +3,7 @@
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as autoscaling from "aws-cdk-lib/aws-autoscaling";
-import { DockerImageAsset } from "aws-cdk-lib/aws-ecr-assets";
-import { Stack, Tags } from "aws-cdk-lib";
+import { Tags } from "aws-cdk-lib";
 import { Construct } from "constructs";
 
 export interface EcsConstructProps {
@@ -17,7 +16,8 @@ export interface EcsConstructProps {
   desiredCapacity?: number;
   containerPort?: number;
   cpu?: number;
-  memoryLimitMiB?: number;
+  memoryLimitMiB?: number; // Hard limit - task killed if exceeded
+  memoryReservationMiB?: number; // Soft limit - minimum memory reserved
 }
 
 export class EcsConstruct extends Construct {
@@ -74,6 +74,14 @@ export class EcsConstruct extends Construct {
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: `ecs-${props.envName}`,
       }),
+      // Memory configuration
+      // Soft limit: minimum memory reserved for the container
+      // Task won't be killed if it exceeds this, but may be throttled
+      memoryReservationMiB: props.memoryReservationMiB || 512,
+      // Hard limit: task is killed if memory exceeds this (optional)
+      memoryLimitMiB: props.memoryLimitMiB,
+      // CPU units (1024 = 1 vCPU)
+      cpu: props.cpu,
     });
 
     // Add port mapping with DYNAMIC host port
@@ -96,6 +104,16 @@ export class EcsConstruct extends Construct {
         ecs.PlacementStrategy.spreadAcrossInstances(),
         ecs.PlacementStrategy.packedByCpu(),
       ],
+
+      // Circuit breaker for automatic rollback
+      // If deployment fails (tasks can't start), automatically roll back
+      circuitBreaker: {
+        rollback: true, // Enable automatic rollback on failure
+      },
+
+      // Deployment configuration
+      minHealthyPercent: 50, // Allow 50% of tasks to be stopped during deployment
+      maxHealthyPercent: 200, // Allow up to 200% of tasks during deployment
     });
 
     // Tag service

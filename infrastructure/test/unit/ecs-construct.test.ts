@@ -160,12 +160,47 @@ describe("EcsConstruct", () => {
       });
     });
 
-    test("has container with correct configuration", () => {
+    test("has default memory reservation (soft limit)", () => {
       new EcsConstruct(stack, "TestEcs", {
         vpc,
         envName: "test",
         containerImage: ecs.ContainerImage.fromRegistry("nginx"),
-        cpu: 512,
+      });
+      const template = Template.fromStack(stack);
+
+      template.hasResourceProperties("AWS::ECS::TaskDefinition", {
+        ContainerDefinitions: Match.arrayWith([
+          Match.objectLike({
+            MemoryReservation: 512, // Default soft limit
+          }),
+        ]),
+      });
+    });
+
+    test("respects custom memory reservation", () => {
+      new EcsConstruct(stack, "TestEcs", {
+        vpc,
+        envName: "test",
+        containerImage: ecs.ContainerImage.fromRegistry("nginx"),
+        memoryReservationMiB: 1024,
+      });
+      const template = Template.fromStack(stack);
+
+      template.hasResourceProperties("AWS::ECS::TaskDefinition", {
+        ContainerDefinitions: Match.arrayWith([
+          Match.objectLike({
+            MemoryReservation: 1024,
+          }),
+        ]),
+      });
+    });
+
+    test("has container with hard memory limit when specified", () => {
+      new EcsConstruct(stack, "TestEcs", {
+        vpc,
+        envName: "test",
+        containerImage: ecs.ContainerImage.fromRegistry("nginx"),
+        memoryReservationMiB: 512,
         memoryLimitMiB: 1024,
       });
       const template = Template.fromStack(stack);
@@ -173,8 +208,26 @@ describe("EcsConstruct", () => {
       template.hasResourceProperties("AWS::ECS::TaskDefinition", {
         ContainerDefinitions: Match.arrayWith([
           Match.objectLike({
-            Cpu: 512,
+            MemoryReservation: 512,
             Memory: 1024,
+          }),
+        ]),
+      });
+    });
+
+    test("has container with CPU when specified", () => {
+      new EcsConstruct(stack, "TestEcs", {
+        vpc,
+        envName: "test",
+        containerImage: ecs.ContainerImage.fromRegistry("nginx"),
+        cpu: 512,
+      });
+      const template = Template.fromStack(stack);
+
+      template.hasResourceProperties("AWS::ECS::TaskDefinition", {
+        ContainerDefinitions: Match.arrayWith([
+          Match.objectLike({
+            Cpu: 512,
           }),
         ]),
       });
@@ -297,6 +350,40 @@ describe("EcsConstruct", () => {
 
       template.hasResourceProperties("AWS::ECS::Service", {
         DesiredCount: 2,
+      });
+    });
+
+    test("service has circuit breaker enabled for automatic rollback", () => {
+      new EcsConstruct(stack, "TestEcs", {
+        vpc,
+        envName: "test",
+        containerImage: ecs.ContainerImage.fromRegistry("nginx"),
+      });
+      const template = Template.fromStack(stack);
+
+      template.hasResourceProperties("AWS::ECS::Service", {
+        DeploymentConfiguration: Match.objectLike({
+          DeploymentCircuitBreaker: {
+            Enable: true,
+            Rollback: true,
+          },
+        }),
+      });
+    });
+
+    test("service has correct deployment configuration", () => {
+      new EcsConstruct(stack, "TestEcs", {
+        vpc,
+        envName: "test",
+        containerImage: ecs.ContainerImage.fromRegistry("nginx"),
+      });
+      const template = Template.fromStack(stack);
+
+      template.hasResourceProperties("AWS::ECS::Service", {
+        DeploymentConfiguration: Match.objectLike({
+          MinimumHealthyPercent: 50,
+          MaximumPercent: 200,
+        }),
       });
     });
 

@@ -5,7 +5,6 @@ import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecr from "aws-cdk-lib/aws-ecr";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as ssm from "aws-cdk-lib/aws-ssm";
-import * as path from "path";
 import { Construct } from "constructs";
 import { EcsConstruct } from "../../constructs/compute/ecs-construct";
 import { ContainerImageConstruct } from "../../constructs/compute/container-image-construct";
@@ -18,6 +17,9 @@ export interface ComputeStackProps extends cdk.StackProps {
   minCapacity?: number;
   maxCapacity?: number;
   desiredCapacity?: number;
+  memoryReservationMiB?: number; // Soft memory limit
+  memoryLimitMiB?: number; // Hard memory limit (optional)
+  cpu?: number; // CPU units
 }
 
 /**
@@ -59,6 +61,10 @@ export class ComputeStack extends cdk.Stack {
       maxCapacity: props.maxCapacity ?? 1,
       desiredCapacity: props.desiredCapacity ?? 1,
       containerImage: containerImageConstruct.containerImage,
+      // Memory configuration
+      memoryReservationMiB: props.memoryReservationMiB ?? 512, // Soft limit
+      memoryLimitMiB: props.memoryLimitMiB, // Hard limit (optional)
+      cpu: props.cpu,
     });
 
     this.cluster = ecsConstruct.cluster;
