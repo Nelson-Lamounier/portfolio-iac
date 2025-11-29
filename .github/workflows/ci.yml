@@ -16,18 +16,14 @@ permissions:
   pull-requests: write
 
 jobs:
-  # Detect which workspaces changed
   detect-changes:
     runs-on: ubuntu-latest
     outputs:
       frontend: ${{ steps.filter.outputs.frontend }}
       infrastructure: ${{ steps.filter.outputs.infrastructure }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Check for changes
-        uses: dorny/paths-filter@v3
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
         id: filter
         with:
           filters: |
@@ -40,49 +36,30 @@ jobs:
               - 'package.json'
               - 'yarn.lock'
 
-  # Frontend CI
   frontend-ci:
     runs-on: ubuntu-latest
     needs: detect-changes
     if: needs.detect-changes.outputs.frontend == 'true'
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - run: corepack enable
+      - run: make install
+      - run: yarn workspace frontend lint
+      - run: make test-frontend
+      - run: make build-frontend
 
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Install dependencies
-        run: yarn install --immutable
-
-      - name: Run frontend linter
-        run: yarn workspace frontend lint
-
-      - name: Run frontend tests with coverage
-        run: yarn workspace frontend test --ci --coverage --maxWorkers=2
-
-      - name: Build frontend
-        run: yarn workspace frontend build
-
-      - name: Upload frontend coverage
-        uses: codecov/codecov-action@v4
+      - uses: codecov/codecov-action@v4
         if: always()
         with:
           files: ./frontend/coverage/lcov.info
           flags: frontend
           fail_ci_if_error: false
 
-      - name: Validate Docker build
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker image (validation)
-        uses: docker/build-push-action@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v5
         with:
           context: ./frontend
           platforms: linux/amd64
@@ -91,42 +68,24 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # Infrastructure CI
   infrastructure-ci:
     runs-on: ubuntu-latest
     needs: detect-changes
     if: needs.detect-changes.outputs.infrastructure == 'true'
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "22"
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Install dependencies
-        run: yarn install --immutable
-
-      - name: Build infrastructure
-        run: yarn workspace infrastructure build
-
-      - name: Check TypeScript
-        run: yarn workspace infrastructure tsc --noEmit
-
-      - name: Run infrastructure tests
-        run: yarn workspace infrastructure test:coverage
-
-      - name: Security audit
-        run: yarn workspace infrastructure npm audit --audit-level moderate
+      - run: corepack enable
+      - run: make install
+      - run: make build-infrastructure
+      - run: yarn workspace infrastructure tsc --noEmit
+      - run: make test-infrastructure
+      - run: yarn workspace infrastructure npm audit --audit-level moderate
         continue-on-error: true
 
-      - name: Upload infrastructure coverage
-        uses: codecov/codecov-action@v4
+      - uses: codecov/codecov-action@v4
         if: always()
         with:
           files: ./infrastructure/coverage/lcov.info
@@ -142,136 +101,60 @@ jobs:
       id-token: write
       contents: read
       pull-requests: write
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - run: corepack enable
+      - run: make install
+      - run: make build-infrastructure
 
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Install dependencies
-        run: yarn install --immutable
-
-      - name: Build infrastructure
-        run: yarn workspace infrastructure build
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
 
-      - name: Fetch parameters from Parameter Store
-        id: fetch-params
-        run: |
-          echo "Fetching parameters for development environment..."
-
-          AWS_ACCOUNT_ID=$(aws ssm get-parameter --name "/github-actions/accounts/dev" --query "Parameter.Value" --output text)
-          AWS_PIPELINE_ACCOUNT_ID=$(aws ssm get-parameter --name "/github-actions/accounts/pipeline" --query "Parameter.Value" --output text)
-
-          echo "✓ Found account IDs in Parameter Store"
-          echo "::add-mask::$AWS_ACCOUNT_ID"
-          echo "::add-mask::$AWS_PIPELINE_ACCOUNT_ID"
-
-          echo "AWS_ACCOUNT_ID_DEV=$AWS_ACCOUNT_ID" >> $GITHUB_ENV
-          echo "AWS_PIPELINE_ACCOUNT_ID=$AWS_PIPELINE_ACCOUNT_ID" >> $GITHUB_ENV
-          echo "TARGET_ACCOUNT_ID=$AWS_ACCOUNT_ID" >> $GITHUB_ENV
-
-      - name: Verify CDK Bootstrap
-        run: |
-          REGION="${{ vars.AWS_REGION || 'eu-west-1' }}"
-
-          echo "Verifying CDK bootstrap for development environment..."
-          echo "Target Account: ${{ env.TARGET_ACCOUNT_ID }}"
-          echo "Region: ${REGION}"
-
-          if aws cloudformation describe-stacks \
-            --stack-name CDKToolkit \
-            --region ${REGION} 2>/dev/null; then
-            
-            echo "✓ CDK bootstrap stack found"
-            
-            BOOTSTRAP_VERSION=$(aws cloudformation describe-stacks \
-              --stack-name CDKToolkit \
-              --region ${REGION} \
-              --query 'Stacks[0].Outputs[?OutputKey==`BootstrapVersion`].OutputValue' \
-              --output text 2>/dev/null || echo "unknown")
-            
-            echo "✓ Bootstrap version: ${BOOTSTRAP_VERSION}"
-            
-          else
-            echo "⚠ Warning: CDK bootstrap stack not found!"
-            echo "CDK diff may fail. Bootstrap the account with:"
-            echo ""
-            echo "  cdk bootstrap aws://${{ env.TARGET_ACCOUNT_ID }}/${REGION} \\"
-            echo "    --profile dev-sso \\"
-            echo "    --trust ${{ env.AWS_PIPELINE_ACCOUNT_ID }} \\"
-            echo "    --cloudformation-execution-policies arn:aws:iam::aws:policy/AdministratorAccess"
-            echo ""
-            echo "See docs/BOOTSTRAP.md for instructions."
-          fi
-
-      - name: CDK Synth
-        run: yarn workspace infrastructure cdk synth
+      - name: Fetch AWS accounts
+        run: make fetch-aws-accounts
         env:
           ENVIRONMENT: development
-          AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
 
-      - name: CDK Diff
-        id: cdk-diff
-        run: |
-          echo "Running CDK diff..."
-          yarn workspace infrastructure cdk diff 2>&1 | tee cdk-diff.txt
+      - name: Verify CDK bootstrap
+        run: make verify-cdk-bootstrap
         continue-on-error: true
         env:
           ENVIRONMENT: development
           AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
 
-      - name: Comment PR with diff
-        uses: actions/github-script@v7
+      - run: make cdk-synth
+        env:
+          ENVIRONMENT: development
+          AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
+
+      - name: CDK Diff
+        run: yarn workspace infrastructure cdk diff 2>&1 | tee cdk-diff.txt
+        continue-on-error: true
+        env:
+          ENVIRONMENT: development
+          AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
+
+      - uses: actions/github-script@v7
         if: github.event_name == 'pull_request'
         with:
           script: |
             const fs = require('fs');
             let diff = '';
-
             try {
               diff = fs.readFileSync('cdk-diff.txt', 'utf8');
             } catch (error) {
-              diff = 'No changes detected or diff unavailable';
+              diff = 'No changes detected';
             }
-
-            const sanitizedDiff = diff
-              .slice(0, 60000)
-              .replace(/\\/g, '\\\\')
-              .replace(/`/g, '\\`')
-              .replace(/\$/g, '\\$');
-
-            const output = `#### CDK Diff Results
-            <details><summary>Show Diff</summary>
-
-            \`\`\`
-            ${sanitizedDiff}
-            \`\`\`
-
-            </details>
-
-            *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
-
-            try {
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: output
-              });
-            } catch (error) {
-              console.log('Failed to post comment:', error.message);
-              console.log('Diff output was:', diff.length, 'characters');
-            }
+            const sanitizedDiff = diff.slice(0, 60000).replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$');
+            const output = `#### CDK Diff Results\n<details><summary>Show Diff</summary>\n\n\`\`\`\n${sanitizedDiff}\n\`\`\`\n\n</details>`;
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            });
