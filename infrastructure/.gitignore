@@ -1,0 +1,17 @@
+# CDK specific ignores
+# (Common ignores are handled by root .gitignore)
+
+# CDK build outputs
+*.js
+!jest.config.js
+*.d.ts
+
+# CDK asset staging
+.cdk.staging
+cdk.out
+
+# Infrastructure-specific documentation
+docs/*
+
+# Helper scripts (local development)
+scripts/*
