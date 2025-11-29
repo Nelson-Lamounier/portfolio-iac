@@ -1,0 +1,17 @@
+{
+  "name": "portfolio-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "infrastructure"
+  ],
+  "scripts": {
+    "frontend:dev": "yarn workspace frontend dev",
+    "frontend:build": "yarn workspace frontend build",
+    "infra:deploy": "yarn workspace infrastructure deploy",
+    "infra:synth": "yarn workspace infrastructure synth",
+    "infra:test": "yarn workspace infrastructure test"
+  },
+  "packageManager": "yarn@4.0.0"
+}
