@@ -21,7 +21,6 @@ on:
 env:
   NODE_VERSION: "22"
   AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
-  # Map branch to environment: develop -> development, main -> production
   ENVIRONMENT: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }}
 
 permissions:
@@ -29,18 +28,14 @@ permissions:
   contents: read
 
 jobs:
-  # Detect which workspaces changed
   detect-changes:
     runs-on: ubuntu-latest
     outputs:
       frontend: ${{ steps.filter.outputs.frontend }}
       infrastructure: ${{ steps.filter.outputs.infrastructure }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Check for changes
-        uses: dorny/paths-filter@v3
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
         id: filter
         with:
           filters: |
@@ -49,7 +44,6 @@ jobs:
             infrastructure:
               - 'infrastructure/**'
 
-  # Build and push frontend Docker image
   build-frontend:
     runs-on: ubuntu-latest
     needs: detect-changes
@@ -60,144 +54,63 @@ jobs:
       image-uri: ${{ steps.image-info.outputs.image-uri }}
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Enable Corepack
-        run: corepack enable
+      - run: corepack enable
 
-      - name: Install dependencies
-        run: yarn install --immutable
+      - run: make install
 
-      - name: Run frontend tests
-        run: yarn workspace frontend test --ci --coverage --maxWorkers=2
+      - run: make test-frontend
 
-      - name: Build frontend
-        run: yarn workspace frontend build
+      - run: make build-frontend
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Check if infrastructure exists
+      - name: Check infrastructure
         id: check-infra
-        run: |
-          echo "Checking if infrastructure exists..."
-          PARAM_NAME="/ecr/${{ env.ENVIRONMENT }}/repository-uri"
+        run: make check-infra
+        env:
+          ENVIRONMENT: ${{ env.ENVIRONMENT }}
+          AWS_REGION: ${{ env.AWS_REGION }}
 
-          if aws ssm get-parameter --name "$PARAM_NAME" --region ${{ env.AWS_REGION }} 2>/dev/null; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-            echo "✓ Infrastructure exists"
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-            echo "⚠ Infrastructure not found - will deploy infrastructure first"
-            echo "::warning::ECR repository not found. Infrastructure must be deployed before frontend."
-          fi
-
-      - name: Fetch ECR repository URI
+      - name: Fetch ECR URI
         id: get-ecr-repo
         if: steps.check-infra.outputs.exists == 'true'
-        run: |
-          echo "Fetching ECR repository URI from Parameter Store..."
+        run: make fetch-ecr-uri
+        env:
+          ENVIRONMENT: ${{ env.ENVIRONMENT }}
+          AWS_REGION: ${{ env.AWS_REGION }}
 
-          PARAM_NAME="/ecr/${{ env.ENVIRONMENT }}/repository-uri"
-
-          ECR_REPO_URI=$(aws ssm get-parameter \
-            --name "$PARAM_NAME" \
-            --query 'Parameter.Value' \
-            --output text \
-            --region ${{ env.AWS_REGION }})
-
-          if [ -z "$ECR_REPO_URI" ]; then
-            echo "Failed to fetch ECR repository URI"
-            exit 1
-          fi
-
-          ECR_REPO_NAME=$(echo "$ECR_REPO_URI" | awk -F'/' '{print $NF}')
-          ECR_REGISTRY=$(echo "$ECR_REPO_URI" | sed 's|/[^/]*$||')
-          TARGET_ACCOUNT=$(echo "$ECR_REGISTRY" | cut -d'.' -f1)
-
-          echo "::add-mask::$TARGET_ACCOUNT"
-          echo "::add-mask::$ECR_REPO_URI"
-          echo "::add-mask::$ECR_REGISTRY"
-
-          echo "✓ Successfully fetched ECR repository URI"
-          echo "Repository Name: $ECR_REPO_NAME"
-
-          echo "repository-uri=${ECR_REPO_URI}" >> $GITHUB_OUTPUT
-          echo "repository-name=${ECR_REPO_NAME}" >> $GITHUB_OUTPUT
-          echo "registry=${ECR_REGISTRY}" >> $GITHUB_OUTPUT
-          echo "target-account=${TARGET_ACCOUNT}" >> $GITHUB_OUTPUT
-
-      - name: Login to Amazon ECR
+      - uses: aws-actions/amazon-ecr-login@v2
         if: steps.check-infra.outputs.exists == 'true'
-        uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Set up Docker Buildx
+      - name: Build and push Docker
         if: steps.check-infra.outputs.exists == 'true'
-        uses: docker/setup-buildx-action@v3
+        run: make docker-build-push
+        env:
+          ECR_REPO_URI: ${{ steps.get-ecr-repo.outputs.repository-uri }}
+          IMAGE_TAG: ${{ github.sha }}
+          ENVIRONMENT: ${{ env.ENVIRONMENT }}
 
-      - name: Build and push Docker image
-        if: steps.check-infra.outputs.exists == 'true'
-        run: |
-          IMAGE_TAG_SHA="${{ github.sha }}"
-          IMAGE_TAG_LATEST="latest"
-          IMAGE_TAG_ENV="${{ env.ENVIRONMENT }}-latest"
-          ECR_REPO_URI="${{ steps.get-ecr-repo.outputs.repository-uri }}"
-
-          echo "Building and pushing image..."
-
-          docker buildx build \
-            --platform linux/amd64 \
-            --build-arg NODE_ENV=production \
-            --tag "${ECR_REPO_URI}:${IMAGE_TAG_SHA}" \
-            --tag "${ECR_REPO_URI}:${IMAGE_TAG_LATEST}" \
-            --tag "${ECR_REPO_URI}:${IMAGE_TAG_ENV}" \
-            --push \
-            --cache-from type=registry,ref=${ECR_REPO_URI}:buildcache \
-            --cache-to type=registry,ref=${ECR_REPO_URI}:buildcache,mode=max \
-            ./frontend
-
-          echo "✓ Successfully pushed image with tags: ${IMAGE_TAG_SHA}, ${IMAGE_TAG_LATEST}, ${IMAGE_TAG_ENV}"
-
-      - name: Set image info outputs
+      - name: Set outputs
         id: image-info
         if: steps.check-infra.outputs.exists == 'true'
         run: |
-          IMAGE_TAG="${{ github.sha }}"
-          IMAGE_URI="${{ steps.get-ecr-repo.outputs.repository-uri }}:${IMAGE_TAG}"
-          echo "image-tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
-          echo "image-uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
+          echo "image-tag=${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "image-uri=${{ steps.get-ecr-repo.outputs.repository-uri }}:${{ github.sha }}" >> $GITHUB_OUTPUT
 
-      - name: Skip frontend build notice
+      - name: Skip notice
         if: steps.check-infra.outputs.exists != 'true'
         run: |
           echo "::notice::Skipping frontend Docker build - infrastructure not deployed yet"
-          echo "## Frontend Build Skipped" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Infrastructure must be deployed first to create the ECR repository." >> $GITHUB_STEP_SUMMARY
-          echo "The infrastructure deployment will proceed automatically." >> $GITHUB_STEP_SUMMARY
 
-      - name: Verify image in ECR
-        if: steps.check-infra.outputs.exists == 'true'
-        run: |
-          ECR_REPO_NAME="${{ steps.get-ecr-repo.outputs.repository-name }}"
-
-          echo "Verifying image in ECR..."
-          aws ecr describe-images \
-            --repository-name "$ECR_REPO_NAME" \
-            --image-ids imageTag=${{ github.sha }} \
-            --region ${{ env.AWS_REGION }} \
-            --output table
-
-  # Manual approval gate for infrastructure deployment
   approve-infrastructure-deployment:
     runs-on: ubuntu-latest
     needs: [detect-changes, build-frontend]
@@ -208,26 +121,8 @@ jobs:
     environment:
       name: approve-infrastructure-${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }}
     steps:
-      - name: Manual approval required
-        run: |
-          echo "::notice::Infrastructure changes detected"
-          if [ "${{ needs.build-frontend.result }}" == "success" ]; then
-            echo "::notice::Frontend deployment completed successfully"
-          fi
-          echo "::notice::Waiting for manual approval to deploy infrastructure..."
-          echo ""
-          echo "## Infrastructure Deployment Approval" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ needs.build-frontend.result }}" == "success" ]; then
-            echo "Frontend deployed successfully" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "Frontend build skipped (infrastructure not yet deployed)" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "Infrastructure changes detected" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Action Required:** Approve this deployment to proceed with infrastructure changes" >> $GITHUB_STEP_SUMMARY
+      - run: echo "::notice::Waiting for manual approval to deploy infrastructure..."
 
-  # Deploy infrastructure with CDK
   deploy-infrastructure:
     runs-on: ubuntu-latest
     needs: [detect-changes, build-frontend, approve-infrastructure-deployment]
@@ -241,141 +136,42 @@ jobs:
       cancel-in-progress: false
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Enable Corepack
-        run: corepack enable
+      - run: corepack enable
 
-      - name: Install dependencies
-        run: yarn install --immutable
+      - run: make install
 
-      - name: Build infrastructure
-        run: yarn workspace infrastructure build
+      - run: make build-infrastructure
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Fetch parameters from Parameter Store
-        id: fetch-params
-        run: |
-          echo "Fetching parameters from AWS Systems Manager Parameter Store..."
+      - name: Fetch AWS accounts
+        run: make fetch-aws-accounts
+        env:
+          ENVIRONMENT: ${{ env.ENVIRONMENT }}
 
-          # Map environment names to parameter names
-          case "${{ env.ENVIRONMENT }}" in
-            "development")
-              PARAM_NAME="dev"
-              ENV_VAR_NAME="AWS_ACCOUNT_ID_DEV"
-              ;;
-            "staging")
-              PARAM_NAME="test"
-              ENV_VAR_NAME="AWS_ACCOUNT_ID_STAGING"
-              ;;
-            "production")
-              PARAM_NAME="prod"
-              ENV_VAR_NAME="AWS_ACCOUNT_ID_PROD"
-              ;;
-            *)
-              echo "Unknown environment: ${{ env.ENVIRONMENT }}"
-              exit 1
-              ;;
-          esac
+      - name: Verify CDK bootstrap
+        run: make verify-cdk-bootstrap
+        env:
+          ENVIRONMENT: ${{ env.ENVIRONMENT }}
+          AWS_REGION: ${{ env.AWS_REGION }}
 
-          AWS_ACCOUNT_ID=$(aws ssm get-parameter --name "/github-actions/accounts/${PARAM_NAME}" --query "Parameter.Value" --output text)
-          AWS_PIPELINE_ACCOUNT_ID=$(aws ssm get-parameter --name "/github-actions/accounts/pipeline" --query "Parameter.Value" --output text)
-
-          echo "✓ Found account ID for ${{ env.ENVIRONMENT }} environment"
-          echo "::add-mask::$AWS_ACCOUNT_ID"
-          echo "::add-mask::$AWS_PIPELINE_ACCOUNT_ID"
-
-          echo "${ENV_VAR_NAME}=$AWS_ACCOUNT_ID" >> $GITHUB_ENV
-          echo "AWS_PIPELINE_ACCOUNT_ID=$AWS_PIPELINE_ACCOUNT_ID" >> $GITHUB_ENV
-          echo "TARGET_ACCOUNT_ID=$AWS_ACCOUNT_ID" >> $GITHUB_ENV
-
-      - name: Verify CDK Bootstrap
-        run: |
-          echo "Verifying CDK bootstrap for ${{ env.ENVIRONMENT }} environment..."
-          echo "Target Account: ${{ env.TARGET_ACCOUNT_ID }}"
-          echo "Region: ${{ env.AWS_REGION }}"
-
-          if aws cloudformation describe-stacks \
-            --stack-name CDKToolkit \
-            --region ${{ env.AWS_REGION }} 2>/dev/null; then
-            
-            echo "✓ CDK bootstrap stack found"
-            
-            BOOTSTRAP_VERSION=$(aws cloudformation describe-stacks \
-              --stack-name CDKToolkit \
-              --region ${{ env.AWS_REGION }} \
-              --query 'Stacks[0].Outputs[?OutputKey==`BootstrapVersion`].OutputValue' \
-              --output text 2>/dev/null || echo "unknown")
-            
-            echo "✓ Bootstrap version: ${BOOTSTRAP_VERSION}"
-            
-            TRUSTED_ACCOUNTS=$(aws cloudformation describe-stacks \
-              --stack-name CDKToolkit \
-              --region ${{ env.AWS_REGION }} \
-              --query 'Stacks[0].Parameters[?ParameterKey==`TrustedAccounts`].ParameterValue' \
-              --output text 2>/dev/null || echo "")
-            
-            if echo "$TRUSTED_ACCOUNTS" | grep -q "${{ env.AWS_PIPELINE_ACCOUNT_ID }}"; then
-              echo "✓ Trust relationship configured with pipeline account"
-            else
-              echo "⚠ Warning: Pipeline account may not be trusted"
-            fi
-            
-          else
-            echo "ERROR: CDK bootstrap stack not found!"
-            echo "Bootstrap the account with:"
-            echo "  cdk bootstrap aws://${{ env.TARGET_ACCOUNT_ID }}/${{ env.AWS_REGION }} \\"
-            echo "    --trust ${{ env.AWS_PIPELINE_ACCOUNT_ID }} \\"
-            echo "    --cloudformation-execution-policies arn:aws:iam::aws:policy/AdministratorAccess"
-            exit 1
-          fi
-
-      - name: CDK Synth
-        run: yarn workspace infrastructure cdk synth
+      - run: make cdk-synth
         env:
           ENVIRONMENT: ${{ env.ENVIRONMENT }}
           AWS_REGION: ${{ env.AWS_REGION }}
           FRONTEND_IMAGE_TAG: ${{ needs.build-frontend.outputs.image-tag || 'latest' }}
 
-      - name: Require approval for production
-        if: env.ENVIRONMENT == 'production'
-        run: |
-          echo "::warning::Deploying to PRODUCTION environment"
-          echo "This deployment requires manual approval via GitHub Environment protection rules"
-
-      - name: CDK Deploy
-        run: yarn workspace infrastructure cdk deploy --all --require-approval never
+      - run: make cdk-deploy
         env:
           ENVIRONMENT: ${{ env.ENVIRONMENT }}
           AWS_REGION: ${{ env.AWS_REGION }}
           FRONTEND_IMAGE_TAG: ${{ needs.build-frontend.outputs.image-tag || 'latest' }}
-
-      - name: Generate deployment summary
-        if: always()
-        run: |
-          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Environment:** ${{ env.ENVIRONMENT }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Region:** ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Components Deployed" >> $GITHUB_STEP_SUMMARY
-          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Frontend Docker Image | ${{ needs.build-frontend.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Infrastructure (CDK) | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ needs.build-frontend.result }}" == "success" ]; then
-            echo "**Frontend Image:** ${{ needs.build-frontend.outputs.image-uri }}" >> $GITHUB_STEP_SUMMARY
-          fi
