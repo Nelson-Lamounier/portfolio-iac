@@ -61,6 +61,7 @@ export class ComputeStack extends cdk.Stack {
       maxCapacity: props.maxCapacity ?? 1,
       desiredCapacity: props.desiredCapacity ?? 1,
       containerImage: containerImageConstruct.containerImage,
+      containerPort: 3000, // Next.js runs on port 3000
       // Memory configuration
       memoryReservationMiB: props.memoryReservationMiB ?? 512, // Soft limit
       memoryLimitMiB: props.memoryLimitMiB, // Hard limit (optional)

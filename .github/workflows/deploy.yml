@@ -168,10 +168,10 @@ jobs:
         env:
           ENVIRONMENT: ${{ env.ENVIRONMENT }}
           AWS_REGION: ${{ env.AWS_REGION }}
-          FRONTEND_IMAGE_TAG: ${{ needs.build-frontend.outputs.image-tag || 'latest' }}
+          IMAGE_TAG: ${{ needs.build-frontend.outputs.image-tag || 'nginx:alpine' }}
 
       - run: make cdk-deploy
         env:
           ENVIRONMENT: ${{ env.ENVIRONMENT }}
           AWS_REGION: ${{ env.AWS_REGION }}
-          FRONTEND_IMAGE_TAG: ${{ needs.build-frontend.outputs.image-tag || 'latest' }}
+          IMAGE_TAG: ${{ needs.build-frontend.outputs.image-tag || 'nginx:alpine' }}
