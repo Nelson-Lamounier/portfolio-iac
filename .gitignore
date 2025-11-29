@@ -3,6 +3,10 @@ node_modules/
 .pnp
 .pnp.js
 
+# .kiro
+
+.kiro/*
+
 # Yarn
 .yarn/*
 !.yarn/patches
@@ -39,6 +43,11 @@ build/
 # IDE
 .vscode/
 .idea/
+
+# Kiro MCP settings (contains secrets)
+.kiro/settings/mcp.json
+
+.cache_ggshield
 
 # CDK (infrastructure-specific)
 infrastructure/.cdk.staging
