@@ -56,14 +56,14 @@ export class ComputeStack extends cdk.Stack {
     const ecsConstruct = new EcsConstruct(this, "Ecs", {
       vpc: props.vpc,
       envName: props.envName,
-      instanceType: props.instanceType || new ec2.InstanceType("t3.nano"),
+      instanceType: props.instanceType || new ec2.InstanceType("t3.micro"), // Changed from t3.nano (1GB RAM)
       minCapacity: props.minCapacity ?? 1,
       maxCapacity: props.maxCapacity ?? 1,
       desiredCapacity: props.desiredCapacity ?? 1,
       containerImage: containerImageConstruct.containerImage,
       containerPort: 3000, // Next.js runs on port 3000
       // Memory configuration
-      memoryReservationMiB: props.memoryReservationMiB ?? 512, // Soft limit
+      memoryReservationMiB: props.memoryReservationMiB ?? 384, // Reduced from 512 to leave room for ECS agent
       memoryLimitMiB: props.memoryLimitMiB, // Hard limit (optional)
       cpu: props.cpu,
     });

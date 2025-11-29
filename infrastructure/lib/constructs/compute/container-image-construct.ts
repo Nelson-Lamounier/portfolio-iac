@@ -37,17 +37,28 @@ export class ContainerImageConstruct extends Construct {
     this.imageTag = props.imageTag || process.env.IMAGE_TAG || defaultImage;
 
     // Determine if we're using ECR or public registry
-    this.isEcrImage = this.imageTag !== defaultImage;
+    // Use public registry if:
+    // - imageTag is nginx:alpine (default)
+    // - imageTag contains ":" (indicates registry/image:tag format like nginx:alpine)
+    const isPublicRegistryImage =
+      this.imageTag === defaultImage ||
+      (this.imageTag.includes(":") && !this.imageTag.includes("/"));
+
+    this.isEcrImage = !isPublicRegistryImage;
 
     // Create container image based on source
     if (this.isEcrImage) {
       // Use ECR image with specific tag
+      console.log(
+        `Using ECR image: ${props.repository.repositoryUri}:${this.imageTag}`
+      );
       this.containerImage = ecs.ContainerImage.fromEcrRepository(
         props.repository,
         this.imageTag
       );
     } else {
       // Use public registry image (for initial deployment)
+      console.log(`Using public registry image: ${this.imageTag}`);
       this.containerImage = ecs.ContainerImage.fromRegistry(this.imageTag);
     }
   }

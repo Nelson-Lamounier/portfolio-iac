@@ -105,14 +105,15 @@ export class EcsConstruct extends Construct {
         ecs.PlacementStrategy.packedByCpu(),
       ],
 
-      // Circuit breaker for automatic rollback
-      // If deployment fails (tasks can't start), automatically roll back
+      // Circuit breaker DISABLED for debugging
+      // Must explicitly set enable: false to disable it
+      // Re-enable after debugging: circuitBreaker: { enable: true, rollback: true }
       circuitBreaker: {
-        rollback: true, // Enable automatic rollback on failure
+        enable: false, // Completely disable circuit breaker
       },
 
       // Deployment configuration
-      minHealthyPercent: 50, // Allow 50% of tasks to be stopped during deployment
+      minHealthyPercent: 0, // Allow all tasks to be stopped (for initial deployment)
       maxHealthyPercent: 200, // Allow up to 200% of tasks during deployment
     });
 
