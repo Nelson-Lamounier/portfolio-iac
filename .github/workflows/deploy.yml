@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - main
+      - develop
   workflow_dispatch:
     inputs:
       environment:
@@ -17,16 +18,163 @@ on:
           - staging
           - production
 
+env:
+  NODE_VERSION: "22"
+  AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
+  # Map branch to environment: develop -> development, main -> production
+  ENVIRONMENT: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }}
+
 permissions:
   id-token: write
   contents: read
 
 jobs:
-  deploy:
+  # Detect which workspaces changed
+  detect-changes:
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment || 'development' }}
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      infrastructure: ${{ steps.filter.outputs.infrastructure }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for changes
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            frontend:
+              - 'frontend/**'
+            infrastructure:
+              - 'infrastructure/**'
+
+  # Build and push frontend Docker image
+  build-frontend:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: always() && (needs.detect-changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch')
+    environment: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }}
+    outputs:
+      image-tag: ${{ steps.image-info.outputs.image-tag }}
+      image-uri: ${{ steps.image-info.outputs.image-uri }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Run frontend tests
+        run: yarn workspace frontend test --ci --coverage --maxWorkers=2
+
+      - name: Build frontend
+        run: yarn workspace frontend build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Fetch ECR repository URI
+        id: get-ecr-repo
+        run: |
+          echo "Fetching ECR repository URI from Parameter Store..."
+
+          PARAM_NAME="/ecr/${{ env.ENVIRONMENT }}/repository-uri"
+
+          ECR_REPO_URI=$(aws ssm get-parameter \
+            --name "$PARAM_NAME" \
+            --query 'Parameter.Value' \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+
+          if [ -z "$ECR_REPO_URI" ]; then
+            echo "Failed to fetch ECR repository URI"
+            exit 1
+          fi
+
+          ECR_REPO_NAME=$(echo "$ECR_REPO_URI" | awk -F'/' '{print $NF}')
+          ECR_REGISTRY=$(echo "$ECR_REPO_URI" | sed 's|/[^/]*$||')
+          TARGET_ACCOUNT=$(echo "$ECR_REGISTRY" | cut -d'.' -f1)
+
+          echo "::add-mask::$TARGET_ACCOUNT"
+          echo "::add-mask::$ECR_REPO_URI"
+          echo "::add-mask::$ECR_REGISTRY"
+
+          echo "✓ Successfully fetched ECR repository URI"
+          echo "Repository Name: $ECR_REPO_NAME"
+
+          echo "repository-uri=${ECR_REPO_URI}" >> $GITHUB_OUTPUT
+          echo "repository-name=${ECR_REPO_NAME}" >> $GITHUB_OUTPUT
+          echo "registry=${ECR_REGISTRY}" >> $GITHUB_OUTPUT
+          echo "target-account=${TARGET_ACCOUNT}" >> $GITHUB_OUTPUT
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        run: |
+          IMAGE_TAG_SHA="${{ github.sha }}"
+          IMAGE_TAG_LATEST="latest"
+          IMAGE_TAG_ENV="${{ env.ENVIRONMENT }}-latest"
+          ECR_REPO_URI="${{ steps.get-ecr-repo.outputs.repository-uri }}"
+
+          echo "Building and pushing image..."
+
+          docker buildx build \
+            --platform linux/amd64 \
+            --build-arg NODE_ENV=production \
+            --tag "${ECR_REPO_URI}:${IMAGE_TAG_SHA}" \
+            --tag "${ECR_REPO_URI}:${IMAGE_TAG_LATEST}" \
+            --tag "${ECR_REPO_URI}:${IMAGE_TAG_ENV}" \
+            --push \
+            --cache-from type=registry,ref=${ECR_REPO_URI}:buildcache \
+            --cache-to type=registry,ref=${ECR_REPO_URI}:buildcache,mode=max \
+            ./frontend
+
+          echo "✓ Successfully pushed image with tags: ${IMAGE_TAG_SHA}, ${IMAGE_TAG_LATEST}, ${IMAGE_TAG_ENV}"
+
+      - name: Set image info outputs
+        id: image-info
+        run: |
+          IMAGE_TAG="${{ github.sha }}"
+          IMAGE_URI="${{ steps.get-ecr-repo.outputs.repository-uri }}:${IMAGE_TAG}"
+          echo "image-tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "image-uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
+
+      - name: Verify image in ECR
+        run: |
+          ECR_REPO_NAME="${{ steps.get-ecr-repo.outputs.repository-name }}"
+
+          echo "Verifying image in ECR..."
+          aws ecr describe-images \
+            --repository-name "$ECR_REPO_NAME" \
+            --image-ids imageTag=${{ github.sha }} \
+            --region ${{ env.AWS_REGION }} \
+            --output table
+
+  # Deploy infrastructure with CDK
+  deploy-infrastructure:
+    runs-on: ubuntu-latest
+    needs: [detect-changes, build-frontend]
+    if: always() && (needs.detect-changes.outputs.infrastructure == 'true' || github.event_name == 'workflow_dispatch' || needs.build-frontend.result == 'success')
+    environment: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }}
     concurrency:
-      group: deploy-${{ github.event.inputs.environment || 'development' }}
+      group: deploy-infra-${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }}
       cancel-in-progress: false
 
     steps:
@@ -36,7 +184,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Enable Corepack
         run: corepack enable
@@ -44,24 +192,22 @@ jobs:
       - name: Install dependencies
         run: yarn install --immutable
 
-      - name: Build
-        run: yarn build
+      - name: Build infrastructure
+        run: yarn workspace infrastructure build
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Fetch parameters from Parameter Store
         id: fetch-params
         run: |
           echo "Fetching parameters from AWS Systems Manager Parameter Store..."
 
-          ENV_NAME="${{ github.event.inputs.environment || 'development' }}"
-
           # Map environment names to parameter names
-          case "$ENV_NAME" in
+          case "${{ env.ENVIRONMENT }}" in
             "development")
               PARAM_NAME="dev"
               ENV_VAR_NAME="AWS_ACCOUNT_ID_DEV"
@@ -75,7 +221,7 @@ jobs:
               ENV_VAR_NAME="AWS_ACCOUNT_ID_PROD"
               ;;
             *)
-              echo "Unknown environment: $ENV_NAME"
+              echo "Unknown environment: ${{ env.ENVIRONMENT }}"
               exit 1
               ;;
           esac
@@ -83,7 +229,7 @@ jobs:
           AWS_ACCOUNT_ID=$(aws ssm get-parameter --name "/github-actions/accounts/${PARAM_NAME}" --query "Parameter.Value" --output text)
           AWS_PIPELINE_ACCOUNT_ID=$(aws ssm get-parameter --name "/github-actions/accounts/pipeline" --query "Parameter.Value" --output text)
 
-          echo "✓ Found account ID for ${ENV_NAME} environment"
+          echo "✓ Found account ID for ${{ env.ENVIRONMENT }} environment"
           echo "::add-mask::$AWS_ACCOUNT_ID"
           echo "::add-mask::$AWS_PIPELINE_ACCOUNT_ID"
 
@@ -93,33 +239,27 @@ jobs:
 
       - name: Verify CDK Bootstrap
         run: |
-          ENV_NAME="${{ github.event.inputs.environment || 'development' }}"
-          REGION="${{ vars.AWS_REGION || 'eu-west-1' }}"
-
-          echo "Verifying CDK bootstrap for ${ENV_NAME} environment..."
+          echo "Verifying CDK bootstrap for ${{ env.ENVIRONMENT }} environment..."
           echo "Target Account: ${{ env.TARGET_ACCOUNT_ID }}"
-          echo "Region: ${REGION}"
+          echo "Region: ${{ env.AWS_REGION }}"
 
-          # Check if CDKToolkit stack exists
           if aws cloudformation describe-stacks \
             --stack-name CDKToolkit \
-            --region ${REGION} 2>/dev/null; then
+            --region ${{ env.AWS_REGION }} 2>/dev/null; then
             
             echo "✓ CDK bootstrap stack found"
             
-            # Get bootstrap version
             BOOTSTRAP_VERSION=$(aws cloudformation describe-stacks \
               --stack-name CDKToolkit \
-              --region ${REGION} \
+              --region ${{ env.AWS_REGION }} \
               --query 'Stacks[0].Outputs[?OutputKey==`BootstrapVersion`].OutputValue' \
               --output text 2>/dev/null || echo "unknown")
             
             echo "✓ Bootstrap version: ${BOOTSTRAP_VERSION}"
             
-            # Verify trust relationship with pipeline account
             TRUSTED_ACCOUNTS=$(aws cloudformation describe-stacks \
               --stack-name CDKToolkit \
-              --region ${REGION} \
+              --region ${{ env.AWS_REGION }} \
               --query 'Stacks[0].Parameters[?ParameterKey==`TrustedAccounts`].ParameterValue' \
               --output text 2>/dev/null || echo "")
             
@@ -127,59 +267,52 @@ jobs:
               echo "✓ Trust relationship configured with pipeline account"
             else
               echo "⚠ Warning: Pipeline account may not be trusted"
-              echo "  Run: cdk bootstrap --trust ${{ env.AWS_PIPELINE_ACCOUNT_ID }}"
             fi
             
           else
             echo "ERROR: CDK bootstrap stack not found!"
-            echo ""
-            echo "The target account is not bootstrapped for CDK deployments."
-            echo ""
-            echo "To fix this, run the following command:"
-            echo ""
-            echo "  cdk bootstrap aws://${{ env.TARGET_ACCOUNT_ID }}/${REGION} \\"
-            echo "    --profile your-sso-profile \\"
+            echo "Bootstrap the account with:"
+            echo "  cdk bootstrap aws://${{ env.TARGET_ACCOUNT_ID }}/${{ env.AWS_REGION }} \\"
             echo "    --trust ${{ env.AWS_PIPELINE_ACCOUNT_ID }} \\"
             echo "    --cloudformation-execution-policies arn:aws:iam::aws:policy/AdministratorAccess"
-            echo ""
-            echo "See docs/BOOTSTRAP.md for detailed instructions."
             exit 1
           fi
 
       - name: CDK Synth
-        run: yarn cdk synth
+        run: yarn workspace infrastructure cdk synth
         env:
-          ENVIRONMENT: ${{ github.event.inputs.environment || 'development' }}
-          AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          ENVIRONMENT: ${{ env.ENVIRONMENT }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+          FRONTEND_IMAGE_TAG: ${{ needs.build-frontend.outputs.image-tag || 'latest' }}
 
       - name: Require approval for production
-        if: github.event.inputs.environment == 'production'
+        if: env.ENVIRONMENT == 'production'
         run: |
           echo "::warning::Deploying to PRODUCTION environment"
           echo "This deployment requires manual approval via GitHub Environment protection rules"
 
       - name: CDK Deploy
-        run: yarn cdk deploy --all --require-approval never
+        run: yarn workspace infrastructure cdk deploy --all --require-approval never
         env:
-          ENVIRONMENT: ${{ github.event.inputs.environment || 'development' }}
-          AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          ENVIRONMENT: ${{ env.ENVIRONMENT }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+          FRONTEND_IMAGE_TAG: ${{ needs.build-frontend.outputs.image-tag || 'latest' }}
 
-      - name: Verify SSM Parameters (Optional)
-        if: success()
+      - name: Generate deployment summary
+        if: always()
         run: |
-          ENV_NAME="${{ github.event.inputs.environment || 'development' }}"
-
-          echo "Verifying ECR repository parameters were created..."
-
-          REPO_URI=$(aws ssm get-parameter \
-            --name "/ecr/${ENV_NAME}/repository-uri" \
-            --query "Parameter.Value" \
-            --output text 2>/dev/null || echo "")
-
-          if [ -n "$REPO_URI" ]; then
-            echo "✓ ECR repository URI: $REPO_URI"
-            echo "✓ Parameters available at: /ecr/${ENV_NAME}/*"
-            echo "✓ Other pipelines can now retrieve repository information"
-          else
-            echo "⚠ Warning: ECR parameters not found (may take a moment to propagate)"
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ env.ENVIRONMENT }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Region:** ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Components Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend Docker Image | ${{ needs.build-frontend.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Infrastructure (CDK) | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.build-frontend.result }}" == "success" ]; then
+            echo "**Frontend Image:** ${{ needs.build-frontend.outputs.image-uri }}" >> $GITHUB_STEP_SUMMARY
           fi
