@@ -167,11 +167,38 @@ jobs:
             --region ${{ env.AWS_REGION }} \
             --output table
 
+  # Manual approval gate for infrastructure deployment
+  approve-infrastructure-deployment:
+    runs-on: ubuntu-latest
+    needs: [detect-changes, build-frontend]
+    if: |
+      always() && 
+      needs.build-frontend.result == 'success' && 
+      needs.detect-changes.outputs.infrastructure == 'true'
+    environment:
+      name: approve-infrastructure-${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }}
+    steps:
+      - name: Manual approval required
+        run: |
+          echo "::notice::Infrastructure changes detected"
+          echo "::notice::Frontend deployment completed successfully"
+          echo "::notice::Waiting for manual approval to deploy infrastructure..."
+          echo ""
+          echo "## Infrastructure Deployment Approval" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Frontend deployed successfully" >> $GITHUB_STEP_SUMMARY
+          echo "Infrastructure changes detected" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Action Required:** Approve this deployment to proceed with infrastructure changes" >> $GITHUB_STEP_SUMMARY
+
   # Deploy infrastructure with CDK
   deploy-infrastructure:
     runs-on: ubuntu-latest
-    needs: [detect-changes, build-frontend]
-    if: always() && (needs.detect-changes.outputs.infrastructure == 'true' || github.event_name == 'workflow_dispatch' || needs.build-frontend.result == 'success')
+    needs: [detect-changes, build-frontend, approve-infrastructure-deployment]
+    if: |
+      always() && 
+      needs.build-frontend.result == 'success' && 
+      (needs.approve-infrastructure-deployment.result == 'success' || needs.detect-changes.outputs.infrastructure != 'true')
     environment: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }}
     concurrency:
       group: deploy-infra-${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }}

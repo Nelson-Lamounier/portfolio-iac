@@ -3349,9 +3349,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"aws-cdk-app@workspace:infrastructure":
+"infrastructure@workspace:infrastructure":
   version: 0.0.0-use.local
-  resolution: "aws-cdk-app@workspace:infrastructure"
+  resolution: "infrastructure@workspace:infrastructure"
   dependencies:
     "@types/jest": "npm:^29.5.11"
     "@types/node": "npm:^20.10.0"
@@ -10441,9 +10441,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"tailwind-plus-template@workspace:frontend":
+"frontend@workspace:frontend":
   version: 0.0.0-use.local
-  resolution: "tailwind-plus-template@workspace:frontend"
+  resolution: "frontend@workspace:frontend"
   dependencies:
     "@headlessui/react": "npm:^2.2.6"
     "@mapbox/rehype-prism": "npm:^0.9.0"
