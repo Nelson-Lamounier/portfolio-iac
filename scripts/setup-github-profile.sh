@@ -11,7 +11,7 @@ echo ""
 read -p "Enter GitHub OIDC Role ARN (from GitHub secrets): " ROLE_ARN
 
 if [ -z "${ROLE_ARN}" ]; then
-  echo "❌ Role ARN is required"
+  echo "Role ARN is required"
   exit 1
 fi
 
