@@ -5,6 +5,7 @@ import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecr from "aws-cdk-lib/aws-ecr";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as ssm from "aws-cdk-lib/aws-ssm";
+import * as path from "path";
 import { Construct } from "constructs";
 import { EcsConstruct } from "../../constructs/compute/ecs-construct";
 import { ContainerImageConstruct } from "../../constructs/compute/container-image-construct";
@@ -55,7 +56,7 @@ export class ComputeStack extends cdk.Stack {
       envName: props.envName,
       instanceType: props.instanceType || new ec2.InstanceType("t3.nano"),
       minCapacity: props.minCapacity ?? 1,
-      maxCapacity: props.maxCapacity ?? 2,
+      maxCapacity: props.maxCapacity ?? 1,
       desiredCapacity: props.desiredCapacity ?? 1,
       containerImage: containerImageConstruct.containerImage,
     });

@@ -3,6 +3,7 @@
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as autoscaling from "aws-cdk-lib/aws-autoscaling";
+import { DockerImageAsset } from "aws-cdk-lib/aws-ecr-assets";
 import { Stack, Tags } from "aws-cdk-lib";
 import { Construct } from "constructs";
 
@@ -70,8 +71,6 @@ export class EcsConstruct extends Construct {
     // 4. Add Container to Task Definition
     const container = this.taskDefinition.addContainer("app", {
       image: props.containerImage, // Use ECR image
-      cpu: props.cpu || 256,
-      memoryLimitMiB: props.memoryLimitMiB || 512,
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: `ecs-${props.envName}`,
       }),
