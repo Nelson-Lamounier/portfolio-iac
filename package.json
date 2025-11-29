@@ -9,6 +9,9 @@
   "scripts": {
     "frontend:dev": "yarn workspace frontend dev",
     "frontend:build": "yarn workspace frontend build",
+    "frontend:test": "yarn workspace frontend test",
+    "frontend:lint": "yarn workspace frontend lint",
+    "infra:build": "yarn workspace infrastructure build",
     "infra:deploy": "yarn workspace infrastructure deploy",
     "infra:synth": "yarn workspace infrastructure synth",
     "infra:test": "yarn workspace infrastructure test"
