@@ -107,3 +107,5 @@ if (config.enableMonitoring) {
 
 // Converts CDK code to CloudFormation templates
 app.synth();
+
+// Pipeline implementation showcase - video recording
