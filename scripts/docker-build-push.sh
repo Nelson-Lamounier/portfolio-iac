@@ -17,6 +17,21 @@ echo "Building and pushing Docker image..."
 echo "Repository: ${ECR_REPO_URI}"
 echo "Tags: ${IMAGE_TAG_SHA}, ${IMAGE_TAG_LATEST}, ${IMAGE_TAG_ENV}"
 
+# Build cache arguments
+CACHE_ARGS=""
+
+# Use GitHub Actions cache if available (only works in GitHub Actions with buildx)
+if [ -n "${ACTIONS_CACHE_URL:-}" ]; then
+  echo "✓ GitHub Actions cache available"
+  CACHE_ARGS="--cache-from type=gha --cache-to type=gha,mode=max"
+else
+  echo "⚠ GitHub Actions cache not available (running locally or cache not configured)"
+fi
+
+# Always use ECR registry cache
+CACHE_ARGS="${CACHE_ARGS} --cache-from type=registry,ref=${ECR_REPO_URI}:buildcache"
+CACHE_ARGS="${CACHE_ARGS} --cache-to type=registry,ref=${ECR_REPO_URI}:buildcache,mode=max"
+
 docker buildx build \
   --platform linux/amd64 \
   --build-arg NODE_ENV=production \
@@ -25,8 +40,7 @@ docker buildx build \
   --tag "${ECR_REPO_URI}:${IMAGE_TAG_LATEST}" \
   --tag "${ECR_REPO_URI}:${IMAGE_TAG_ENV}" \
   --push \
-  --cache-from type=registry,ref="${ECR_REPO_URI}:buildcache" \
-  --cache-to type=registry,ref="${ECR_REPO_URI}:buildcache,mode=max" \
+  ${CACHE_ARGS} \
   .
 
 echo "✓ Successfully pushed image with tags: ${IMAGE_TAG_SHA}, ${IMAGE_TAG_LATEST}, ${IMAGE_TAG_ENV}"

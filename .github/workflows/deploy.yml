@@ -104,6 +104,9 @@ jobs:
       - uses: aws-actions/amazon-ecr-login@v2
         if: steps.check-infra.outputs.exists == 'true'
 
+      - uses: docker/setup-buildx-action@v3
+        if: steps.check-infra.outputs.exists == 'true'
+
       - name: Build and push Docker
         if: steps.check-infra.outputs.exists == 'true'
         run: make docker-build-push
