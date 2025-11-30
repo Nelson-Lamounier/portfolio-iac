@@ -27,9 +27,9 @@ else
   echo "⚠ GitHub Actions cache not available (running locally or cache not configured)"
 fi
 
-# Always use ECR registry cache
-CACHE_ARGS="${CACHE_ARGS} --cache-from type=registry,ref=${ECR_REPO_URI}:buildcache"
-CACHE_ARGS="${CACHE_ARGS} --cache-to type=registry,ref=${ECR_REPO_URI}:buildcache,mode=max"
+# Note: ECR registry cache is not used with immutable tags
+# The buildcache tag would conflict with immutability on subsequent builds
+# GitHub Actions cache is sufficient for CI/CD builds
 
 docker buildx build \
   --platform linux/amd64 \

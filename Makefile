@@ -78,6 +78,10 @@ docker-build-push:
 	@echo "Building and pushing Docker image..."
 	@./scripts/docker-build-push.sh
 
+cleanup-buildcache:
+	@echo "Cleaning up buildcache tag from ECR..."
+	@./scripts/cleanup-buildcache.sh
+
 cdk-synth:
 	@echo "Synthesizing CDK stacks..."
 	yarn workspace infrastructure cdk synth

@@ -43,14 +43,6 @@ export class EcrConstruct extends Construct {
       tagStatus: ecr.TagStatus.ANY,
     });
 
-    // Keep buildcache tag indefinitely (used for Docker layer caching)
-    this.repository.addLifecycleRule({
-      tagPrefixList: ["buildcache"],
-      description: "Keep buildcache tag for Docker layer caching",
-      rulePriority: 2,
-      maxImageCount: 1,
-    });
-
     // Grant cross-account access only when needed (least privilege)
     // Allows CI/CD pipeline to push images and deployments to pull them
     if (props.pipelineAccount) {
