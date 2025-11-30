@@ -28,26 +28,30 @@ install:
 	yarn install --immutable
 
 # Build targets
-build: build-frontend build-infrastructure
+build:
+	@echo "Building all workspaces with Turbo..."
+	yarn turbo run build
 
 build-frontend:
 	@echo "Building frontend..."
-	yarn workspace frontend build
+	yarn turbo run build --filter=frontend
 
 build-infrastructure:
 	@echo "Building infrastructure..."
-	yarn workspace infrastructure build
+	yarn turbo run build --filter=infrastructure
 
 # Test targets
-test: test-frontend test-infrastructure
+test:
+	@echo "Running all tests with Turbo..."
+	yarn turbo run test
 
 test-frontend:
 	@echo "Running frontend tests..."
-	yarn workspace frontend test --ci --coverage --maxWorkers=2
+	yarn turbo run test --filter=frontend -- --ci --coverage --maxWorkers=2
 
 test-infrastructure:
 	@echo "Running infrastructure tests..."
-	yarn workspace infrastructure test --ci --coverage
+	yarn turbo run test --filter=infrastructure -- --ci --coverage
 
 # Clean
 clean:

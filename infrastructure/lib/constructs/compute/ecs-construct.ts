@@ -41,7 +41,7 @@ export class EcsConstruct extends Construct {
 
     // 2. Add EC2 Capacity in PUBLIC subnets
     this.asg = this.cluster.addCapacity("DefaultAutoScalingGroup", {
-      instanceType: props.instanceType || new ec2.InstanceType("t3.nano"),
+      instanceType: props.instanceType || new ec2.InstanceType("t3.micro"),
       minCapacity: props.minCapacity || 1,
       maxCapacity: props.maxCapacity || 2,
       desiredCapacity: props.desiredCapacity || 1,

@@ -16,6 +16,9 @@ node_modules/
 !.yarn/versions
 .pnp.*
 
+# Turborepo
+.turbo
+
 # Environment variables
 .env
 .env*.local

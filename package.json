@@ -7,14 +7,21 @@
     "infrastructure"
   ],
   "scripts": {
-    "frontend:dev": "yarn workspace frontend dev",
-    "frontend:build": "yarn workspace frontend build",
-    "frontend:test": "yarn workspace frontend test",
-    "frontend:lint": "yarn workspace frontend lint",
-    "infra:build": "yarn workspace infrastructure build",
-    "infra:deploy": "yarn workspace infrastructure deploy",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "dev": "turbo run dev",
+    "frontend:dev": "turbo run dev --filter=frontend",
+    "frontend:build": "turbo run build --filter=frontend",
+    "frontend:test": "turbo run test --filter=frontend",
+    "frontend:lint": "turbo run lint --filter=frontend",
+    "infra:build": "turbo run build --filter=infrastructure",
+    "infra:test": "turbo run test --filter=infrastructure",
     "infra:synth": "yarn workspace infrastructure synth",
-    "infra:test": "yarn workspace infrastructure test"
+    "infra:deploy": "yarn workspace infrastructure deploy"
   },
-  "packageManager": "yarn@4.0.0"
+  "packageManager": "yarn@4.0.0",
+  "devDependencies": {
+    "turbo": "^2.6.1"
+  }
 }
