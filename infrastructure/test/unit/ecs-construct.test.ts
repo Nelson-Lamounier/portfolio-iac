@@ -66,7 +66,7 @@ describe("EcsConstruct", () => {
       template.resourceCountIs("AWS::AutoScaling::AutoScalingGroup", 1);
     });
 
-    test("uses t3.nano by default", () => {
+    test("uses t3.micro by default", () => {
       new EcsConstruct(stack, "TestEcs", {
         vpc,
         envName: "test",
@@ -75,7 +75,7 @@ describe("EcsConstruct", () => {
       const template = Template.fromStack(stack);
 
       template.hasResourceProperties("AWS::AutoScaling::LaunchConfiguration", {
-        InstanceType: "t3.nano",
+        InstanceType: "t3.micro",
       });
     });
 
