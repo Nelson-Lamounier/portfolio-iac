@@ -169,19 +169,12 @@ jobs:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Assume deployment role in target account
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.DEPLOYMENT_ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
-          role-chaining: true
-
-      - name: Fetch AWS accounts
+      - name: Fetch AWS accounts from pipeline account
         run: make fetch-aws-accounts
         env:
           ENVIRONMENT: ${{ env.ENVIRONMENT }}
 
-      - name: Verify CDK bootstrap
+      - name: Verify CDK bootstrap in pipeline account
         run: make verify-cdk-bootstrap
         env:
           ENVIRONMENT: ${{ env.ENVIRONMENT }}
