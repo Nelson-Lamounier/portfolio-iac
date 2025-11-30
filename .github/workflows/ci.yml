@@ -83,7 +83,7 @@ jobs:
       - run: make build-infrastructure
       - run: yarn workspace infrastructure tsc --noEmit
       - run: make test-infrastructure
-      - run: yarn workspace infrastructure npm audit --audit-level moderate
+      - run: yarn workspace infrastructure npm audit --severity moderate
         continue-on-error: true
 
       - uses: codecov/codecov-action@v4
