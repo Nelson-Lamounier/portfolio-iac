@@ -116,6 +116,13 @@ jobs:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
 
+      - name: Assume deployment role in target account
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.DEPLOYMENT_ROLE }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          role-chaining: true
+
       - name: Fetch AWS accounts
         run: make fetch-aws-accounts
         env:

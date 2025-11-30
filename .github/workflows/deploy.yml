@@ -73,6 +73,19 @@ jobs:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Assume deployment role in target account
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.DEPLOYMENT_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-chaining: true
+
+      - name: Verify target account
+        run: |
+          CURRENT_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          echo "TARGET_ACCOUNT_ID=${CURRENT_ACCOUNT}" >> $GITHUB_ENV
+          echo "✓ Assumed role in target account: ${CURRENT_ACCOUNT}"
+
       - name: Check infrastructure
         id: check-infra
         run: make check-infra
@@ -152,6 +165,13 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
+
+      - name: Assume deployment role in target account
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.DEPLOYMENT_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-chaining: true
 
       - name: Fetch AWS accounts
         run: make fetch-aws-accounts
