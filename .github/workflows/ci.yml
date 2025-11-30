@@ -65,9 +65,33 @@ jobs:
           file: ./frontend/Dockerfile
           platforms: linux/amd64
           push: false
+          load: true
           tags: portfolio-frontend:validation
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Test container starts
+        run: |
+          # Start container in background
+          docker run -d --name test-container -p 3000:3000 portfolio-frontend:validation
+
+          # Wait for container to be ready (max 30 seconds)
+          echo "Waiting for container to start..."
+          for i in {1..30}; do
+            if docker logs test-container 2>&1 | grep -q "Ready"; then
+              echo "✓ Container started successfully"
+              docker logs test-container
+              docker stop test-container
+              exit 0
+            fi
+            sleep 1
+          done
+
+          # If we get here, container didn't start
+          echo "❌ Container failed to start"
+          docker logs test-container
+          docker stop test-container
+          exit 1
 
   infrastructure-ci:
     runs-on: ubuntu-latest

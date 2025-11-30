@@ -39,13 +39,14 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
-# Copy built application from frontend directory
+# Copy the standalone build (includes monorepo structure)
 COPY --from=builder --chown=nextjs:nodejs /app/frontend/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/frontend/.next/static ./.next/static
 
-# Copy public directory if it exists (optional for static assets)
-# Note: This project doesn't use a public directory - static assets are in src/app/
-# COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+# Copy static files to the correct location within the monorepo structure
+COPY --from=builder --chown=nextjs:nodejs /app/frontend/.next/static ./frontend/.next/static
+
+# Copy public directory if it exists
+COPY --from=builder --chown=nextjs:nodejs /app/frontend/public ./frontend/public 2>/dev/null || true
 
 # Switch to non-root user
 USER nextjs
@@ -59,5 +60,5 @@ ENV HOSTNAME="0.0.0.0"
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD node -e "const port = process.env.PORT || 3000; require('http').get('http://localhost:' + port + '/api/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})" || exit 1
 
-# Start application
-CMD ["node", "server.js"]
+# Start application from the frontend directory within standalone
+CMD ["node", "frontend/server.js"]
