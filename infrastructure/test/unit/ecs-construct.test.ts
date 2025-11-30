@@ -353,7 +353,7 @@ describe("EcsConstruct", () => {
       });
     });
 
-    test("service has circuit breaker disabled for debugging", () => {
+    test("service has circuit breaker enabled for automatic rollback", () => {
       new EcsConstruct(stack, "TestEcs", {
         vpc,
         envName: "test",
@@ -364,7 +364,8 @@ describe("EcsConstruct", () => {
       template.hasResourceProperties("AWS::ECS::Service", {
         DeploymentConfiguration: Match.objectLike({
           DeploymentCircuitBreaker: {
-            Enable: false,
+            Enable: true,
+            Rollback: true,
           },
         }),
       });
@@ -380,7 +381,7 @@ describe("EcsConstruct", () => {
 
       template.hasResourceProperties("AWS::ECS::Service", {
         DeploymentConfiguration: Match.objectLike({
-          MinimumHealthyPercent: 0, // Allows all tasks to be stopped for initial deployment
+          MinimumHealthyPercent: 50, // Allows all tasks to be stopped for initial deployment
           MaximumPercent: 200,
         }),
       });

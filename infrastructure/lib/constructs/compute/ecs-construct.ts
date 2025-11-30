@@ -109,11 +109,12 @@ export class EcsConstruct extends Construct {
       // Must explicitly set enable: false to disable it
       // Re-enable after debugging: circuitBreaker: { enable: true, rollback: true }
       circuitBreaker: {
-        enable: false, // Completely disable circuit breaker
+        enable: true,
+        rollback: true, // Completely disable circuit breaker
       },
 
       // Deployment configuration
-      minHealthyPercent: 0, // Allow all tasks to be stopped (for initial deployment)
+      minHealthyPercent: 100, // Allow all tasks to be stopped (for initial deployment)
       maxHealthyPercent: 200, // Allow up to 200% of tasks during deployment
     });
 
