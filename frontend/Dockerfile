@@ -45,9 +45,6 @@ COPY --from=builder --chown=nextjs:nodejs /app/frontend/.next/standalone ./
 # Copy static files to the correct location within the monorepo structure
 COPY --from=builder --chown=nextjs:nodejs /app/frontend/.next/static ./frontend/.next/static
 
-# Copy public directory if it exists
-COPY --from=builder --chown=nextjs:nodejs /app/frontend/public ./frontend/public 2>/dev/null || true
-
 # Switch to non-root user
 USER nextjs
 
