@@ -40,6 +40,15 @@ export class EcrConstruct extends Construct {
       maxImageCount: props.lifecycleRules || 10,
       description: "Keep only recent images",
       rulePriority: 1,
+      tagStatus: ecr.TagStatus.ANY,
+    });
+
+    // Keep buildcache tag indefinitely (used for Docker layer caching)
+    this.repository.addLifecycleRule({
+      tagPrefixList: ["buildcache"],
+      description: "Keep buildcache tag for Docker layer caching",
+      rulePriority: 2,
+      maxImageCount: 1,
     });
 
     // Grant cross-account access only when needed (least privilege)

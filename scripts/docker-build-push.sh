@@ -10,12 +10,11 @@ set -euo pipefail
 : "${ENVIRONMENT:?ENVIRONMENT must be set}"
 
 IMAGE_TAG_SHA="${IMAGE_TAG}"
-IMAGE_TAG_LATEST="latest"
-IMAGE_TAG_ENV="${ENVIRONMENT}-latest"
 
 echo "Building and pushing Docker image..."
 echo "Repository: ${ECR_REPO_URI}"
-echo "Tags: ${IMAGE_TAG_SHA}, ${IMAGE_TAG_LATEST}, ${IMAGE_TAG_ENV}"
+echo "Tags: ${IMAGE_TAG_SHA}"
+echo "Note: Using immutable tags for security. Latest image determined by timestamp."
 
 # Build cache arguments
 CACHE_ARGS=""
@@ -37,10 +36,8 @@ docker buildx build \
   --build-arg NODE_ENV=production \
   --file ./frontend/Dockerfile \
   --tag "${ECR_REPO_URI}:${IMAGE_TAG_SHA}" \
-  --tag "${ECR_REPO_URI}:${IMAGE_TAG_LATEST}" \
-  --tag "${ECR_REPO_URI}:${IMAGE_TAG_ENV}" \
   --push \
   ${CACHE_ARGS} \
   .
 
-echo "✓ Successfully pushed image with tags: ${IMAGE_TAG_SHA}, ${IMAGE_TAG_LATEST}, ${IMAGE_TAG_ENV}"
+echo "✓ Successfully pushed image with tag: ${IMAGE_TAG_SHA}"
