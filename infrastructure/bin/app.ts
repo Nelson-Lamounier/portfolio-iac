@@ -109,4 +109,3 @@ if (config.enableMonitoring) {
 app.synth();
 
 // Pipeline implementation showcase - video recording
-// Pipeline implementation showcase - video recording
