@@ -364,8 +364,7 @@ describe("EcsConstruct", () => {
       template.hasResourceProperties("AWS::ECS::Service", {
         DeploymentConfiguration: Match.objectLike({
           DeploymentCircuitBreaker: {
-            Enable: true,
-            Rollback: false,
+            Enable: false,
           },
         }),
       });
@@ -381,7 +380,7 @@ describe("EcsConstruct", () => {
 
       template.hasResourceProperties("AWS::ECS::Service", {
         DeploymentConfiguration: Match.objectLike({
-          MinimumHealthyPercent: 50, // Allows all tasks to be stopped for initial deployment
+          MinimumHealthyPercent: 0, // Allows all tasks to be stopped for initial deployment
           MaximumPercent: 200,
         }),
       });
