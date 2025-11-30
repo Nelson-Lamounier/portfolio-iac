@@ -365,7 +365,7 @@ describe("EcsConstruct", () => {
         DeploymentConfiguration: Match.objectLike({
           DeploymentCircuitBreaker: {
             Enable: true,
-            Rollback: true,
+            Rollback: false,
           },
         }),
       });

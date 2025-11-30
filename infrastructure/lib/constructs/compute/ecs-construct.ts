@@ -110,7 +110,7 @@ export class EcsConstruct extends Construct {
       // Re-enable after debugging: circuitBreaker: { enable: true, rollback: true }
       circuitBreaker: {
         enable: true,
-        rollback: true, // Completely disable circuit breaker
+        rollback: false, // Completely disable circuit breaker
       },
 
       // Deployment configuration
