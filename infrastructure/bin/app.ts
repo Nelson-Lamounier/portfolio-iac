@@ -193,12 +193,14 @@ loadBalancerStack.addDependency(networkingStack);
 // 7. Connect ECS Service to Load Balancer
 // ========================================
 // Create target group for ECS service
+// Note: Using INSTANCE target type because ECS is using EC2 launch type with BRIDGE networking
+// If you switch to AWSVPC networking, change this to TargetType.IP
 const ecsTargetGroup = loadBalancerStack.addTargetGroup({
   name: `ecs-service-${envName}`,
   port: 3000,
   healthCheckPath: "/api/health",
   protocol: elbv2.ApplicationProtocol.HTTP,
-  targetType: elbv2.TargetType.IP,
+  targetType: elbv2.TargetType.INSTANCE, // INSTANCE for EC2 launch type with bridge networking
   healthCheckIntervalSeconds: 30,
   deregistrationDelay: cdk.Duration.seconds(30),
   createListener: true,
