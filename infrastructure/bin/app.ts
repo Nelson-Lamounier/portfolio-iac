@@ -6,15 +6,15 @@ import "source-map-support/register";
 // Loads .env file for local development (not used in CI/CD)
 import "dotenv/config";
 import * as cdk from "aws-cdk-lib";
+import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import {
   NetworkingStack,
   StorageStack,
   ComputeStack,
   MonitoringStack,
+  LoadBalancerStack,
 } from "../lib/stacks";
 import { environments } from "../config/environments";
-
-import { LoadBalancerStack } from "../lib/stacks";
 
 const app = new cdk.App();
 
@@ -107,45 +107,16 @@ const storageStack = new StorageStack(app, `StorageStack-${config.envName}`, {
 });
 
 // ========================================
-// 3. Compute Stack
+// 3. Compute Stack (Created after Load Balancer)
 // ========================================
 // Creates ECS cluster and service
 // Depends on: NetworkingStack (VPC), StorageStack (ECR)
-const computeStack = new ComputeStack(app, `ComputeStack-${config.envName}`, {
-  ...stackProps,
-  envName: config.envName,
-  vpc: networkingStack.vpc,
-  repository: storageStack.repository,
-});
-
-// Explicit dependencies
-computeStack.addDependency(networkingStack);
-computeStack.addDependency(storageStack);
+// Note: Will be created after Load Balancer stack to connect target group
 
 // ========================================
-// 4. Monitoring Stack (Optional)
+// 4. Monitoring Stack (Created after Compute Stack)
 // ========================================
-// Creates CloudWatch alarms and dashboards
-// Depends on: ComputeStack (ECS cluster and service)
-if (config.enableMonitoring) {
-  const monitoringStack = new MonitoringStack(
-    app,
-    `MonitoringStack-${config.envName}`,
-    {
-      ...stackProps,
-      envName: config.envName,
-      ecsClusterName: computeStack.cluster.clusterName,
-      ecsServiceName: computeStack.service.serviceName,
-      alertEmail: config.alertEmail,
-      enableDashboard: config.envName === "production",
-      enableEventBridge: config.enableEventBridge,
-      pipelineAccountId: config.pipelineAccount,
-    }
-  );
-
-  // Explicit dependency
-  monitoringStack.addDependency(computeStack);
-}
+// Will be created after Compute Stack is defined
 
 // ========================================
 // 5. Certificate Configuration
@@ -219,21 +190,76 @@ const loadBalancerStack = new LoadBalancerStack(
 loadBalancerStack.addDependency(networkingStack);
 
 // ========================================
-// 7. Connect ECS Service to Load Balancer (TODO)
+// 7. Connect ECS Service to Load Balancer
 // ========================================
-// The load balancer and ECS service are deployed but not yet connected.
-// This requires updating the ECS construct to accept a target group parameter.
-//
-// To complete the integration:
-// 1. Update EcsConstruct to accept optional targetGroup parameter
-// 2. Attach service to target group in EcsConstruct
-// 3. Configure security groups to allow ALB -> ECS traffic
-//
-// For now, you can:
-// - Access ECS service directly via EC2 instance public IP
-// - Access load balancer (returns 200 OK from default action)
-//
-// See docs/ECS_ALB_INTEGRATION.md for implementation guide
+// Create target group for ECS service
+const ecsTargetGroup = loadBalancerStack.addTargetGroup({
+  name: `ecs-service-${envName}`,
+  port: 3000,
+  healthCheckPath: "/api/health",
+  protocol: elbv2.ApplicationProtocol.HTTP,
+  targetType: elbv2.TargetType.IP,
+  healthCheckIntervalSeconds: 30,
+  deregistrationDelay: cdk.Duration.seconds(30),
+  createListener: true,
+  listenerPriority: 100,
+  pathPattern: "/*",
+});
+
+// ========================================
+// 8. Create Compute Stack
+// ========================================
+// Now create the ECS service (after target group is ready)
+const computeStack = new ComputeStack(app, `ComputeStack-${config.envName}`, {
+  ...stackProps,
+  envName: config.envName,
+  vpc: networkingStack.vpc,
+  repository: storageStack.repository,
+});
+
+// Explicit dependencies
+computeStack.addDependency(networkingStack);
+computeStack.addDependency(storageStack);
+computeStack.addDependency(loadBalancerStack);
+
+// ========================================
+// 9. Configure Security Groups
+// ========================================
+// Allow traffic from ALB to ECS
+const ecsSecurityGroup = computeStack.cluster.connections.securityGroups[0];
+if (ecsSecurityGroup) {
+  ecsSecurityGroup.addIngressRule(
+    loadBalancerStack.getSecurityGroup(),
+    cdk.aws_ec2.Port.tcp(3000),
+    "Allow traffic from ALB"
+  );
+}
+
+// ========================================
+// 10. Monitoring Stack (Optional)
+// ========================================
+// Creates CloudWatch alarms and dashboards
+// Depends on: ComputeStack (ECS cluster and service)
+if (config.enableMonitoring) {
+  const monitoringStack = new MonitoringStack(
+    app,
+    `MonitoringStack-${config.envName}`,
+    {
+      ...stackProps,
+      envName: config.envName,
+      ecsClusterName: computeStack.cluster.clusterName,
+      ecsServiceName: computeStack.service.serviceName,
+      alertEmail: config.alertEmail,
+      enableDashboard: config.envName === "production",
+      enableEventBridge: config.enableEventBridge,
+      pipelineAccountId: config.pipelineAccount,
+    }
+  );
+
+  // Explicit dependency
+  monitoringStack.addDependency(computeStack);
+}
 
 // Converts CDK code to CloudFormation templates
+
 app.synth();
