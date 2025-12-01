@@ -66,7 +66,7 @@ export class MonitoringStack extends cdk.Stack {
     new cdk.CfnOutput(this, "AlarmTopicArn", {
       value: this.alarmTopic.topicArn,
       description: "SNS Topic ARN for Alarms",
-      exportName: `${props.envName}-alarm-topic-arn`,
+      exportName: `MonitoringStack-${props.envName}-alarm-topic-arn`,
     });
 
     if (props.alertEmail) {

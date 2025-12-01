@@ -22,8 +22,8 @@ export const environments: Record<string, EnvironmentConfig> = {
     region: process.env.AWS_REGION || "eu-west-1",
     envName: "development",
     pipelineAccount: process.env.AWS_PIPELINE_ACCOUNT_ID || "",
-    enableMonitoring: false, // Disabled for cost optimization
-    enableEventBridge: false,
+    enableMonitoring: true, // Disabled for cost optimisation
+    enableEventBridge: true,
   },
 
   // Pre-production testing, mirrors production config
