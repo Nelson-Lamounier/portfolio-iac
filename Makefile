@@ -17,6 +17,7 @@ help:
 	@echo "  check-infra          - Check if infrastructure exists"
 	@echo "  fetch-ecr-uri        - Fetch ECR repository URI"
 	@echo "  fetch-aws-accounts   - Fetch AWS account IDs from Parameter Store"
+	@echo "  setup-domain-params  - Setup domain configuration in SSM Parameter Store"
 	@echo "  verify-cdk-bootstrap - Verify CDK bootstrap"
 	@echo "  docker-build-push    - Build and push Docker image"
 	@echo "  cdk-synth            - Synthesize CDK stacks"
@@ -73,6 +74,10 @@ fetch-ecr-uri:
 fetch-aws-accounts:
 	@echo "Fetching AWS account IDs..."
 	@./scripts/fetch-aws-accounts.sh
+
+setup-domain-params:
+	@echo "Setting up domain configuration in SSM Parameter Store..."
+	@./scripts/setup-domain-parameters.sh
 
 verify-cdk-bootstrap:
 	@echo "Verifying CDK bootstrap..."

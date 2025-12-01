@@ -19,6 +19,20 @@ import { CertificateStack } from "../lib/stacks/networking/certificate-stack";
 
 const app = new cdk.App();
 
+// Domain configuration - fetched from SSM Parameter Store at synth time
+// These values are stored in the pipeline account and resolved during CDK synth
+// To set these parameters in your pipeline account:
+// aws ssm put-parameter --name "/portfolio/domain/root-domain-name" --value "yourdomain.com" --type String
+// aws ssm put-parameter --name "/portfolio/domain/hosted-zone-id" --value "Z1234567890ABC" --type String
+const rootDomainName = cdk.aws_ssm.StringParameter.valueFromLookup(
+  app,
+  "/github-actions/domain/root-domain-name"
+);
+const hostedZoneId = cdk.aws_ssm.StringParameter.valueFromLookup(
+  app,
+  "/github-actions/domain/hosted-zone-id"
+);
+
 // Defaults to 'development' for safer local development
 const envName = process.env.ENVIRONMENT || "development";
 const config = environments[envName];
@@ -108,20 +122,55 @@ if (config.enableMonitoring) {
   monitoringStack.addDependency(computeStack);
 }
 
-// Create the load balancer stack
+// ========================================
+// 5. Certificate Stack (Optional)
+// ========================================
+// Creates SSL/TLS certificates for HTTPS
+// Only created if domain configuration is provided
+let certificateStack: CertificateStack | undefined;
+
+if (rootDomainName && hostedZoneId) {
+  certificateStack = new CertificateStack(
+    app,
+    `CertificateStack-${config.envName}`,
+    {
+      ...stackProps,
+      certificates: [
+        {
+          domainName: rootDomainName,
+          hostedZoneId: hostedZoneId,
+          includeWildcard: true, // Includes *.yourdomain.com
+          certificateName: `${config.envName}-certificate`,
+          tags: {
+            Environment: config.envName,
+            Project: "portfolio",
+            ManagedBy: "cdk",
+          },
+        },
+      ],
+    }
+  );
+}
+
+// ========================================
+// 6. Load Balancer Stack
+// ========================================
+// Creates Application Load Balancer
+// Depends on: NetworkingStack (VPC), CertificateStack (optional)
 const loadBalancerStack = new LoadBalancerStack(
   app,
-  `PortfolioLoadBalancerStack-${config.envName}`,
+  `LoadBalancerStack-${config.envName}`,
   {
-    description: "Portfolio load balancer infrastructure",
+    ...stackProps,
+    description: "Application Load Balancer infrastructure",
     envName: config.envName,
     vpc: networkingStack.vpc,
-    loadBalancerName: process.env.LOAD_BALANCER_NAME || "PortfolioLoadBalancer",
-    enableHttps: !!certificateStack,
-    certificateArn: certificateStack?.getCertificate(rootDomainName || "")
+    loadBalancerName: `${config.envName}-alb`,
+    enableHttps: !!certificateStack && !!rootDomainName,
+    certificateArn: certificateStack?.getCertificate(rootDomainName!)
       ?.certificateArn,
     tags: {
-      Environment: "development",
+      Environment: config.envName,
       Project: "portfolio",
       ManagedBy: "cdk",
     },
@@ -134,8 +183,15 @@ if (certificateStack) {
   loadBalancerStack.addDependency(certificateStack);
 }
 
+// ========================================
+// 7. Connect ECS Service to Load Balancer
+// ========================================
+// TODO: Update ComputeStack to accept target group from LoadBalancerStack
+// For now, the load balancer is created but not yet connected to ECS
+// Next steps:
+// 1. Add target group parameter to ComputeStack
+// 2. Attach ECS service to the target group
+// 3. Update security groups to allow ALB -> ECS traffic
+
 // Converts CDK code to CloudFormation templates
 app.synth();
-
-// Pipeline implementation showcase - video recording
-// Pipeline implementation showcase - video recording demo
