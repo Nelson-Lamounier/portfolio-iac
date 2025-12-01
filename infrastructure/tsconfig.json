@@ -25,5 +25,5 @@
     "outDir": "dist"
   },
   "include": ["bin/**/*", "lib/**/*"],
-  "exclude": ["node_modules", "cdk.out"]
+  "exclude": ["node_modules", "cdk.out", "test"]
 }

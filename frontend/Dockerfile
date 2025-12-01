@@ -6,21 +6,26 @@ RUN corepack enable && \
 FROM base AS deps
 WORKDIR /app
 
-# Copy package files
+# Copy root workspace files for monorepo
 COPY package.json yarn.lock .yarnrc.yml ./
+COPY frontend/package.json ./frontend/
 
-# Install dependencies
-# Note: .yarn directory is not needed as Corepack manages Yarn
-# and yarn install will create necessary files
-RUN yarn install --immutable
+# Install dependencies (workspace-aware)
+RUN yarn workspaces focus frontend
 
 # Builder stage
 FROM base AS builder
 WORKDIR /app
+
+# Copy workspace configuration
+COPY package.json yarn.lock .yarnrc.yml ./
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+
+# Copy frontend source code
+COPY frontend ./frontend
 
 # Build Next.js application
+WORKDIR /app/frontend
 RUN yarn build
 
 # Runner stage - production image
@@ -34,13 +39,11 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
-# Copy built application
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+# Copy the standalone build (includes monorepo structure)
+COPY --from=builder --chown=nextjs:nodejs /app/frontend/.next/standalone ./
 
-# Copy public directory if it exists (optional for static assets)
-# Note: This project doesn't use a public directory - static assets are in src/app/
-# COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+# Copy static files to the correct location within the monorepo structure
+COPY --from=builder --chown=nextjs:nodejs /app/frontend/.next/static ./frontend/.next/static
 
 # Switch to non-root user
 USER nextjs
@@ -54,5 +57,5 @@ ENV HOSTNAME="0.0.0.0"
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD node -e "const port = process.env.PORT || 3000; require('http').get('http://localhost:' + port + '/api/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})" || exit 1
 
-# Start application
-CMD ["node", "server.js"]
+# Start application from the frontend directory within standalone
+CMD ["node", "frontend/server.js"]

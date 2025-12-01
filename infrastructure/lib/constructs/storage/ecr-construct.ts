@@ -40,6 +40,7 @@ export class EcrConstruct extends Construct {
       maxImageCount: props.lifecycleRules || 10,
       description: "Keep only recent images",
       rulePriority: 1,
+      tagStatus: ecr.TagStatus.ANY,
     });
 
     // Grant cross-account access only when needed (least privilege)

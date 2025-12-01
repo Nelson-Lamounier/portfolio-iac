@@ -1,0 +1,134 @@
+/** @format */
+
+import * as cdk from "aws-cdk-lib";
+import * as logs from "aws-cdk-lib/aws-logs";
+import { Construct } from "constructs";
+
+// Networking
+import { VpcConstruct } from "./constructs/networking/vpc-construct";
+
+// Storage
+import { EcrConstruct } from "./constructs/storage/ecr-construct";
+
+// Compute
+import { EcsConstruct } from "./constructs/compute/ecs-construct";
+import { ContainerImageConstruct } from "./constructs/compute/container-image-construct";
+
+// Monitoring
+import { MonitoringConstruct } from "./constructs/monitoring/monitoring-construct";
+import { EventBridgeConstruct } from "./constructs/monitoring/eventbridge-construct";
+
+// Configuration
+import { SsmParametersConstruct } from "./constructs/config/ssm-parameters-construct";
+import { StackOutputsConstruct } from "./constructs/config/stack-outputs-construct";
+
+export interface InfrastructureStackProps extends cdk.StackProps {
+  envName: string;
+  pipelineAccount?: string;
+  enableMonitoring?: boolean;
+  enableEventBridge?: boolean;
+  alertEmail?: string;
+}
+
+export class InfrastructureStack extends cdk.Stack {
+  public readonly repository: cdk.aws_ecr.Repository;
+  public readonly vpc: cdk.aws_ec2.IVpc;
+  public readonly ecsCluster: cdk.aws_ecs.ICluster;
+
+  constructor(scope: Construct, id: string, props: InfrastructureStackProps) {
+    super(scope, id, props);
+
+    // ========================================
+    // Networking Layer
+    // ========================================
+    const vpcConstruct = new VpcConstruct(this, "Vpc", {
+      maxAzs: 2,
+      natGateways: 0, // Cost optimization: using public subnets only
+    });
+    this.vpc = vpcConstruct.vpc;
+
+    // ========================================
+    // Storage Layer
+    // ========================================
+    const ecrConstruct = new EcrConstruct(this, "Ecr", {
+      repositoryName: `app-repo-${props.envName}`,
+      pipelineAccount: props.pipelineAccount,
+    });
+    this.repository = ecrConstruct.repository;
+
+    // ========================================
+    // Compute Layer
+    // ========================================
+
+    // Resolve container image (ECR or public registry)
+    const containerImageConstruct = new ContainerImageConstruct(
+      this,
+      "ContainerImage",
+      {
+        repository: ecrConstruct.repository,
+      }
+    );
+
+    // Create ECS Cluster with EC2 capacity
+    const ecsConstruct = new EcsConstruct(this, "Ecs", {
+      vpc: vpcConstruct.vpc,
+      envName: props.envName,
+      instanceType: new cdk.aws_ec2.InstanceType("t3.nano"),
+      minCapacity: 1,
+      maxCapacity: 2,
+      desiredCapacity: 1,
+      containerImage: containerImageConstruct.containerImage,
+    });
+    this.ecsCluster = ecsConstruct.cluster;
+
+    // ========================================
+    // Monitoring Layer (Optional)
+    // ========================================
+    if (props.enableMonitoring) {
+      const monitoring = new MonitoringConstruct(this, "Monitoring", {
+        envName: props.envName,
+        ecsClusterName: ecsConstruct.cluster.clusterName,
+        ecsServiceName: ecsConstruct.service.serviceName,
+        alertEmail: props.alertEmail,
+        enableDashboard: props.envName === "production",
+        logRetentionDays:
+          props.envName === "production"
+            ? logs.RetentionDays.ONE_MONTH
+            : logs.RetentionDays.ONE_WEEK,
+      });
+
+      // EventBridge cross-account monitoring (optional)
+      if (props.enableEventBridge) {
+        new EventBridgeConstruct(this, "EventBridge", {
+          envName: props.envName,
+          isPipelineAccount: false,
+          pipelineAccountId: props.pipelineAccount,
+          alarmTopic: monitoring.alarmTopic,
+        });
+      }
+    }
+
+    // ========================================
+    // Configuration Layer
+    // ========================================
+
+    // Store infrastructure information in SSM Parameter Store
+    // This allows other services to discover resources dynamically
+    new SsmParametersConstruct(this, "SsmParameters", {
+      envName: props.envName,
+      vpc: vpcConstruct.vpc,
+      repository: ecrConstruct.repository,
+      cluster: ecsConstruct.cluster,
+      service: ecsConstruct.service,
+    });
+
+    // Create CloudFormation outputs for easy reference
+    new StackOutputsConstruct(this, "StackOutputs", {
+      envName: props.envName,
+      vpc: vpcConstruct.vpc,
+      repository: ecrConstruct.repository,
+      cluster: ecsConstruct.cluster,
+      service: ecsConstruct.service,
+    });
+  }
+}

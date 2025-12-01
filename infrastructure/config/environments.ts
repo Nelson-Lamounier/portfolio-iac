@@ -8,6 +8,9 @@ export interface EnvironmentConfig {
   region: string; // AWS Region for resources
   envName: string; // Used for resource naming and tagging
   pipelineAccount?: string; // CI/CD account for cross-account access
+  enableMonitoring?: boolean; // Enable CloudWatch monitoring and alarms
+  enableEventBridge?: boolean; // Enable cross-account EventBridge monitoring
+  alertEmail?: string; // Email address for CloudWatch alarms
 }
 
 // Record type provides type-safe access with autocomplete
@@ -19,6 +22,8 @@ export const environments: Record<string, EnvironmentConfig> = {
     region: process.env.AWS_REGION || "eu-west-1",
     envName: "development",
     pipelineAccount: process.env.AWS_PIPELINE_ACCOUNT_ID || "",
+    enableMonitoring: false, // Disabled for cost optimization
+    enableEventBridge: false,
   },
 
   // Pre-production testing, mirrors production config
@@ -27,6 +32,9 @@ export const environments: Record<string, EnvironmentConfig> = {
     region: process.env.AWS_REGION || "eu-west-1",
     envName: "staging",
     pipelineAccount: process.env.AWS_PIPELINE_ACCOUNT_ID || "",
+    enableMonitoring: true, // Enabled for testing
+    enableEventBridge: false,
+    alertEmail: process.env.ALERT_EMAIL,
   },
 
   // Live environment, requires approval, highest security
@@ -35,5 +43,8 @@ export const environments: Record<string, EnvironmentConfig> = {
     region: process.env.AWS_REGION || "eu-west-1",
     envName: "production",
     pipelineAccount: process.env.AWS_PIPELINE_ACCOUNT_ID || "",
+    enableMonitoring: true, // Always enabled for production
+    enableEventBridge: true, // Cross-account monitoring
+    alertEmail: process.env.ALERT_EMAIL,
   },
 };

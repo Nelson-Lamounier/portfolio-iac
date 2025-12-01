@@ -5,7 +5,12 @@ module.exports = {
   roots: ["<rootDir>/test"],
   testMatch: ["**/*.test.ts"],
   transform: {
-    "^.+\\.tsx?$": "ts-jest",
+    "^.+\\.tsx?$": [
+      "ts-jest",
+      {
+        isolatedModules: true, // Skip type checking for faster tests
+      },
+    ],
   },
   collectCoverageFrom: ["lib/**/*.ts", "!lib/**/*.d.ts", "!lib/**/index.ts"],
   coverageThreshold: {

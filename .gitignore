@@ -3,6 +3,10 @@ node_modules/
 .pnp
 .pnp.js
 
+# .kiro
+
+.kiro/*
+
 # Yarn
 .yarn/*
 !.yarn/patches
@@ -12,9 +16,13 @@ node_modules/
 !.yarn/versions
 .pnp.*
 
+# Turborepo
+.turbo
+
 # Environment variables
 .env
 .env*.local
+.envrc
 
 # OS files
 .DS_Store
@@ -40,6 +48,11 @@ build/
 .vscode/
 .idea/
 
+# Kiro MCP settings (contains secrets)
+.kiro/settings/mcp.json
+
+.cache_ggshield
+
 # CDK (infrastructure-specific)
 infrastructure/.cdk.staging
 infrastructure/cdk.out
@@ -47,5 +60,3 @@ infrastructure/cdk.out
 # Documentation (generated/personal notes)
 docs/*
 
-# Helper scripts (local development)
-scripts/*
