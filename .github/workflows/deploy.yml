@@ -180,14 +180,58 @@ jobs:
           ENVIRONMENT: ${{ env.ENVIRONMENT }}
           AWS_REGION: ${{ env.AWS_REGION }}
 
+      - name: Check and recover stacks
+        id: recover
+        continue-on-error: true
+        run: ./scripts/recover-stack.sh ${{ env.ENVIRONMENT }}
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+          MAX_RETRIES: 3
+          RETRY_DELAY: 30
+
+      - name: Recovery status
+        if: steps.recover.outcome == 'failure'
+        run: |
+          echo "::warning::Stack recovery failed or stacks need manual intervention"
+          echo "::warning::Deployment will attempt to proceed, but may fail"
+
       - run: make cdk-synth
         env:
           ENVIRONMENT: ${{ env.ENVIRONMENT }}
           AWS_REGION: ${{ env.AWS_REGION }}
           IMAGE_TAG: ${{ needs.build-frontend.outputs.image-tag || 'nginx:alpine' }}
 
-      - run: make cdk-deploy
+      - name: Deploy with retry
+        id: deploy
+        run: |
+          max_attempts=2
+          attempt=1
+          while [ $attempt -le $max_attempts ]; do
+            echo "Deployment attempt $attempt of $max_attempts"
+            if make cdk-deploy; then
+              echo "Deployment successful"
+              exit 0
+            else
+              if [ $attempt -lt $max_attempts ]; then
+                echo "Deployment failed, waiting 60 seconds before retry..."
+                sleep 60
+              else
+                echo "Deployment failed after $max_attempts attempts"
+                exit 1
+              fi
+            fi
+            attempt=$((attempt + 1))
+          done
         env:
           ENVIRONMENT: ${{ env.ENVIRONMENT }}
           AWS_REGION: ${{ env.AWS_REGION }}
           IMAGE_TAG: ${{ needs.build-frontend.outputs.image-tag || 'nginx:alpine' }}
+
+      - name: Post-deployment recovery
+        if: failure() && steps.deploy.outcome == 'failure'
+        continue-on-error: true
+        run: |
+          echo "::error::Deployment failed, attempting recovery..."
+          ./scripts/recover-stack.sh ${{ env.ENVIRONMENT }}
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}

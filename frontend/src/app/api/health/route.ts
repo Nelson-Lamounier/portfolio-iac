@@ -17,6 +17,7 @@ export async function GET() {
       status: 'healthy',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
+      service: "portfolio-frontend",
       environment: process.env.NODE_ENV || 'development',
     },
     { status: 200 }

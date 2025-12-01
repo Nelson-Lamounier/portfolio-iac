@@ -2,6 +2,7 @@
 
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecs from "aws-cdk-lib/aws-ecs";
+import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as autoscaling from "aws-cdk-lib/aws-autoscaling";
 import { Tags } from "aws-cdk-lib";
 import { Construct } from "constructs";
@@ -18,6 +19,7 @@ export interface EcsConstructProps {
   cpu?: number;
   memoryLimitMiB?: number; // Hard limit - task killed if exceeded
   memoryReservationMiB?: number; // Soft limit - minimum memory reserved
+  targetGroup?: elbv2.IApplicationTargetGroup;
 }
 
 export class EcsConstruct extends Construct {
@@ -117,7 +119,10 @@ export class EcsConstruct extends Construct {
       minHealthyPercent: 0, // Allow all tasks to be stopped (for initial deployment)
       maxHealthyPercent: 200, // Allow up to 200% of tasks during deployment
     });
-
+    // Attach service to target group if provided
+    if (props.targetGroup) {
+      props.targetGroup.addTarget(this.service);
+    }
     // Tag service
     Tags.of(this.service).add("Environment", props.envName);
     Tags.of(this.service).add("ManagedBy", "CDK");
