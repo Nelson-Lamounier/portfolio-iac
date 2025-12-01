@@ -15,23 +15,48 @@ import {
 import { environments } from "../config/environments";
 
 import { LoadBalancerStack } from "../lib/stacks";
-import { CertificateStack } from "../lib/stacks/networking/certificate-stack";
 
 const app = new cdk.App();
 
-// Domain configuration - fetched from SSM Parameter Store at synth time
-// These values are stored in the pipeline account and resolved during CDK synth
-// To set these parameters in your pipeline account:
-// aws ssm put-parameter --name "/portfolio/domain/root-domain-name" --value "yourdomain.com" --type String
-// aws ssm put-parameter --name "/portfolio/domain/hosted-zone-id" --value "Z1234567890ABC" --type String
-const rootDomainName = cdk.aws_ssm.StringParameter.valueFromLookup(
-  app,
-  "/github-actions/domain/root-domain-name"
-);
-const hostedZoneId = cdk.aws_ssm.StringParameter.valueFromLookup(
-  app,
-  "/github-actions/domain/hosted-zone-id"
-);
+// Domain configuration - can come from environment variables or SSM Parameter Store
+// Priority: Environment variables > SSM Parameter Store
+// For HTTP-only mode, leave these unset
+let rootDomainName: string | undefined;
+let hostedZoneId: string | undefined;
+
+// Check environment variables first (for local testing)
+if (process.env.ROOT_DOMAIN_NAME && process.env.HOSTED_ZONE_ID) {
+  rootDomainName = process.env.ROOT_DOMAIN_NAME;
+  hostedZoneId = process.env.HOSTED_ZONE_ID;
+} else {
+  // Try to fetch from SSM Parameter Store (for CI/CD)
+  // Only if not explicitly disabled
+  if (process.env.SKIP_DOMAIN_LOOKUP !== "true") {
+    try {
+      rootDomainName = cdk.aws_ssm.StringParameter.valueFromLookup(
+        app,
+        "/portfolio/domain/root-domain-name"
+      );
+      hostedZoneId = cdk.aws_ssm.StringParameter.valueFromLookup(
+        app,
+        "/portfolio/domain/hosted-zone-id"
+      );
+
+      // Check if we got dummy values (parameter doesn't exist)
+      if (
+        rootDomainName?.includes("dummy-value") ||
+        hostedZoneId?.includes("dummy-value")
+      ) {
+        rootDomainName = undefined;
+        hostedZoneId = undefined;
+      }
+    } catch (error) {
+      // Parameters don't exist, continue without HTTPS
+      rootDomainName = undefined;
+      hostedZoneId = undefined;
+    }
+  }
+}
 
 // Defaults to 'development' for safer local development
 const envName = process.env.ENVIRONMENT || "development";
@@ -123,40 +148,54 @@ if (config.enableMonitoring) {
 }
 
 // ========================================
-// 5. Certificate Stack (Optional)
+// 5. Certificate Configuration
 // ========================================
-// Creates SSL/TLS certificates for HTTPS
-// Only created if domain configuration is provided
-let certificateStack: CertificateStack | undefined;
+// Certificates are managed manually in root account (where Route 53 hosted zone lives)
+// Certificate ARN is stored in SSM Parameter Store: /portfolio/domain/acm-arn
+//
+// To create/update certificate:
+// 1. Create certificate in AWS Console (ACM) in root account
+// 2. Use DNS validation with Route 53
+// 3. Store ARN in SSM:
+//    aws ssm put-parameter --name "/portfolio/domain/acm-arn" \
+//      --value "arn:aws:acm:eu-west-1:ACCOUNT:certificate/ID" \
+//      --type String --overwrite --profile github-actions
+//
+// For local override, set CERTIFICATE_ARN environment variable
 
-if (rootDomainName && hostedZoneId) {
-  certificateStack = new CertificateStack(
-    app,
-    `CertificateStack-${config.envName}`,
-    {
-      ...stackProps,
-      certificates: [
-        {
-          domainName: rootDomainName,
-          hostedZoneId: hostedZoneId,
-          includeWildcard: true, // Includes *.yourdomain.com
-          certificateName: `${config.envName}-certificate`,
-          tags: {
-            Environment: config.envName,
-            Project: "portfolio",
-            ManagedBy: "cdk",
-          },
-        },
-      ],
+let certificateArn: string | undefined;
+
+// Check if certificate ARN is provided (for cross-account scenarios)
+// Priority: Environment variable > SSM Parameter Store > Create new
+if (process.env.CERTIFICATE_ARN) {
+  certificateArn = process.env.CERTIFICATE_ARN;
+  console.log(`Using certificate from environment: ${certificateArn}`);
+} else if (process.env.SKIP_DOMAIN_LOOKUP !== "true") {
+  // Try to fetch certificate ARN from SSM Parameter Store
+  try {
+    certificateArn = cdk.aws_ssm.StringParameter.valueFromLookup(
+      app,
+      "/portfolio/domain/acm-arn"
+    );
+
+    // Check if we got a dummy value (parameter doesn't exist)
+    if (certificateArn?.includes("dummy-value")) {
+      certificateArn = undefined;
+    } else if (certificateArn) {
+      console.log(`Using certificate from SSM: ${certificateArn}`);
     }
-  );
+  } catch (error) {
+    // Parameter doesn't exist, will try to create certificate
+    certificateArn = undefined;
+  }
 }
 
 // ========================================
 // 6. Load Balancer Stack
 // ========================================
 // Creates Application Load Balancer
-// Depends on: NetworkingStack (VPC), CertificateStack (optional)
+// Depends on: NetworkingStack (VPC)
+// Uses certificate ARN from SSM Parameter Store (if available)
 const loadBalancerStack = new LoadBalancerStack(
   app,
   `LoadBalancerStack-${config.envName}`,
@@ -166,9 +205,8 @@ const loadBalancerStack = new LoadBalancerStack(
     envName: config.envName,
     vpc: networkingStack.vpc,
     loadBalancerName: `${config.envName}-alb`,
-    enableHttps: !!certificateStack && !!rootDomainName,
-    certificateArn: certificateStack?.getCertificate(rootDomainName!)
-      ?.certificateArn,
+    enableHttps: !!certificateArn,
+    certificateArn: certificateArn,
     tags: {
       Environment: config.envName,
       Project: "portfolio",
@@ -179,19 +217,23 @@ const loadBalancerStack = new LoadBalancerStack(
 
 // Add dependencies
 loadBalancerStack.addDependency(networkingStack);
-if (certificateStack) {
-  loadBalancerStack.addDependency(certificateStack);
-}
 
 // ========================================
-// 7. Connect ECS Service to Load Balancer
+// 7. Connect ECS Service to Load Balancer (TODO)
 // ========================================
-// TODO: Update ComputeStack to accept target group from LoadBalancerStack
-// For now, the load balancer is created but not yet connected to ECS
-// Next steps:
-// 1. Add target group parameter to ComputeStack
-// 2. Attach ECS service to the target group
-// 3. Update security groups to allow ALB -> ECS traffic
+// The load balancer and ECS service are deployed but not yet connected.
+// This requires updating the ECS construct to accept a target group parameter.
+//
+// To complete the integration:
+// 1. Update EcsConstruct to accept optional targetGroup parameter
+// 2. Attach service to target group in EcsConstruct
+// 3. Configure security groups to allow ALB -> ECS traffic
+//
+// For now, you can:
+// - Access ECS service directly via EC2 instance public IP
+// - Access load balancer (returns 200 OK from default action)
+//
+// See docs/ECS_ALB_INTEGRATION.md for implementation guide
 
 // Converts CDK code to CloudFormation templates
 app.synth();

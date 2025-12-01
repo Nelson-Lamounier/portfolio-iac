@@ -1,0 +1,9 @@
+{
+  "NetworkingStack-development": {
+    "ExportsOutputRefVpcPublicSubnet1Subnet8E8DEDC0785EBA99": "subnet-0a84105de29903638",
+    "VpcId": "vpc-0aa9c8eaa25e3d0a0",
+    "VpcCidr": "10.0.0.0/16",
+    "ExportsOutputRefVpcC302751171D26A23": "vpc-0aa9c8eaa25e3d0a0",
+    "ExportsOutputRefVpcPublicSubnet2SubnetA811849C19D90E96": "subnet-071a82424645c68c4"
+  }
+}
