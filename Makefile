@@ -17,10 +17,13 @@ help:
 	@echo "  check-infra          - Check if infrastructure exists"
 	@echo "  fetch-ecr-uri        - Fetch ECR repository URI"
 	@echo "  fetch-aws-accounts   - Fetch AWS account IDs from Parameter Store"
+	@echo "  setup-domain-params  - Setup domain configuration in SSM Parameter Store"
 	@echo "  verify-cdk-bootstrap - Verify CDK bootstrap"
 	@echo "  docker-build-push    - Build and push Docker image"
 	@echo "  cdk-synth            - Synthesize CDK stacks"
 	@echo "  cdk-deploy           - Deploy CDK stacks"
+	@echo "  deploy-lb-local      - Deploy Load Balancer locally for testing (ENV=development)"
+	@echo "  deploy-lb-http       - Deploy Load Balancer with HTTP only (ENV=development)"
 
 # Installation
 install:
@@ -74,6 +77,10 @@ fetch-aws-accounts:
 	@echo "Fetching AWS account IDs..."
 	@./scripts/fetch-aws-accounts.sh
 
+setup-domain-params:
+	@echo "Setting up domain configuration in SSM Parameter Store..."
+	@./scripts/setup-domain-parameters.sh
+
 verify-cdk-bootstrap:
 	@echo "Verifying CDK bootstrap..."
 	@./scripts/verify-cdk-bootstrap.sh
@@ -93,3 +100,11 @@ cdk-synth:
 cdk-deploy:
 	@echo "Deploying CDK stacks..."
 	yarn workspace infrastructure cdk deploy --all --require-approval never
+
+deploy-lb-local:
+	@echo "Deploying Load Balancer locally for environment: $(ENV)"
+	@./scripts/deploy-lb-local.sh $(ENV)
+
+deploy-lb-http:
+	@echo "Deploying Load Balancer (HTTP only) for environment: $(ENV)"
+	@./scripts/deploy-lb-http-only.sh $(ENV)

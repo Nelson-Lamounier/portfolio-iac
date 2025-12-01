@@ -88,7 +88,7 @@ jobs:
           done
 
           # If we get here, container didn't start
-          echo "❌ Container failed to start"
+          echo "Container failed to start"
           docker logs test-container
           docker stop test-container
           exit 1
