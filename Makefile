@@ -22,6 +22,7 @@ help:
 	@echo "  docker-build-push    - Build and push Docker image"
 	@echo "  cdk-synth            - Synthesize CDK stacks"
 	@echo "  cdk-deploy           - Deploy CDK stacks"
+	@echo "  recover-stacks       - Automatically recover failed stacks (ENV=development)"
 	@echo "  deploy-lb-local      - Deploy Load Balancer locally for testing (ENV=development)"
 	@echo "  deploy-lb-http       - Deploy Load Balancer with HTTP only (ENV=development)"
 
@@ -108,3 +109,7 @@ deploy-lb-local:
 deploy-lb-http:
 	@echo "Deploying Load Balancer (HTTP only) for environment: $(ENV)"
 	@./scripts/deploy-lb-http-only.sh $(ENV)
+
+recover-stacks:
+	@echo "Recovering stacks for environment: $(ENV)"
+	@./scripts/recover-stack.sh $(ENV)
