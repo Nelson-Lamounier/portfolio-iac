@@ -22,6 +22,8 @@ help:
 	@echo "  docker-build-push    - Build and push Docker image"
 	@echo "  cdk-synth            - Synthesize CDK stacks"
 	@echo "  cdk-deploy           - Deploy CDK stacks"
+	@echo "  deploy-lb-local      - Deploy Load Balancer locally for testing (ENV=development)"
+	@echo "  deploy-lb-http       - Deploy Load Balancer with HTTP only (ENV=development)"
 
 # Installation
 install:
@@ -98,3 +100,11 @@ cdk-synth:
 cdk-deploy:
 	@echo "Deploying CDK stacks..."
 	yarn workspace infrastructure cdk deploy --all --require-approval never
+
+deploy-lb-local:
+	@echo "Deploying Load Balancer locally for environment: $(ENV)"
+	@./scripts/deploy-lb-local.sh $(ENV)
+
+deploy-lb-http:
+	@echo "Deploying Load Balancer (HTTP only) for environment: $(ENV)"
+	@./scripts/deploy-lb-http-only.sh $(ENV)
