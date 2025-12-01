@@ -4,6 +4,7 @@ import * as cdk from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecr from "aws-cdk-lib/aws-ecr";
 import * as ecs from "aws-cdk-lib/aws-ecs";
+import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import { Construct } from "constructs";
 import { EcsConstruct } from "../../constructs/compute/ecs-construct";
@@ -13,6 +14,7 @@ export interface ComputeStackProps extends cdk.StackProps {
   envName: string;
   vpc: ec2.IVpc;
   repository: ecr.Repository;
+  targetGroup?: elbv2.IApplicationTargetGroup; // Optional ALB target group
   instanceType?: ec2.InstanceType;
   minCapacity?: number;
   maxCapacity?: number;
@@ -66,6 +68,7 @@ export class ComputeStack extends cdk.Stack {
       memoryReservationMiB: props.memoryReservationMiB ?? 384, // Reduced from 512 to leave room for ECS agent
       memoryLimitMiB: props.memoryLimitMiB, // Hard limit (optional)
       cpu: props.cpu,
+      targetGroup: props.targetGroup, // Attach to ALB target group if provided
     });
 
     this.cluster = ecsConstruct.cluster;

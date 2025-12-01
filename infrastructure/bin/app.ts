@@ -215,6 +215,7 @@ const computeStack = new ComputeStack(app, `ComputeStack-${config.envName}`, {
   envName: config.envName,
   vpc: networkingStack.vpc,
   repository: storageStack.repository,
+  targetGroup: ecsTargetGroup, // Attach ECS service to ALB target group
 });
 
 // Explicit dependencies
