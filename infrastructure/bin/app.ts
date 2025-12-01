@@ -14,6 +14,9 @@ import {
 } from "../lib/stacks";
 import { environments } from "../config/environments";
 
+import { LoadBalancerStack } from "../lib/stacks";
+import { CertificateStack } from "../lib/stacks/networking/certificate-stack";
+
 const app = new cdk.App();
 
 // Defaults to 'development' for safer local development
@@ -103,6 +106,32 @@ if (config.enableMonitoring) {
 
   // Explicit dependency
   monitoringStack.addDependency(computeStack);
+}
+
+// Create the load balancer stack
+const loadBalancerStack = new LoadBalancerStack(
+  app,
+  `PortfolioLoadBalancerStack-${config.envName}`,
+  {
+    description: "Portfolio load balancer infrastructure",
+    envName: config.envName,
+    vpc: networkingStack.vpc,
+    loadBalancerName: process.env.LOAD_BALANCER_NAME || "PortfolioLoadBalancer",
+    enableHttps: !!certificateStack,
+    certificateArn: certificateStack?.getCertificate(rootDomainName || "")
+      ?.certificateArn,
+    tags: {
+      Environment: "development",
+      Project: "portfolio",
+      ManagedBy: "cdk",
+    },
+  }
+);
+
+// Add dependencies
+loadBalancerStack.addDependency(networkingStack);
+if (certificateStack) {
+  loadBalancerStack.addDependency(certificateStack);
 }
 
 // Converts CDK code to CloudFormation templates
