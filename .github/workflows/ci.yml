@@ -129,13 +129,13 @@ jobs:
         run: |
           echo "::group::Validating CDK synthesis"
           cd infrastructure
-          yarn cdk synth --all
+          yarn cdk synth --all --no-lookups
           echo "::endgroup::"
         env:
           SKIP_DOMAIN_LOOKUP: "true"
-          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV || '123456789012' }}
           AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
-          CDK_DEFAULT_ACCOUNT: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+          CDK_DEFAULT_ACCOUNT: ${{ vars.AWS_ACCOUNT_ID_DEV || '123456789012' }}
           CDK_DEFAULT_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
 
   test-summary:
