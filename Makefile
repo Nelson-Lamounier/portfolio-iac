@@ -25,6 +25,12 @@ help:
 	@echo "  recover-stacks       - Automatically recover failed stacks (ENV=development)"
 	@echo "  deploy-lb-local      - Deploy Load Balancer locally for testing (ENV=development)"
 	@echo "  deploy-lb-http       - Deploy Load Balancer with HTTP only (ENV=development)"
+	@echo ""
+	@echo "Monitoring targets:"
+	@echo "  deploy-monitoring-ecs   - Deploy ECS-based monitoring (ENV=development)"
+	@echo "  destroy-monitoring-ecs  - Destroy ECS monitoring stack (ENV=development)"
+	@echo "  check-monitoring-ecs    - Check ECS monitoring status (ENV=development)"
+	@echo "  logs-monitoring-ecs     - Show log group names for monitoring (ENV=development)"
 
 # Installation
 install:
@@ -56,6 +62,21 @@ test-frontend:
 test-infrastructure:
 	@echo "Running infrastructure tests..."
 	yarn turbo run test --filter=infrastructure -- --ci --coverage
+
+test-monitoring-e2e:
+	@echo "Running monitoring E2E tests..."
+	@chmod +x ./scripts/test-monitoring-setup.sh
+	./scripts/test-monitoring-setup.sh $(ENVIRONMENT)
+
+update-prometheus-config:
+	@echo "Updating Prometheus configuration..."
+	@chmod +x ./scripts/update-prometheus-config.sh
+	./scripts/update-prometheus-config.sh $(ENVIRONMENT)
+
+test-ci:
+	@echo "Running all CI tests..."
+	$(MAKE) test-infrastructure
+	$(MAKE) test-frontend
 
 # Clean
 clean:
@@ -113,3 +134,28 @@ deploy-lb-http:
 recover-stacks:
 	@echo "Recovering stacks for environment: $(ENV)"
 	@./scripts/recover-stack.sh $(ENV)
+
+# Monitoring deployment targets
+deploy-monitoring-ecs:
+	@echo "Deploying ECS-based monitoring for environment: $(ENV)"
+	@cd infrastructure && yarn cdk deploy MonitoringEcsStack-$(ENV) --require-approval never
+
+destroy-monitoring-ecs:
+	@echo "Destroying ECS-based monitoring for environment: $(ENV)"
+	@cd infrastructure && yarn cdk destroy MonitoringEcsStack-$(ENV) --force
+
+check-monitoring-ecs:
+	@echo "Checking ECS monitoring status for environment: $(ENV)"
+	@aws cloudformation describe-stacks \
+		--stack-name MonitoringEcsStack-$(ENV) \
+		--query 'Stacks[0].{Status:StackStatus,Outputs:Outputs}' \
+		--output table || echo "Stack not found"
+
+logs-monitoring-ecs:
+	@echo "Tailing logs for monitoring services..."
+	@echo "Available log groups:"
+	@echo "  - /ecs/$(ENV)-prometheus"
+	@echo "  - /ecs/$(ENV)-grafana"
+	@echo "  - /ecs/$(ENV)-node-exporter"
+	@echo ""
+	@echo "Usage: aws logs tail /ecs/$(ENV)-grafana --follow"
