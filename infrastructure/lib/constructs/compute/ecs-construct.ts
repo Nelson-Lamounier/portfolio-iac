@@ -121,7 +121,13 @@ export class EcsConstruct extends Construct {
     });
     // Attach service to target group if provided
     if (props.targetGroup) {
-      props.targetGroup.addTarget(this.service);
+      // Use loadBalancerTarget to ensure correct target type
+      props.targetGroup.addTarget(
+        this.service.loadBalancerTarget({
+          containerName: "app",
+          containerPort: 3000,
+        })
+      );
     }
     // Tag service
     Tags.of(this.service).add("Environment", props.envName);
