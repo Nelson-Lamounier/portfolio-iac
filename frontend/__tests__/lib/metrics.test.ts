@@ -12,6 +12,13 @@ describe("Metrics Client", () => {
       ok: true,
       json: async () => ({ success: true }),
     });
+    // Enable metrics for testing
+    metrics.setEnabled(true);
+  });
+
+  afterEach(() => {
+    // Reset to default state
+    metrics.setEnabled(false);
   });
 
   describe("MetricsCollector Singleton", () => {
@@ -29,7 +36,7 @@ describe("Metrics Client", () => {
       trackPageView("/home");
 
       // Wait for async operation
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
@@ -50,7 +57,7 @@ describe("Metrics Client", () => {
       trackPageView("/dashboard");
 
       // Wait for async operation
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Assert
       const callArgs = (global.fetch as jest.Mock).mock.calls[0];
@@ -68,7 +75,7 @@ describe("Metrics Client", () => {
       trackApiCall("/api/users", "GET");
 
       // Wait for async operation
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Assert
       expect(global.fetch).toHaveBeenCalledWith(
@@ -84,7 +91,7 @@ describe("Metrics Client", () => {
       trackApiCall("/api/posts", "POST");
 
       // Wait for async operation
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Assert
       const callArgs = (global.fetch as jest.Mock).mock.calls[0];
@@ -100,7 +107,7 @@ describe("Metrics Client", () => {
       trackApiCall("/api/users");
 
       // Wait for async operation
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Assert
       const callArgs = (global.fetch as jest.Mock).mock.calls[0];
@@ -119,7 +126,7 @@ describe("Metrics Client", () => {
       trackError(error, "test-context");
 
       // Wait for async operation
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Assert
       const callArgs = (global.fetch as jest.Mock).mock.calls[0];
@@ -135,7 +142,7 @@ describe("Metrics Client", () => {
       trackError("String error message");
 
       // Wait for async operation
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Assert
       const callArgs = (global.fetch as jest.Mock).mock.calls[0];
@@ -150,7 +157,7 @@ describe("Metrics Client", () => {
       trackError("Error without context");
 
       // Wait for async operation
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Assert
       expect(global.fetch).toHaveBeenCalled();
@@ -163,7 +170,7 @@ describe("Metrics Client", () => {
       trackEvent("button_click", { button: "signup" });
 
       // Wait for async operation
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Assert
       const callArgs = (global.fetch as jest.Mock).mock.calls[0];
@@ -178,7 +185,7 @@ describe("Metrics Client", () => {
       trackEvent("custom_event");
 
       // Wait for async operation
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Assert
       const callArgs = (global.fetch as jest.Mock).mock.calls[0];
@@ -197,6 +204,9 @@ describe("Metrics Client", () => {
       expect(() => {
         trackPageView("/test");
       }).not.toThrow();
+
+      // Wait for async operation
+      await new Promise((resolve) => setTimeout(resolve, 10));
     });
 
     it("should continue execution after failed metric send", async () => {
@@ -208,7 +218,7 @@ describe("Metrics Client", () => {
       trackPageView("/test2");
 
       // Wait for async operations
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Assert - Both calls should have been attempted
       expect(global.fetch).toHaveBeenCalledTimes(2);
@@ -224,7 +234,7 @@ describe("Metrics Client", () => {
       trackPageView("/test");
 
       // Wait for async operation
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Assert
       expect(global.fetch).not.toHaveBeenCalled();
@@ -242,7 +252,7 @@ describe("Metrics Client", () => {
       trackPageView("/test");
 
       // Wait for async operation
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Assert
       expect(global.fetch).toHaveBeenCalled();
@@ -255,7 +265,7 @@ describe("Metrics Client", () => {
       trackPageView("/test");
 
       // Wait for async operation
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Assert
       const callArgs = (global.fetch as jest.Mock).mock.calls[0];
@@ -270,7 +280,7 @@ describe("Metrics Client", () => {
       trackPageView("/test");
 
       // Wait for async operation
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Assert
       const callArgs = (global.fetch as jest.Mock).mock.calls[0];
@@ -286,7 +296,7 @@ describe("Metrics Client", () => {
       trackPageView("/test");
 
       // Wait for async operation
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Assert
       const callArgs = (global.fetch as jest.Mock).mock.calls[0];
@@ -303,7 +313,7 @@ describe("Metrics Client", () => {
       trackError("Test error");
 
       // Wait for async operations
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Assert
       expect(global.fetch).toHaveBeenCalledTimes(4);
@@ -315,7 +325,7 @@ describe("Metrics Client", () => {
       trackApiCall("/api/users");
 
       // Wait for async operations
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Assert
       const calls = (global.fetch as jest.Mock).mock.calls;
