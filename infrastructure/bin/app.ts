@@ -13,6 +13,7 @@ import {
   ComputeStack,
   MonitoringStack,
   MonitoringEc2Stack,
+  MonitoringEcsStack,
   LoadBalancerStack,
 } from "../lib/stacks";
 import { environments } from "../config/environments";
@@ -261,23 +262,23 @@ if (config.enableMonitoring) {
 
   monitoringStack.addDependency(computeStack);
 
-  // EC2 Monitoring Stack (Prometheus + Grafana)
-  const monitoringEc2Stack = new MonitoringEc2Stack(
+  // ECS Monitoring Stack (Prometheus + Grafana on ECS)
+  const monitoringEcsStack = new MonitoringEcsStack(
     app,
-    `MonitoringEc2Stack-${config.envName}`,
+    `MonitoringEcsStack-${config.envName}`,
     {
       ...stackProps,
       envName: config.envName,
       vpc: networkingStack.vpc,
       albDnsName:
         loadBalancerStack.loadBalancer.loadBalancer.loadBalancerDnsName,
-      // Optional: Restrict Grafana access to specific IPs
+      // Optional: Restrict access to specific IPs
       // allowedIpRanges: ['YOUR_IP/32'],
     }
   );
 
-  monitoringEc2Stack.addDependency(networkingStack);
-  monitoringEc2Stack.addDependency(loadBalancerStack);
+  monitoringEcsStack.addDependency(networkingStack);
+  monitoringEcsStack.addDependency(loadBalancerStack);
 }
 
 // Converts CDK code to CloudFormation templates
