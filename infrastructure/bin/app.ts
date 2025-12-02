@@ -13,6 +13,8 @@ import {
   ComputeStack,
   MonitoringStack,
   LoadBalancerStack,
+  CertificateStack,
+  CertificateConfig,
 } from "../lib/stacks";
 import { environments } from "../config/environments";
 
@@ -119,7 +121,7 @@ const storageStack = new StorageStack(app, `StorageStack-${config.envName}`, {
 // Will be created after Compute Stack is defined
 
 // ========================================
-// 5. Certificate Configuration
+// 5. Certificate Stack (Optional - for HTTPS)
 // ========================================
 // Certificates are managed manually in the dev account
 // Certificate ARN is stored in SSM Parameter Store in pipeline account: /portfolio/domain/acm-arn
@@ -134,6 +136,7 @@ const storageStack = new StorageStack(app, `StorageStack-${config.envName}`, {
 //
 // The workflow will fetch this parameter from pipeline account and pass as env var
 
+let certificateStack: CertificateStack | undefined;
 let certificateArn: string | undefined;
 
 // Check if certificate ARN is provided via environment variable (from workflow)
@@ -197,16 +200,24 @@ const loadBalancerStack = new LoadBalancerStack(
 // Add dependencies
 loadBalancerStack.addDependency(networkingStack);
 
+// Add certificate dependency if certificate was created
+if (certificateStack) {
+  loadBalancerStack.addDependency(certificateStack);
+  console.log("Load Balancer will use HTTPS with certificate");
+}
+
 // ========================================
 // 7. Connect ECS Service to Load Balancer
 // ========================================
 // Create target group for ECS service
+// Note: Using INSTANCE target type because ECS is using EC2 launch type with BRIDGE networking
+// If you switch to AWSVPC networking, change this to TargetType.IP
 const ecsTargetGroup = loadBalancerStack.addTargetGroup({
   name: `ecs-service-${envName}`,
   port: 3000,
   healthCheckPath: "/api/health",
   protocol: elbv2.ApplicationProtocol.HTTP,
-  targetType: elbv2.TargetType.IP,
+  targetType: elbv2.TargetType.INSTANCE, // INSTANCE for EC2 launch type with bridge networking
   healthCheckIntervalSeconds: 30,
   deregistrationDelay: cdk.Duration.seconds(30),
   createListener: true,
@@ -223,6 +234,7 @@ const computeStack = new ComputeStack(app, `ComputeStack-${config.envName}`, {
   envName: config.envName,
   vpc: networkingStack.vpc,
   repository: storageStack.repository,
+  targetGroup: ecsTargetGroup, // Attach ECS service to ALB target group
 });
 
 // Explicit dependencies
