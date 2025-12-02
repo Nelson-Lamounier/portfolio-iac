@@ -60,3 +60,4 @@ infrastructure/cdk.out
 # Documentation (generated/personal notes)
 docs/*
 
+playground/*

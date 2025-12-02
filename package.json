@@ -23,5 +23,8 @@
   "packageManager": "yarn@4.0.0",
   "devDependencies": {
     "turbo": "^2.6.1"
+  },
+  "dependencies": {
+    "quokka-treasure-chest": "^1.0.3"
   }
 }
