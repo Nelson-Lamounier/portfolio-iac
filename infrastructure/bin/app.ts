@@ -13,6 +13,8 @@ import {
   ComputeStack,
   MonitoringStack,
   LoadBalancerStack,
+  CertificateStack,
+  CertificateConfig,
 } from "../lib/stacks";
 import { environments } from "../config/environments";
 
@@ -119,46 +121,60 @@ const storageStack = new StorageStack(app, `StorageStack-${config.envName}`, {
 // Will be created after Compute Stack is defined
 
 // ========================================
-// 5. Certificate Configuration
+// 5. Certificate Stack (Optional - for HTTPS)
 // ========================================
-// Certificates are managed manually in root account (where Route 53 hosted zone lives)
-// Certificate ARN is stored in SSM Parameter Store: /portfolio/domain/acm-arn
-//
-// To create/update certificate:
-// 1. Create certificate in AWS Console (ACM) in root account
-// 2. Use DNS validation with Route 53
-// 3. Store ARN in SSM:
-//    aws ssm put-parameter --name "/portfolio/domain/acm-arn" \
-//      --value "arn:aws:acm:eu-west-1:ACCOUNT:certificate/ID" \
-//      --type String --overwrite --profile github-actions
-//
-// For local override, set CERTIFICATE_ARN environment variable
+// Creates ACM certificate for HTTPS
+// Depends on: Domain and Hosted Zone from SSM
+// Note: DNS validation must be completed manually in Route 53
 
+let certificateStack: CertificateStack | undefined;
 let certificateArn: string | undefined;
 
-// Check if certificate ARN is provided (for cross-account scenarios)
-// Priority: Environment variable > SSM Parameter Store > Create new
-if (process.env.CERTIFICATE_ARN) {
-  certificateArn = process.env.CERTIFICATE_ARN;
-  console.log(`Using certificate from environment: ${certificateArn}`);
-} else if (process.env.SKIP_DOMAIN_LOOKUP !== "true") {
-  // Try to fetch certificate ARN from SSM Parameter Store
-  try {
-    certificateArn = cdk.aws_ssm.StringParameter.valueFromLookup(
-      app,
-      "/portfolio/domain/acm-arn"
-    );
+if (rootDomainName && hostedZoneId) {
+  console.log(`Creating certificate for domain: ${rootDomainName}`);
 
-    // Check if we got a dummy value (parameter doesn't exist)
-    if (certificateArn?.includes("dummy-value")) {
-      certificateArn = undefined;
-    } else if (certificateArn) {
-      console.log(`Using certificate from SSM: ${certificateArn}`);
+  // Define certificate configuration
+  const certificateConfigs: CertificateConfig[] = [
+    {
+      domainName: rootDomainName,
+      hostedZoneId: hostedZoneId,
+      includeWildcard: true, // Includes *.yourdomain.com
+      certificateName: `${config.envName}-certificate`,
+      subjectAlternativeNames: [
+        `www.${rootDomainName}`,
+        `api.${rootDomainName}`,
+      ],
+      tags: {
+        Environment: config.envName,
+        Project: "portfolio",
+        ManagedBy: "cdk",
+      },
+    },
+  ];
+
+  // Create the certificate stack
+  certificateStack = new CertificateStack(
+    app,
+    `CertificateStack-${config.envName}`,
+    {
+      ...stackProps,
+      description: "SSL/TLS certificates with DNS validation",
+      certificates: certificateConfigs,
+      hostedZoneId: hostedZoneId,
     }
-  } catch (error) {
-    // Parameter doesn't exist, will try to create certificate
-    certificateArn = undefined;
+  );
+
+  // Get the certificate ARN for use in Load Balancer
+  const certificate = certificateStack.getCertificate(rootDomainName);
+  if (certificate) {
+    certificateArn = certificate.certificateArn;
+    console.log(`Certificate will be created for: ${rootDomainName}`);
   }
+} else {
+  console.log("No domain configuration found - HTTPS will be disabled");
+  console.log("To enable HTTPS, set domain parameters in SSM:");
+  console.log("  /portfolio/domain/root-domain-name");
+  console.log("  /portfolio/domain/hosted-zone-id");
 }
 
 // ========================================
@@ -188,6 +204,12 @@ const loadBalancerStack = new LoadBalancerStack(
 
 // Add dependencies
 loadBalancerStack.addDependency(networkingStack);
+
+// Add certificate dependency if certificate was created
+if (certificateStack) {
+  loadBalancerStack.addDependency(certificateStack);
+  console.log("Load Balancer will use HTTPS with certificate");
+}
 
 // ========================================
 // 7. Connect ECS Service to Load Balancer
