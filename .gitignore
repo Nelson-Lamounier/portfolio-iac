@@ -60,6 +60,12 @@ infrastructure/cdk.out
 # Documentation (generated/personal notes)
 docs/*
 
+# Playground files (for learning/testing)
+playground/
+infrastructure/playground/
+
+
+# Monitoring data (Prometheus & Grafana)
 playground/*
 # 
 Monitoring data (Prometheus & Grafana)

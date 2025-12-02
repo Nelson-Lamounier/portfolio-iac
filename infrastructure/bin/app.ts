@@ -12,6 +12,8 @@ import {
   StorageStack,
   ComputeStack,
   MonitoringStack,
+  MonitoringEc2Stack,
+  MonitoringEcsStack,
   LoadBalancerStack,
   CertificateStack,
   CertificateConfig,
@@ -256,11 +258,12 @@ if (ecsSecurityGroup) {
 }
 
 // ========================================
-// 10. Monitoring Stack (Optional)
+// 10. Monitoring Stacks (Optional)
 // ========================================
-// Creates CloudWatch alarms and dashboards
-// Depends on: ComputeStack (ECS cluster and service)
+// Creates CloudWatch alarms, dashboards, and Prometheus/Grafana on EC2
+// Depends on: ComputeStack (ECS cluster and service), LoadBalancerStack (ALB DNS)
 if (config.enableMonitoring) {
+  // CloudWatch Monitoring Stack
   const monitoringStack = new MonitoringStack(
     app,
     `MonitoringStack-${config.envName}`,
@@ -276,8 +279,25 @@ if (config.enableMonitoring) {
     }
   );
 
-  // Explicit dependency
   monitoringStack.addDependency(computeStack);
+
+  // ECS Monitoring Stack (Prometheus + Grafana on ECS)
+  const monitoringEcsStack = new MonitoringEcsStack(
+    app,
+    `MonitoringEcsStack-${config.envName}`,
+    {
+      ...stackProps,
+      envName: config.envName,
+      vpc: networkingStack.vpc,
+      albDnsName:
+        loadBalancerStack.loadBalancer.loadBalancer.loadBalancerDnsName,
+      // Optional: Restrict access to specific IPs
+      // allowedIpRanges: ['YOUR_IP/32'],
+    }
+  );
+
+  monitoringEcsStack.addDependency(networkingStack);
+  monitoringEcsStack.addDependency(loadBalancerStack);
 }
 
 // Converts CDK code to CloudFormation templates

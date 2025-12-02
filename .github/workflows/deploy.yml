@@ -165,6 +165,12 @@ jobs:
 
       - run: make build-infrastructure
 
+      - name: Run infrastructure tests
+        run: |
+          echo "::group::Running infrastructure unit tests"
+          make test-infrastructure
+          echo "::endgroup::"
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
@@ -270,3 +276,169 @@ jobs:
         env:
           ENV: ${{ env.ENVIRONMENT }}
           AWS_REGION: ${{ env.AWS_REGION }}
+
+      - name: Test monitoring setup
+        if: success()
+        continue-on-error: true
+        run: |
+          echo "::group::Testing monitoring infrastructure"
+          make test-monitoring-e2e ENVIRONMENT=${{ env.ENVIRONMENT }}
+          echo "::endgroup::"
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+      - name: Update Prometheus configuration
+        if: success()
+        continue-on-error: true
+        run: |
+          echo "::group::Updating Prometheus configuration"
+          make update-prometheus-config ENVIRONMENT=${{ env.ENVIRONMENT }}
+          echo "::endgroup::"
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+  verify-deployment:
+    runs-on: ubuntu-latest
+    needs: [deploy-infrastructure]
+    if: success()
+    environment: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Assume deployment role in target account
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.DEPLOYMENT_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-chaining: true
+
+      - name: Verify infrastructure health
+        run: |
+          echo "::group::Verifying infrastructure health"
+
+          # Check ECS service
+          echo "Checking ECS service..."
+          aws ecs describe-services \
+            --cluster ${{ env.ENVIRONMENT }}-cluster \
+            --services ${{ env.ENVIRONMENT }}-service \
+            --query "services[0].{Status:status,Running:runningCount,Desired:desiredCount}" \
+            --output table
+
+          # Check ALB health
+          echo "Checking ALB health..."
+          aws elbv2 describe-load-balancers \
+            --names "${{ env.ENVIRONMENT }}-alb" \
+            --query "LoadBalancers[0].{State:State.Code,DNS:DNSName}" \
+            --output table
+
+          # Check target health
+          echo "Checking target health..."
+          LB_ARN=$(aws elbv2 describe-load-balancers \
+            --names "${{ env.ENVIRONMENT }}-alb" \
+            --query "LoadBalancers[0].LoadBalancerArn" \
+            --output text)
+
+          TG_ARN=$(aws elbv2 describe-target-groups \
+            --load-balancer-arn $LB_ARN \
+            --query "TargetGroups[0].TargetGroupArn" \
+            --output text)
+
+          aws elbv2 describe-target-health \
+            --target-group-arn $TG_ARN \
+            --query "TargetHealthDescriptions[*].{Target:Target.Id,Health:TargetHealth.State}" \
+            --output table
+
+          echo "::endgroup::"
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+      - name: Verify monitoring stack
+        continue-on-error: true
+        run: |
+          echo "::group::Verifying monitoring stack"
+
+          # Check if monitoring stack exists
+          STACK_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name "MonitoringEc2Stack-${{ env.ENVIRONMENT }}" \
+            --query "Stacks[0].StackStatus" \
+            --output text 2>/dev/null || echo "NOT_FOUND")
+
+          if [ "$STACK_STATUS" = "CREATE_COMPLETE" ] || [ "$STACK_STATUS" = "UPDATE_COMPLETE" ]; then
+            echo "✓ Monitoring stack is healthy: $STACK_STATUS"
+            
+            # Get monitoring URLs
+            GRAFANA_URL=$(aws cloudformation describe-stacks \
+              --stack-name "MonitoringEc2Stack-${{ env.ENVIRONMENT }}" \
+              --query "Stacks[0].Outputs[?OutputKey=='GrafanaUrl'].OutputValue" \
+              --output text)
+            
+            PROMETHEUS_URL=$(aws cloudformation describe-stacks \
+              --stack-name "MonitoringEc2Stack-${{ env.ENVIRONMENT }}" \
+              --query "Stacks[0].Outputs[?OutputKey=='PrometheusUrl'].OutputValue" \
+              --output text)
+            
+            echo "::notice::Grafana: $GRAFANA_URL"
+            echo "::notice::Prometheus: $PROMETHEUS_URL"
+          else
+            echo "::warning::Monitoring stack not found or unhealthy: $STACK_STATUS"
+          fi
+
+          echo "::endgroup::"
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+      - name: Test application endpoints
+        run: |
+          echo "::group::Testing application endpoints"
+
+          # Get ALB DNS
+          ALB_DNS=$(aws elbv2 describe-load-balancers \
+            --names "${{ env.ENVIRONMENT }}-alb" \
+            --query "LoadBalancers[0].DNSName" \
+            --output text)
+
+          echo "Testing ALB: $ALB_DNS"
+
+          # Test health endpoint
+          echo "Testing /api/health..."
+          HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 "http://${ALB_DNS}/api/health" || echo "000")
+
+          if [ "$HEALTH_STATUS" = "200" ]; then
+            echo "::notice::✓ Health endpoint is responding: $HEALTH_STATUS"
+          else
+            echo "::warning::Health endpoint returned: $HEALTH_STATUS"
+          fi
+
+          # Test metrics endpoint
+          echo "Testing /api/metrics..."
+          METRICS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 "http://${ALB_DNS}/api/metrics" || echo "000")
+
+          if [ "$METRICS_STATUS" = "200" ]; then
+            echo "::notice::✓ Metrics endpoint is responding: $METRICS_STATUS"
+            
+            # Verify metrics format
+            METRICS_CONTENT=$(curl -s --connect-timeout 10 "http://${ALB_DNS}/api/metrics")
+            if echo "$METRICS_CONTENT" | grep -q "nextjs_up"; then
+              echo "::notice::✓ Metrics are in correct Prometheus format"
+            else
+              echo "::warning::Metrics format may be incorrect"
+            fi
+          else
+            echo "::warning::Metrics endpoint returned: $METRICS_STATUS"
+          fi
+
+          echo "::endgroup::"
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          echo "::notice::Deployment verification complete for ${{ env.ENVIRONMENT }}"
+          echo "::notice::Check the logs above for any warnings or issues"
