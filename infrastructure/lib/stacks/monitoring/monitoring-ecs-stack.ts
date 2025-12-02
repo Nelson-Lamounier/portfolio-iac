@@ -34,7 +34,7 @@ export class MonitoringEcsStack extends cdk.Stack {
     const fileSystem = this.createEfsFileSystem(vpc, envName);
 
     // Create ECS Cluster for monitoring
-    this.cluster = this.createEcsCluster(vpc, envName);
+    this.cluster = this.createEcsCluster(vpc, envName, fileSystem);
 
     // Create Application Load Balancer for monitoring services
     this.loadBalancer = this.createLoadBalancer(vpc, envName, allowedIpRanges);
@@ -88,7 +88,11 @@ export class MonitoringEcsStack extends cdk.Stack {
     return fileSystem;
   }
 
-  private createEcsCluster(vpc: ec2.IVpc, envName: string): ecs.Cluster {
+  private createEcsCluster(
+    vpc: ec2.IVpc,
+    envName: string,
+    fileSystem: efs.FileSystem
+  ): ecs.Cluster {
     const cluster = new ecs.Cluster(this, "MonitoringCluster", {
       vpc,
       clusterName: `${envName}-monitoring-cluster`,
@@ -117,6 +121,12 @@ export class MonitoringEcsStack extends cdk.Stack {
     autoScalingGroup.connections.allowToAnyIpv4(
       ec2.Port.tcp(443),
       "Allow HTTPS outbound for ECS agent"
+    );
+
+    // Allow ECS instances to access EFS
+    fileSystem.connections.allowDefaultPortFrom(
+      autoScalingGroup,
+      "Allow ECS instances to mount EFS"
     );
 
     cdk.Tags.of(cluster).add("Environment", envName);
