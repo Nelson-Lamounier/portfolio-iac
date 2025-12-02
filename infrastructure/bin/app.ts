@@ -15,6 +15,8 @@ import {
   MonitoringEc2Stack,
   MonitoringEcsStack,
   LoadBalancerStack,
+  CertificateStack,
+  CertificateConfig,
 } from "../lib/stacks";
 import { environments } from "../config/environments";
 
@@ -121,30 +123,32 @@ const storageStack = new StorageStack(app, `StorageStack-${config.envName}`, {
 // Will be created after Compute Stack is defined
 
 // ========================================
-// 5. Certificate Configuration
+// 5. Certificate Stack (Optional - for HTTPS)
 // ========================================
-// Certificates are managed manually in root account (where Route 53 hosted zone lives)
-// Certificate ARN is stored in SSM Parameter Store: /portfolio/domain/acm-arn
+// Certificates are managed manually in the dev account
+// Certificate ARN is stored in SSM Parameter Store in pipeline account: /portfolio/domain/acm-arn
 //
-// To create/update certificate:
-// 1. Create certificate in AWS Console (ACM) in root account
+// Setup process:
+// 1. Create certificate manually in AWS Console (ACM) in dev account
 // 2. Use DNS validation with Route 53
-// 3. Store ARN in SSM:
+// 3. Store ARN in SSM Parameter Store in pipeline account:
 //    aws ssm put-parameter --name "/portfolio/domain/acm-arn" \
 //      --value "arn:aws:acm:eu-west-1:ACCOUNT:certificate/ID" \
 //      --type String --overwrite --profile github-actions
 //
-// For local override, set CERTIFICATE_ARN environment variable
+// The workflow will fetch this parameter from pipeline account and pass as env var
 
+let certificateStack: CertificateStack | undefined;
 let certificateArn: string | undefined;
 
-// Check if certificate ARN is provided (for cross-account scenarios)
-// Priority: Environment variable > SSM Parameter Store > Create new
+// Check if certificate ARN is provided via environment variable (from workflow)
 if (process.env.CERTIFICATE_ARN) {
   certificateArn = process.env.CERTIFICATE_ARN;
-  console.log(`Using certificate from environment: ${certificateArn}`);
+  console.log(`✓ Using certificate ARN from environment variable`);
+  console.log(`  Certificate: ${certificateArn}`);
 } else if (process.env.SKIP_DOMAIN_LOOKUP !== "true") {
-  // Try to fetch certificate ARN from SSM Parameter Store
+  // Fallback: Try to fetch certificate ARN from SSM Parameter Store
+  // This is for local development only - workflow should pass via env var
   try {
     certificateArn = cdk.aws_ssm.StringParameter.valueFromLookup(
       app,
@@ -154,13 +158,20 @@ if (process.env.CERTIFICATE_ARN) {
     // Check if we got a dummy value (parameter doesn't exist)
     if (certificateArn?.includes("dummy-value")) {
       certificateArn = undefined;
+      console.log(
+        "⚠ Certificate ARN not found in SSM - HTTPS will be disabled"
+      );
     } else if (certificateArn) {
-      console.log(`Using certificate from SSM: ${certificateArn}`);
+      console.log(`✓ Using certificate ARN from SSM Parameter Store`);
+      console.log(`  Certificate: ${certificateArn}`);
     }
   } catch (error) {
-    // Parameter doesn't exist, will try to create certificate
+    // Parameter doesn't exist
     certificateArn = undefined;
+    console.log("⚠ Certificate ARN not configured - HTTPS will be disabled");
   }
+} else {
+  console.log("⚠ Domain lookup skipped - HTTPS will be disabled");
 }
 
 // ========================================
@@ -191,16 +202,24 @@ const loadBalancerStack = new LoadBalancerStack(
 // Add dependencies
 loadBalancerStack.addDependency(networkingStack);
 
+// Add certificate dependency if certificate was created
+if (certificateStack) {
+  loadBalancerStack.addDependency(certificateStack);
+  console.log("Load Balancer will use HTTPS with certificate");
+}
+
 // ========================================
 // 7. Connect ECS Service to Load Balancer
 // ========================================
 // Create target group for ECS service
+// Note: Using INSTANCE target type because ECS is using EC2 launch type with BRIDGE networking
+// If you switch to AWSVPC networking, change this to TargetType.IP
 const ecsTargetGroup = loadBalancerStack.addTargetGroup({
   name: `ecs-service-${envName}`,
   port: 3000,
   healthCheckPath: "/api/health",
   protocol: elbv2.ApplicationProtocol.HTTP,
-  targetType: elbv2.TargetType.IP,
+  targetType: elbv2.TargetType.INSTANCE, // INSTANCE for EC2 launch type with bridge networking
   healthCheckIntervalSeconds: 30,
   deregistrationDelay: cdk.Duration.seconds(30),
   createListener: true,

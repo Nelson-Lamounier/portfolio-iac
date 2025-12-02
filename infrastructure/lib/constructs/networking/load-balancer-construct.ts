@@ -88,7 +88,7 @@ export class ElasticLoadBalancer extends Construct {
         "Allow HTTP traffic"
       );
 
-      // Allow traffic on port 8080 for services
+      // Allow traffic on port 3000 for services
       this.securityGroup.addIngressRule(
         ec2.Peer.anyIpv4(),
         ec2.Port.tcp(3000),

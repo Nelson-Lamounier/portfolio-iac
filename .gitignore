@@ -66,5 +66,8 @@ infrastructure/playground/
 
 
 # Monitoring data (Prometheus & Grafana)
+playground/*
+# 
+Monitoring data (Prometheus & Grafana)
 monitoring/prometheus-data/
 monitoring/grafana-data/
