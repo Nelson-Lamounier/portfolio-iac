@@ -96,7 +96,7 @@ export class MonitoringEcsStack extends cdk.Stack {
     });
 
     // Add EC2 capacity - t3.small for monitoring workload
-    cluster.addCapacity("MonitoringCapacity", {
+    const autoScalingGroup = cluster.addCapacity("MonitoringCapacity", {
       instanceType: ec2.InstanceType.of(
         ec2.InstanceClass.T3,
         ec2.InstanceSize.SMALL
@@ -105,7 +105,19 @@ export class MonitoringEcsStack extends cdk.Stack {
       maxCapacity: 1,
       desiredCapacity: 1,
       machineImage: ecs.EcsOptimizedImage.amazonLinux2(),
+      // Use public subnets since we don't have NAT Gateway
+      vpcSubnets: {
+        subnetType: ec2.SubnetType.PUBLIC,
+      },
+      // Associate public IP for instances in public subnet
+      associatePublicIpAddress: true,
     });
+
+    // Ensure security group allows outbound HTTPS for ECS agent
+    autoScalingGroup.connections.allowToAnyIpv4(
+      ec2.Port.tcp(443),
+      "Allow HTTPS outbound for ECS agent"
+    );
 
     cdk.Tags.of(cluster).add("Environment", envName);
     cdk.Tags.of(cluster).add("Purpose", "Monitoring");
