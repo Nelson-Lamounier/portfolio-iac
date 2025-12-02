@@ -61,3 +61,7 @@ infrastructure/cdk.out
 docs/*
 
 playground/*
+# 
+Monitoring data (Prometheus & Grafana)
+monitoring/prometheus-data/
+monitoring/grafana-data/
