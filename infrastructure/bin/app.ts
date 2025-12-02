@@ -123,58 +123,53 @@ const storageStack = new StorageStack(app, `StorageStack-${config.envName}`, {
 // ========================================
 // 5. Certificate Stack (Optional - for HTTPS)
 // ========================================
-// Creates ACM certificate for HTTPS
-// Depends on: Domain and Hosted Zone from SSM
-// Note: DNS validation must be completed manually in Route 53
+// Certificates are managed manually in the dev account
+// Certificate ARN is stored in SSM Parameter Store in pipeline account: /portfolio/domain/acm-arn
+//
+// Setup process:
+// 1. Create certificate manually in AWS Console (ACM) in dev account
+// 2. Use DNS validation with Route 53
+// 3. Store ARN in SSM Parameter Store in pipeline account:
+//    aws ssm put-parameter --name "/portfolio/domain/acm-arn" \
+//      --value "arn:aws:acm:eu-west-1:ACCOUNT:certificate/ID" \
+//      --type String --overwrite --profile github-actions
+//
+// The workflow will fetch this parameter from pipeline account and pass as env var
 
 let certificateStack: CertificateStack | undefined;
 let certificateArn: string | undefined;
 
-if (rootDomainName && hostedZoneId) {
-  console.log(`Creating certificate for domain: ${rootDomainName}`);
+// Check if certificate ARN is provided via environment variable (from workflow)
+if (process.env.CERTIFICATE_ARN) {
+  certificateArn = process.env.CERTIFICATE_ARN;
+  console.log(`✓ Using certificate ARN from environment variable`);
+  console.log(`  Certificate: ${certificateArn}`);
+} else if (process.env.SKIP_DOMAIN_LOOKUP !== "true") {
+  // Fallback: Try to fetch certificate ARN from SSM Parameter Store
+  // This is for local development only - workflow should pass via env var
+  try {
+    certificateArn = cdk.aws_ssm.StringParameter.valueFromLookup(
+      app,
+      "/portfolio/domain/acm-arn"
+    );
 
-  // Define certificate configuration
-  const certificateConfigs: CertificateConfig[] = [
-    {
-      domainName: rootDomainName,
-      hostedZoneId: hostedZoneId,
-      includeWildcard: true, // Includes *.yourdomain.com
-      certificateName: `${config.envName}-certificate`,
-      subjectAlternativeNames: [
-        `www.${rootDomainName}`,
-        `api.${rootDomainName}`,
-      ],
-      tags: {
-        Environment: config.envName,
-        Project: "portfolio",
-        ManagedBy: "cdk",
-      },
-    },
-  ];
-
-  // Create the certificate stack
-  certificateStack = new CertificateStack(
-    app,
-    `CertificateStack-${config.envName}`,
-    {
-      ...stackProps,
-      description: "SSL/TLS certificates with DNS validation",
-      certificates: certificateConfigs,
-      hostedZoneId: hostedZoneId,
+    // Check if we got a dummy value (parameter doesn't exist)
+    if (certificateArn?.includes("dummy-value")) {
+      certificateArn = undefined;
+      console.log(
+        "⚠ Certificate ARN not found in SSM - HTTPS will be disabled"
+      );
+    } else if (certificateArn) {
+      console.log(`✓ Using certificate ARN from SSM Parameter Store`);
+      console.log(`  Certificate: ${certificateArn}`);
     }
-  );
-
-  // Get the certificate ARN for use in Load Balancer
-  const certificate = certificateStack.getCertificate(rootDomainName);
-  if (certificate) {
-    certificateArn = certificate.certificateArn;
-    console.log(`Certificate will be created for: ${rootDomainName}`);
+  } catch (error) {
+    // Parameter doesn't exist
+    certificateArn = undefined;
+    console.log("⚠ Certificate ARN not configured - HTTPS will be disabled");
   }
 } else {
-  console.log("No domain configuration found - HTTPS will be disabled");
-  console.log("To enable HTTPS, set domain parameters in SSM:");
-  console.log("  /portfolio/domain/root-domain-name");
-  console.log("  /portfolio/domain/hosted-zone-id");
+  console.log("⚠ Domain lookup skipped - HTTPS will be disabled");
 }
 
 // ========================================

@@ -175,6 +175,25 @@ jobs:
         env:
           ENVIRONMENT: ${{ env.ENVIRONMENT }}
 
+      - name: Fetch certificate ARN from pipeline account
+        id: fetch-cert
+        continue-on-error: true
+        run: |
+          echo "Fetching certificate ARN from SSM in pipeline account..."
+          CERT_ARN=$(aws ssm get-parameter --name "/portfolio/domain/acm-arn" --query "Parameter.Value" --output text 2>/dev/null || echo "")
+
+          if [ -n "$CERT_ARN" ]; then
+            echo "Certificate ARN found: ${CERT_ARN:0:50}..."
+            echo "CERTIFICATE_ARN=$CERT_ARN" >> $GITHUB_ENV
+            echo "cert_configured=true" >> $GITHUB_OUTPUT
+          else
+            echo "Certificate ARN not found in pipeline account SSM"
+            echo "   HTTPS will be disabled"
+            echo "cert_configured=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+
       - name: Verify CDK bootstrap in pipeline account
         run: make verify-cdk-bootstrap
         env:
@@ -212,8 +231,8 @@ jobs:
           ENVIRONMENT: ${{ env.ENVIRONMENT }}
           AWS_REGION: ${{ env.AWS_REGION }}
           IMAGE_TAG: ${{ needs.build-frontend.outputs.image-tag || 'nginx:alpine' }}
-          ROOT_DOMAIN_NAME: ${{ vars.ROOT_DOMAIN_NAME }}
-          HOSTED_ZONE_ID: ${{ vars.HOSTED_ZONE_ID }}
+          CERTIFICATE_ARN: ${{ env.CERTIFICATE_ARN }}
+
 
       - name: Deploy with retry
         id: deploy
@@ -240,8 +259,7 @@ jobs:
           ENVIRONMENT: ${{ env.ENVIRONMENT }}
           AWS_REGION: ${{ env.AWS_REGION }}
           IMAGE_TAG: ${{ needs.build-frontend.outputs.image-tag || 'nginx:alpine' }}
-          ROOT_DOMAIN_NAME: ${{ vars.ROOT_DOMAIN_NAME }}
-          HOSTED_ZONE_ID: ${{ vars.HOSTED_ZONE_ID }}
+          CERTIFICATE_ARN: ${{ env.CERTIFICATE_ARN }}
 
       - name: Post-deployment recovery
         if: failure() && steps.deploy.outcome == 'failure'
