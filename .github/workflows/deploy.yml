@@ -83,8 +83,9 @@ jobs:
       - name: Verify target account
         run: |
           CURRENT_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          echo "::add-mask::$CURRENT_ACCOUNT"
           echo "TARGET_ACCOUNT_ID=${CURRENT_ACCOUNT}" >> $GITHUB_ENV
-          echo "✓ Assumed role in target account: ${CURRENT_ACCOUNT}"
+          echo "✓ Assumed role in target account"
 
       - name: Check infrastructure
         id: check-infra
@@ -195,11 +196,24 @@ jobs:
           echo "::warning::Stack recovery failed or stacks need manual intervention"
           echo "::warning::Deployment will attempt to proceed, but may fail"
 
+      - name: Validate domain configuration
+        run: |
+          if [ -n "${{ vars.ROOT_DOMAIN_NAME }}" ] && [ -n "${{ vars.HOSTED_ZONE_ID }}" ]; then
+            echo "Domain configuration found - HTTPS will be enabled"
+          else
+            echo "Domain configuration missing - HTTPS will be disabled"
+            echo "To enable HTTPS, add GitHub repository variables:"
+            echo "  - ROOT_DOMAIN_NAME"
+            echo "  - HOSTED_ZONE_ID"
+          fi
+
       - run: make cdk-synth
         env:
           ENVIRONMENT: ${{ env.ENVIRONMENT }}
           AWS_REGION: ${{ env.AWS_REGION }}
           IMAGE_TAG: ${{ needs.build-frontend.outputs.image-tag || 'nginx:alpine' }}
+          ROOT_DOMAIN_NAME: ${{ vars.ROOT_DOMAIN_NAME }}
+          HOSTED_ZONE_ID: ${{ vars.HOSTED_ZONE_ID }}
 
       - name: Deploy with retry
         id: deploy
@@ -226,12 +240,15 @@ jobs:
           ENVIRONMENT: ${{ env.ENVIRONMENT }}
           AWS_REGION: ${{ env.AWS_REGION }}
           IMAGE_TAG: ${{ needs.build-frontend.outputs.image-tag || 'nginx:alpine' }}
+          ROOT_DOMAIN_NAME: ${{ vars.ROOT_DOMAIN_NAME }}
+          HOSTED_ZONE_ID: ${{ vars.HOSTED_ZONE_ID }}
 
       - name: Post-deployment recovery
         if: failure() && steps.deploy.outcome == 'failure'
         continue-on-error: true
         run: |
           echo "::error::Deployment failed, attempting recovery..."
-          ./scripts/recover-stack.sh ${{ env.ENVIRONMENT }}
+          make recover-stacks
         env:
+          ENV: ${{ env.ENVIRONMENT }}
           AWS_REGION: ${{ env.AWS_REGION }}
