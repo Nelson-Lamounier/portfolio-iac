@@ -74,6 +74,10 @@ export class MonitoringEcsStack extends cdk.Stack {
   private createEfsFileSystem(vpc: ec2.IVpc, envName: string): efs.FileSystem {
     const fileSystem = new efs.FileSystem(this, "MonitoringEfs", {
       vpc,
+      // Place EFS in public subnets to match EC2 instances
+      vpcSubnets: {
+        subnetType: ec2.SubnetType.PUBLIC,
+      },
       lifecyclePolicy: efs.LifecyclePolicy.AFTER_30_DAYS,
       performanceMode: efs.PerformanceMode.GENERAL_PURPOSE,
       throughputMode: efs.ThroughputMode.BURSTING,
