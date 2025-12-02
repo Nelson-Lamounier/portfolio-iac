@@ -322,7 +322,7 @@ describe("ElasticLoadBalancer Construct", () => {
       );
     });
 
-    test("creates target group with IP target type", () => {
+    test("creates target group with INSTANCE target type", () => {
       new ElasticLoadBalancer(stack, "TestLB", {
         envName: "test",
         vpc,
@@ -330,7 +330,7 @@ describe("ElasticLoadBalancer Construct", () => {
           {
             name: "test-tg",
             port: 3000,
-            targetType: elbv2.TargetType.IP,
+            targetType: elbv2.TargetType.INSTANCE,
             createListener: false,
           },
         ],
@@ -341,7 +341,7 @@ describe("ElasticLoadBalancer Construct", () => {
       template.hasResourceProperties(
         "AWS::ElasticLoadBalancingV2::TargetGroup",
         {
-          TargetType: "ip",
+          TargetType: "instance",
         }
       );
     });

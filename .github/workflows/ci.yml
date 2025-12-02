@@ -133,6 +133,8 @@ jobs:
           echo "::endgroup::"
         env:
           SKIP_DOMAIN_LOOKUP: "true"
+          AWS_ACCOUNT_ID_DEV: "123456789012"
+          AWS_REGION: "eu-west-1"
 
   test-summary:
     runs-on: ubuntu-latest
