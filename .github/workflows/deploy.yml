@@ -87,29 +87,37 @@ jobs:
           echo "TARGET_ACCOUNT_ID=${CURRENT_ACCOUNT}" >> $GITHUB_ENV
           echo "✓ Assumed role in target account"
 
-      - name: Check infrastructure
-        id: check-infra
-        run: make check-infra
+      - name: Check if ECR exists
+        id: check-ecr
+        continue-on-error: true
+        run: |
+          echo "Checking if ECR repository exists..."
+          if aws ssm get-parameter --name "/ecr/${{ env.ENVIRONMENT }}/repository-uri" --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "✓ ECR repository found in SSM"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "::warning::ECR repository not found. Run: ENVIRONMENT=${{ env.ENVIRONMENT }} ./scripts/setup-ecr.sh"
+          fi
         env:
-          ENVIRONMENT: ${{ env.ENVIRONMENT }}
           AWS_REGION: ${{ env.AWS_REGION }}
 
       - name: Fetch ECR URI
         id: get-ecr-repo
-        if: steps.check-infra.outputs.exists == 'true'
+        if: steps.check-ecr.outputs.exists == 'true'
         run: make fetch-ecr-uri
         env:
           ENVIRONMENT: ${{ env.ENVIRONMENT }}
           AWS_REGION: ${{ env.AWS_REGION }}
 
       - uses: aws-actions/amazon-ecr-login@v2
-        if: steps.check-infra.outputs.exists == 'true'
+        if: steps.check-ecr.outputs.exists == 'true'
 
       - uses: docker/setup-buildx-action@v3
-        if: steps.check-infra.outputs.exists == 'true'
+        if: steps.check-ecr.outputs.exists == 'true'
 
       - name: Build and push Docker
-        if: steps.check-infra.outputs.exists == 'true'
+        if: steps.check-ecr.outputs.exists == 'true'
         run: make docker-build-push
         env:
           ECR_REPO_URI: ${{ steps.get-ecr-repo.outputs.repository-uri }}
@@ -118,15 +126,16 @@ jobs:
 
       - name: Set outputs
         id: image-info
-        if: steps.check-infra.outputs.exists == 'true'
+        if: steps.check-ecr.outputs.exists == 'true'
         run: |
           echo "image-tag=${{ github.sha }}" >> $GITHUB_OUTPUT
           echo "image-uri=${{ steps.get-ecr-repo.outputs.repository-uri }}:${{ github.sha }}" >> $GITHUB_OUTPUT
 
       - name: Skip notice
-        if: steps.check-infra.outputs.exists != 'true'
+        if: steps.check-ecr.outputs.exists != 'true'
         run: |
-          echo "::notice::Skipping frontend Docker build - infrastructure not deployed yet"
+          echo "::warning::Skipping frontend Docker build - ECR repository not found"
+          echo "::warning::Create ECR repository first: ENVIRONMENT=${{ env.ENVIRONMENT }} ./scripts/setup-ecr.sh"
 
   approve-infrastructure-deployment:
     runs-on: ubuntu-latest
@@ -292,6 +301,25 @@ jobs:
         run: |
           echo "::group::Updating Prometheus configuration"
           make update-prometheus-config ENVIRONMENT=${{ env.ENVIRONMENT }}
+          echo "::endgroup::"
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+      - name: Force ECS service update
+        if: success() && needs.build-frontend.outputs.image-tag != ''
+        continue-on-error: true
+        run: |
+          echo "::group::Forcing ECS service to use new image"
+          echo "New image tag: ${{ needs.build-frontend.outputs.image-tag }}"
+
+          # Force new deployment to pick up the new image
+          aws ecs update-service \
+            --cluster ecs-cluster-${{ env.ENVIRONMENT }} \
+            --service ecs-service-${{ env.ENVIRONMENT }} \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
+
+          echo "✓ ECS service update initiated"
           echo "::endgroup::"
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
