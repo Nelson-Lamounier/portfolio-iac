@@ -2,7 +2,6 @@
 
 import * as cdk from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
-import * as ecr from "aws-cdk-lib/aws-ecr";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as ssm from "aws-cdk-lib/aws-ssm";
@@ -13,7 +12,6 @@ import { ContainerImageConstruct } from "../../constructs/compute/container-imag
 export interface ComputeStackProps extends cdk.StackProps {
   envName: string;
   vpc: ec2.IVpc;
-  repository: ecr.Repository;
   targetGroup?: elbv2.IApplicationTargetGroup; // Optional ALB target group
   instanceType?: ec2.InstanceType;
   minCapacity?: number;
@@ -36,7 +34,11 @@ export interface ComputeStackProps extends cdk.StackProps {
  *
  * This stack depends on:
  * - NetworkingStack (for VPC)
- * - StorageStack (for ECR repository)
+ * - ECR repository (created manually, URI stored in SSM)
+ *
+ * Prerequisites:
+ * - ECR repository must exist
+ * - ECR repository URI must be stored in SSM: /ecr/{envName}/repository-uri
  */
 export class ComputeStack extends cdk.Stack {
   public readonly cluster: ecs.ICluster;
@@ -45,12 +47,19 @@ export class ComputeStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ComputeStackProps) {
     super(scope, id, props);
 
+    // Lookup ECR repository URI from SSM Parameter Store
+    // This parameter should be created manually or by a separate process
+    const repositoryUri = ssm.StringParameter.valueFromLookup(
+      this,
+      `/ecr/${props.envName}/repository-uri`
+    );
+
     // Resolve container image (ECR or public registry)
     const containerImageConstruct = new ContainerImageConstruct(
       this,
       "ContainerImage",
       {
-        repository: props.repository,
+        repositoryUri: repositoryUri,
       }
     );
 

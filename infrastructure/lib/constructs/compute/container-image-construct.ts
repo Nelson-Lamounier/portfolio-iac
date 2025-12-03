@@ -5,7 +5,7 @@ import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as ecr from "aws-cdk-lib/aws-ecr";
 
 export interface ContainerImageConstructProps {
-  repository: ecr.Repository;
+  repositoryUri: string; // ECR repository URI from SSM or manual input
   imageTag?: string;
   defaultImage?: string;
 }
@@ -46,13 +46,9 @@ export class ContainerImageConstruct extends Construct {
       // Use ECR image with specified tag
       this.imageTag = imageTagFromEnv;
       this.isEcrImage = true;
-      console.log(
-        `✓ Using ECR image: ${props.repository.repositoryUri}:${this.imageTag}`
-      );
-      this.containerImage = ecs.ContainerImage.fromEcrRepository(
-        props.repository,
-        this.imageTag
-      );
+      const imageUri = `${props.repositoryUri}:${this.imageTag}`;
+      console.log(`✓ Using ECR image: ${imageUri}`);
+      this.containerImage = ecs.ContainerImage.fromRegistry(imageUri);
     } else {
       // Fallback to a simple health check server for initial deployment
       // ealen/echo-server responds to all paths including /api/health
