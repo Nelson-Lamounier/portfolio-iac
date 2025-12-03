@@ -239,7 +239,6 @@ jobs:
           IMAGE_TAG: ${{ needs.build-frontend.outputs.image-tag || 'nginx:alpine' }}
           CERTIFICATE_ARN: ${{ env.CERTIFICATE_ARN }}
 
-
       - name: Deploy with retry
         id: deploy
         run: |
@@ -325,7 +324,7 @@ jobs:
           # Check ECS service
           echo "Checking ECS service..."
           aws ecs describe-services \
-            --cluster ${{ env.ENVIRONMENT }}-cluster \
+            --cluster ecs-cluster-${{ env.ENVIRONMENT }} \
             --services ${{ env.ENVIRONMENT }}-service \
             --query "services[0].{Status:status,Running:runningCount,Desired:desiredCount}" \
             --output table
