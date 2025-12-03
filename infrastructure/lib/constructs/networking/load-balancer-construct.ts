@@ -240,9 +240,9 @@ export class ElasticLoadBalancer extends Construct {
           path: healthCheckPath,
           interval: cdk.Duration.seconds(healthCheckIntervalSeconds),
           port: "traffic-port",
-          timeout: cdk.Duration.seconds(5),
+          timeout: cdk.Duration.seconds(10), // Increased from 5 to 10 seconds
           healthyThresholdCount: 2,
-          unhealthyThresholdCount: 3,
+          unhealthyThresholdCount: 5, // Increased from 3 to 5 (more lenient)
         },
       }
     );
