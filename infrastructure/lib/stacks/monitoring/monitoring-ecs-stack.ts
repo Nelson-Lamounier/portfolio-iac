@@ -1,12 +1,12 @@
 /** @format */
 
 import * as cdk from "aws-cdk-lib";
+import * as autoscaling from "aws-cdk-lib/aws-autoscaling";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
-import * as efs from "aws-cdk-lib/aws-efs";
 import { Construct } from "constructs";
 
 export interface MonitoringEcsStackProps extends cdk.StackProps {
@@ -30,11 +30,8 @@ export class MonitoringEcsStack extends cdk.Stack {
 
     const { vpc, envName, albDnsName, allowedIpRanges } = props;
 
-    // Create EFS for persistent storage
-    const fileSystem = this.createEfsFileSystem(vpc, envName);
-
-    // Create ECS Cluster for monitoring
-    this.cluster = this.createEcsCluster(vpc, envName, fileSystem);
+    // Create ECS Cluster for monitoring (with EBS volume)
+    this.cluster = this.createEcsCluster(vpc, envName);
 
     // Create Application Load Balancer for monitoring services
     this.loadBalancer = this.createLoadBalancer(vpc, envName, allowedIpRanges);
@@ -42,17 +39,12 @@ export class MonitoringEcsStack extends cdk.Stack {
     // Create Prometheus service
     this.prometheusService = this.createPrometheusService(
       this.cluster,
-      fileSystem,
       envName,
       albDnsName
     );
 
     // Create Grafana service
-    this.grafanaService = this.createGrafanaService(
-      this.cluster,
-      fileSystem,
-      envName
-    );
+    this.grafanaService = this.createGrafanaService(this.cluster, envName);
 
     // Create Node Exporter service
     this.nodeExporterService = this.createNodeExporterService(
@@ -71,39 +63,14 @@ export class MonitoringEcsStack extends cdk.Stack {
     this.createOutputs();
   }
 
-  private createEfsFileSystem(vpc: ec2.IVpc, envName: string): efs.FileSystem {
-    const fileSystem = new efs.FileSystem(this, "MonitoringEfs", {
-      vpc,
-      // Place EFS in public subnets to match EC2 instances
-      vpcSubnets: {
-        subnetType: ec2.SubnetType.PUBLIC,
-      },
-      lifecyclePolicy: efs.LifecyclePolicy.AFTER_30_DAYS,
-      performanceMode: efs.PerformanceMode.GENERAL_PURPOSE,
-      throughputMode: efs.ThroughputMode.BURSTING,
-      encrypted: true,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-    });
-
-    cdk.Tags.of(fileSystem).add("Name", `${envName}-monitoring-efs`);
-    cdk.Tags.of(fileSystem).add("Environment", envName);
-    cdk.Tags.of(fileSystem).add("Purpose", "Monitoring");
-
-    return fileSystem;
-  }
-
-  private createEcsCluster(
-    vpc: ec2.IVpc,
-    envName: string,
-    fileSystem: efs.FileSystem
-  ): ecs.Cluster {
+  private createEcsCluster(vpc: ec2.IVpc, envName: string): ecs.Cluster {
     const cluster = new ecs.Cluster(this, "MonitoringCluster", {
       vpc,
       clusterName: `${envName}-monitoring-cluster`,
       containerInsights: true,
     });
 
-    // Add EC2 capacity - t3.small for monitoring workload
+    // Add EC2 capacity - t3.small for monitoring workload with EBS volume
     const autoScalingGroup = cluster.addCapacity("MonitoringCapacity", {
       instanceType: ec2.InstanceType.of(
         ec2.InstanceClass.T3,
@@ -119,18 +86,79 @@ export class MonitoringEcsStack extends cdk.Stack {
       },
       // Associate public IP for instances in public subnet
       associatePublicIpAddress: true,
+      // Add EBS volume for persistent storage
+      blockDevices: [
+        {
+          deviceName: "/dev/xvda",
+          volume: autoscaling.BlockDeviceVolume.ebs(30, {
+            volumeType: autoscaling.EbsDeviceVolumeType.GP3,
+            encrypted: true,
+            deleteOnTermination: true,
+          }),
+        },
+      ],
     });
+
+    // Create directories and config files for monitoring services on instance startup
+    autoScalingGroup.addUserData(
+      "#!/bin/bash",
+      "set -e",
+      "",
+      "# Create data directories",
+      "mkdir -p /mnt/prometheus-data",
+      "mkdir -p /mnt/grafana-data",
+      "mkdir -p /mnt/prometheus-config",
+      "mkdir -p /mnt/grafana-provisioning/datasources",
+      "mkdir -p /mnt/grafana-provisioning/dashboards",
+      "",
+      "# Create Prometheus configuration",
+      "cat > /mnt/prometheus-config/prometheus.yml << 'EOF'",
+      "global:",
+      "  scrape_interval: 15s",
+      "  evaluation_interval: 15s",
+      "  external_labels:",
+      "    environment: '" + envName + "'",
+      "",
+      "scrape_configs:",
+      "  # Prometheus itself",
+      "  - job_name: 'prometheus'",
+      "    static_configs:",
+      "      - targets: ['localhost:9090']",
+      "",
+      "  # Node Exporter (HOST mode, so accessible via localhost)",
+      "  - job_name: 'node-exporter'",
+      "    static_configs:",
+      "      - targets: ['localhost:9100']",
+      "        labels:",
+      "          instance: 'ecs-host'",
+      "EOF",
+      "",
+      "# Create Grafana datasource configuration",
+      "cat > /mnt/grafana-provisioning/datasources/prometheus.yml << 'EOF'",
+      "apiVersion: 1",
+      "",
+      "datasources:",
+      "  - name: Prometheus",
+      "    type: prometheus",
+      "    access: proxy",
+      "    url: http://localhost:9090/prometheus",
+      "    isDefault: true",
+      "    editable: true",
+      "    jsonData:",
+      "      timeInterval: '15s'",
+      "EOF",
+      "",
+      "# Set permissions",
+      "chown -R 65534:65534 /mnt/prometheus-data /mnt/prometheus-config",
+      "chown -R 472:472 /mnt/grafana-data /mnt/grafana-provisioning",
+      "chmod -R 755 /mnt/prometheus-data /mnt/prometheus-config",
+      "chmod -R 755 /mnt/grafana-data /mnt/grafana-provisioning"
+    );
 
     // Ensure security group allows outbound HTTPS for ECS agent
     autoScalingGroup.connections.allowToAnyIpv4(
       ec2.Port.tcp(443),
       "Allow HTTPS outbound for ECS agent"
-    );
-
-    // Allow ECS instances to access EFS
-    fileSystem.connections.allowDefaultPortFrom(
-      autoScalingGroup,
-      "Allow ECS instances to mount EFS"
     );
 
     cdk.Tags.of(cluster).add("Environment", envName);
@@ -182,9 +210,8 @@ export class MonitoringEcsStack extends cdk.Stack {
 
   private createPrometheusService(
     cluster: ecs.Cluster,
-    fileSystem: efs.FileSystem,
     envName: string,
-    albDnsName?: string
+    _albDnsName?: string
   ): ecs.Ec2Service {
     // Task definition
     const taskDefinition = new ecs.Ec2TaskDefinition(
@@ -195,13 +222,18 @@ export class MonitoringEcsStack extends cdk.Stack {
       }
     );
 
-    // Add EFS volume
+    // Add host volumes for persistent storage and config
     taskDefinition.addVolume({
       name: "prometheus-data",
-      efsVolumeConfiguration: {
-        fileSystemId: fileSystem.fileSystemId,
-        transitEncryption: "ENABLED",
-        rootDirectory: "/prometheus",
+      host: {
+        sourcePath: "/mnt/prometheus-data",
+      },
+    });
+
+    taskDefinition.addVolume({
+      name: "prometheus-config",
+      host: {
+        sourcePath: "/mnt/prometheus-config",
       },
     });
 
@@ -237,11 +269,18 @@ export class MonitoringEcsStack extends cdk.Stack {
       protocol: ecs.Protocol.TCP,
     });
 
-    container.addMountPoints({
-      sourceVolume: "prometheus-data",
-      containerPath: "/prometheus",
-      readOnly: false,
-    });
+    container.addMountPoints(
+      {
+        sourceVolume: "prometheus-data",
+        containerPath: "/prometheus",
+        readOnly: false,
+      },
+      {
+        sourceVolume: "prometheus-config",
+        containerPath: "/etc/prometheus",
+        readOnly: true,
+      }
+    );
 
     // Create service
     const service = new ecs.Ec2Service(this, "PrometheusService", {
@@ -252,15 +291,11 @@ export class MonitoringEcsStack extends cdk.Stack {
       enableExecuteCommand: true,
     });
 
-    // Allow EFS access
-    fileSystem.connections.allowDefaultPortFrom(service);
-
     return service;
   }
 
   private createGrafanaService(
     cluster: ecs.Cluster,
-    fileSystem: efs.FileSystem,
     envName: string
   ): ecs.Ec2Service {
     // Task definition
@@ -268,13 +303,18 @@ export class MonitoringEcsStack extends cdk.Stack {
       networkMode: ecs.NetworkMode.BRIDGE,
     });
 
-    // Add EFS volume
+    // Add host volumes for persistent storage and provisioning
     taskDefinition.addVolume({
       name: "grafana-data",
-      efsVolumeConfiguration: {
-        fileSystemId: fileSystem.fileSystemId,
-        transitEncryption: "ENABLED",
-        rootDirectory: "/grafana",
+      host: {
+        sourcePath: "/mnt/grafana-data",
+      },
+    });
+
+    taskDefinition.addVolume({
+      name: "grafana-provisioning",
+      host: {
+        sourcePath: "/mnt/grafana-provisioning",
       },
     });
 
@@ -299,6 +339,7 @@ export class MonitoringEcsStack extends cdk.Stack {
         GF_SERVER_SERVE_FROM_SUB_PATH: "true",
         GF_ANALYTICS_REPORTING_ENABLED: "false",
         GF_METRICS_ENABLED: "false",
+        GF_PATHS_PROVISIONING: "/etc/grafana/provisioning",
         AWS_REGION: cdk.Stack.of(this).region,
       },
     });
@@ -308,11 +349,18 @@ export class MonitoringEcsStack extends cdk.Stack {
       protocol: ecs.Protocol.TCP,
     });
 
-    container.addMountPoints({
-      sourceVolume: "grafana-data",
-      containerPath: "/var/lib/grafana",
-      readOnly: false,
-    });
+    container.addMountPoints(
+      {
+        sourceVolume: "grafana-data",
+        containerPath: "/var/lib/grafana",
+        readOnly: false,
+      },
+      {
+        sourceVolume: "grafana-provisioning",
+        containerPath: "/etc/grafana/provisioning",
+        readOnly: true,
+      }
+    );
 
     // Create service
     const service = new ecs.Ec2Service(this, "GrafanaService", {
@@ -322,9 +370,6 @@ export class MonitoringEcsStack extends cdk.Stack {
       desiredCount: 1,
       enableExecuteCommand: true,
     });
-
-    // Allow EFS access
-    fileSystem.connections.allowDefaultPortFrom(service);
 
     // Add IAM permissions for CloudWatch
     taskDefinition.taskRole.addManagedPolicy(
@@ -432,7 +477,7 @@ export class MonitoringEcsStack extends cdk.Stack {
         port: 3000,
         protocol: elbv2.ApplicationProtocol.HTTP,
         vpc: this.cluster.vpc,
-        targetType: elbv2.TargetType.INSTANCE,
+        targetType: elbv2.TargetType.INSTANCE, // INSTANCE for bridge network mode
         healthCheck: {
           path: "/grafana/api/health",
           healthyHttpCodes: "200",
@@ -441,6 +486,7 @@ export class MonitoringEcsStack extends cdk.Stack {
           healthyThresholdCount: 2,
           unhealthyThresholdCount: 3,
         },
+        deregistrationDelay: cdk.Duration.seconds(30),
       }
     );
 
@@ -452,7 +498,7 @@ export class MonitoringEcsStack extends cdk.Stack {
         port: 9090,
         protocol: elbv2.ApplicationProtocol.HTTP,
         vpc: this.cluster.vpc,
-        targetType: elbv2.TargetType.INSTANCE,
+        targetType: elbv2.TargetType.INSTANCE, // INSTANCE for bridge network mode
         healthCheck: {
           path: "/prometheus/-/healthy",
           healthyHttpCodes: "200",
@@ -461,7 +507,21 @@ export class MonitoringEcsStack extends cdk.Stack {
           healthyThresholdCount: 2,
           unhealthyThresholdCount: 3,
         },
+        deregistrationDelay: cdk.Duration.seconds(30),
       }
+    );
+
+    // Allow ALB to reach ECS instances on dynamic ports (for BRIDGE mode)
+    this.prometheusService.connections.allowFrom(
+      this.loadBalancer,
+      ec2.Port.tcp(9090),
+      "Allow ALB to reach Prometheus"
+    );
+
+    this.grafanaService.connections.allowFrom(
+      this.loadBalancer,
+      ec2.Port.tcp(3000),
+      "Allow ALB to reach Grafana"
     );
 
     // Add routing rules
