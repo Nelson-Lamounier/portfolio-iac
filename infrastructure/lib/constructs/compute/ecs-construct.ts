@@ -1,9 +1,11 @@
 /** @format */
 
+import * as cdk from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as autoscaling from "aws-cdk-lib/aws-autoscaling";
+import * as logs from "aws-cdk-lib/aws-logs";
 import { Tags } from "aws-cdk-lib";
 import { Construct } from "constructs";
 
@@ -27,6 +29,7 @@ export class EcsConstruct extends Construct {
   public readonly asg: autoscaling.AutoScalingGroup;
   public readonly service: ecs.Ec2Service;
   public readonly taskDefinition: ecs.Ec2TaskDefinition;
+  public readonly nodeExporterService: ecs.Ec2Service;
 
   constructor(scope: Construct, id: string, props: EcsConstructProps) {
     super(scope, id);
@@ -133,5 +136,99 @@ export class EcsConstruct extends Construct {
     Tags.of(this.service).add("Environment", props.envName);
     Tags.of(this.service).add("ManagedBy", "CDK");
     Tags.of(this.service).add("Service", "ECS");
+
+    // 4. Add Node Exporter for monitoring
+    this.nodeExporterService = this.createNodeExporterService(props.envName);
+
+    // Allow Node Exporter port for Prometheus scraping
+    this.asg.connections.allowInternally(
+      ec2.Port.tcp(9100),
+      "Allow Prometheus to scrape Node Exporter"
+    );
+  }
+
+  private createNodeExporterService(envName: string): ecs.Ec2Service {
+    // Task definition with HOST network mode
+    const taskDefinition = new ecs.Ec2TaskDefinition(
+      this,
+      "NodeExporterTaskDef",
+      {
+        networkMode: ecs.NetworkMode.HOST,
+      }
+    );
+
+    // Container definition
+    const container = taskDefinition.addContainer("node-exporter", {
+      image: ecs.ContainerImage.fromRegistry("prom/node-exporter:latest"),
+      memoryReservationMiB: 64,
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: "node-exporter",
+        logGroup: new logs.LogGroup(this, "NodeExporterLogGroup", {
+          logGroupName: `/ecs/${envName}-app-node-exporter`,
+          retention: logs.RetentionDays.ONE_WEEK,
+          removalPolicy: cdk.RemovalPolicy.DESTROY,
+        }),
+      }),
+      command: [
+        "--path.procfs=/host/proc",
+        "--path.sysfs=/host/sys",
+        "--path.rootfs=/rootfs",
+        "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($|/)",
+      ],
+    });
+
+    container.addPortMappings({
+      containerPort: 9100,
+      hostPort: 9100,
+      protocol: ecs.Protocol.TCP,
+    });
+
+    // Mount host paths for metrics collection
+    taskDefinition.addVolume({
+      name: "proc",
+      host: { sourcePath: "/proc" },
+    });
+    taskDefinition.addVolume({
+      name: "sys",
+      host: { sourcePath: "/sys" },
+    });
+    taskDefinition.addVolume({
+      name: "rootfs",
+      host: { sourcePath: "/" },
+    });
+
+    container.addMountPoints(
+      {
+        sourceVolume: "proc",
+        containerPath: "/host/proc",
+        readOnly: true,
+      },
+      {
+        sourceVolume: "sys",
+        containerPath: "/host/sys",
+        readOnly: true,
+      },
+      {
+        sourceVolume: "rootfs",
+        containerPath: "/rootfs",
+        readOnly: true,
+      }
+    );
+
+    // Create service
+    const service = new ecs.Ec2Service(this, "NodeExporterService", {
+      cluster: this.cluster,
+      taskDefinition,
+      serviceName: `${envName}-app-node-exporter`,
+      desiredCount: 1,
+      enableExecuteCommand: true,
+    });
+
+    // Tag service
+    Tags.of(service).add("Environment", envName);
+    Tags.of(service).add("ManagedBy", "CDK");
+    Tags.of(service).add("Service", "NodeExporter");
+
+    return service;
   }
 }

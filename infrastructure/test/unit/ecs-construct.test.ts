@@ -144,7 +144,8 @@ describe("EcsConstruct", () => {
       });
       const template = Template.fromStack(stack);
 
-      template.resourceCountIs("AWS::ECS::TaskDefinition", 1);
+      // Now creates 2 task definitions: app + node-exporter
+      template.resourceCountIs("AWS::ECS::TaskDefinition", 2);
     });
 
     test("uses BRIDGE network mode", () => {
@@ -323,7 +324,8 @@ describe("EcsConstruct", () => {
       });
       const template = Template.fromStack(stack);
 
-      template.resourceCountIs("AWS::ECS::Service", 1);
+      // Now creates 2 services: app + node-exporter
+      template.resourceCountIs("AWS::ECS::Service", 2);
     });
 
     test("service has environment-specific name", () => {

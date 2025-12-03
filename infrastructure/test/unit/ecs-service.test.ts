@@ -404,7 +404,8 @@ describe("ECS Service - Detailed Tests", () => {
       });
       const template = Template.fromStack(stack);
 
-      template.resourceCountIs("AWS::ECS::Service", 1);
+      // Now creates 2 services per construct: app + node-exporter
+      template.resourceCountIs("AWS::ECS::Service", 2);
     });
 
     test("multiple constructs create multiple services", () => {
@@ -421,7 +422,8 @@ describe("ECS Service - Detailed Tests", () => {
       });
 
       const template = Template.fromStack(stack);
-      template.resourceCountIs("AWS::ECS::Service", 2);
+      // Each construct creates 2 services (app + node-exporter), so 2 constructs = 4 services
+      template.resourceCountIs("AWS::ECS::Service", 4);
     });
   });
 });

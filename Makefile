@@ -27,6 +27,7 @@ help:
 	@echo "  deploy-lb-http       - Deploy Load Balancer with HTTP only (ENV=development)"
 	@echo ""
 	@echo "Monitoring targets:"
+	@echo "  deploy-monitoring       - Deploy monitoring stack (alias for deploy-monitoring-ecs)"
 	@echo "  deploy-monitoring-ecs   - Deploy ECS-based monitoring (ENV=development)"
 	@echo "  destroy-monitoring-ecs  - Destroy ECS monitoring stack (ENV=development)"
 	@echo "  check-monitoring-ecs    - Check ECS monitoring status (ENV=development)"
@@ -136,18 +137,27 @@ recover-stacks:
 	@./scripts/recover-stack.sh $(ENV)
 
 # Monitoring deployment targets
+# Map short names to full environment names
+ENV_MAP_dev = development
+ENV_MAP_prod = production
+ENV_MAP_staging = staging
+ENV_FULL = $(or $(ENV_MAP_$(ENV)),$(ENV))
+
 deploy-monitoring-ecs:
-	@echo "Deploying ECS-based monitoring for environment: $(ENV)"
-	@cd infrastructure && yarn cdk deploy MonitoringEcsStack-$(ENV) --require-approval never
+	@echo "Deploying ECS-based monitoring for environment: $(ENV_FULL)"
+	@cd infrastructure && ENVIRONMENT=$(ENV_FULL) yarn cdk deploy MonitoringEcsStack-$(ENV_FULL) --require-approval never
+
+# Alias for convenience
+deploy-monitoring: deploy-monitoring-ecs
 
 destroy-monitoring-ecs:
-	@echo "Destroying ECS-based monitoring for environment: $(ENV)"
-	@cd infrastructure && yarn cdk destroy MonitoringEcsStack-$(ENV) --force
+	@echo "Destroying ECS-based monitoring for environment: $(ENV_FULL)"
+	@cd infrastructure && ENVIRONMENT=$(ENV_FULL) yarn cdk destroy MonitoringEcsStack-$(ENV_FULL) --force
 
 check-monitoring-ecs:
-	@echo "Checking ECS monitoring status for environment: $(ENV)"
+	@echo "Checking ECS monitoring status for environment: $(ENV_FULL)"
 	@aws cloudformation describe-stacks \
-		--stack-name MonitoringEcsStack-$(ENV) \
+		--stack-name MonitoringEcsStack-$(ENV_FULL) \
 		--query 'Stacks[0].{Status:StackStatus,Outputs:Outputs}' \
 		--output table || echo "Stack not found"
 
