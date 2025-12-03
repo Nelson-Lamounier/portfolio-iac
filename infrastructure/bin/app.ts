@@ -9,7 +9,6 @@ import * as cdk from "aws-cdk-lib";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import {
   NetworkingStack,
-  StorageStack,
   ComputeStack,
   MonitoringStack,
   MonitoringEc2Stack,
@@ -98,21 +97,22 @@ const networkingStack = new NetworkingStack(
 );
 
 // ========================================
-// 2. Storage Stack
+// 2. Storage Stack - REMOVED
 // ========================================
-// Creates ECR repository for container images
-// This stack is independent and can be deployed in parallel with networking
-const storageStack = new StorageStack(app, `StorageStack-${config.envName}`, {
-  ...stackProps,
-  envName: config.envName,
-  pipelineAccount: config.pipelineAccount,
-});
+// ECR repository is now created manually outside of CDK
+// Repository URI must be stored in SSM: /ecr/{envName}/repository-uri
+//
+// To create ECR manually:
+// 1. aws ecr create-repository --repository-name portfolio-{envName}
+// 2. aws ssm put-parameter --name "/ecr/{envName}/repository-uri" \
+//      --value "{account}.dkr.ecr.{region}.amazonaws.com/portfolio-{envName}" \
+//      --type String
 
 // ========================================
 // 3. Compute Stack (Created after Load Balancer)
 // ========================================
 // Creates ECS cluster and service
-// Depends on: NetworkingStack (VPC), StorageStack (ECR)
+// Depends on: NetworkingStack (VPC), ECR repository (manual, URI in SSM)
 // Note: Will be created after Load Balancer stack to connect target group
 
 // ========================================
@@ -231,13 +231,11 @@ const computeStack = new ComputeStack(app, `ComputeStack-${config.envName}`, {
   ...stackProps,
   envName: config.envName,
   vpc: networkingStack.vpc,
-  repository: storageStack.repository,
   targetGroup: ecsTargetGroup, // Attach ECS service to ALB target group
 });
 
 // Explicit dependencies
 computeStack.addDependency(networkingStack);
-computeStack.addDependency(storageStack);
 computeStack.addDependency(loadBalancerStack);
 
 // ========================================
