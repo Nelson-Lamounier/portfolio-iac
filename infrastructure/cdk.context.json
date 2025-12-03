@@ -8,5 +8,6 @@
     "eu-west-1a",
     "eu-west-1b",
     "eu-west-1c"
-  ]
+  ],
+  "ssm:account=123456789012:parameterName=/ecr/development/repository-uri:region=eu-west-1": "123456789012.dkr.ecr.eu-west-1.amazonaws.com/portfolio-development"
 }
