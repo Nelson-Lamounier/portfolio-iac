@@ -291,7 +291,7 @@ describe("ElasticLoadBalancer Construct", () => {
           HealthCheckPath: "/health",
           HealthCheckIntervalSeconds: 30,
           HealthyThresholdCount: 2,
-          UnhealthyThresholdCount: 3,
+          UnhealthyThresholdCount: 5, // Updated to match new health check configuration
         }
       );
 
