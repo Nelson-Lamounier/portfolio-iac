@@ -15,8 +15,6 @@ import {
   MonitoringEc2Stack,
   MonitoringEcsStack,
   LoadBalancerStack,
-  CertificateStack,
-  CertificateConfig,
 } from "../lib/stacks";
 import { environments } from "../config/environments";
 
@@ -138,7 +136,6 @@ const storageStack = new StorageStack(app, `StorageStack-${config.envName}`, {
 //
 // The workflow will fetch this parameter from pipeline account and pass as env var
 
-let certificateStack: CertificateStack | undefined;
 let certificateArn: string | undefined;
 
 // Check if certificate ARN is provided via environment variable (from workflow)
@@ -202,9 +199,8 @@ const loadBalancerStack = new LoadBalancerStack(
 // Add dependencies
 loadBalancerStack.addDependency(networkingStack);
 
-// Add certificate dependency if certificate was created
-if (certificateStack) {
-  loadBalancerStack.addDependency(certificateStack);
+// Log HTTPS status
+if (certificateArn) {
   console.log("Load Balancer will use HTTPS with certificate");
 }
 

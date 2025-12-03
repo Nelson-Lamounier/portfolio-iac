@@ -16,4 +16,3 @@ export * from "./monitoring/monitoring-ecs-stack";
 
 // Load Balancer stacks
 export * from "./networking/load-balancer-stack";
-export * from "./networking/certificate-stack";

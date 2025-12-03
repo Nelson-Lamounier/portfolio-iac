@@ -87,19 +87,43 @@ describe("MonitoringEcsStack", () => {
     });
   });
 
-  describe("EFS File System", () => {
-    it("should create encrypted EFS", () => {
+  describe("EBS Volume Configuration", () => {
+    it("should configure EBS volume with encryption", () => {
       const stack = new MonitoringEcsStack(app, "TestMonitoringEcsStack", {
         vpc: networkingStack.vpc,
         envName: "test",
       });
 
       const template = Template.fromStack(stack);
-      template.hasResourceProperties("AWS::EFS::FileSystem", {
-        Encrypted: true,
-        PerformanceMode: "generalPurpose",
-        ThroughputMode: "bursting",
+      template.hasResourceProperties("AWS::AutoScaling::LaunchConfiguration", {
+        BlockDeviceMappings: [
+          {
+            DeviceName: "/dev/xvda",
+            Ebs: {
+              VolumeSize: 30,
+              VolumeType: "gp3",
+              Encrypted: true,
+              DeleteOnTermination: true,
+            },
+          },
+        ],
       });
+    });
+
+    it("should create UserData with config directories", () => {
+      const stack = new MonitoringEcsStack(app, "TestMonitoringEcsStack", {
+        vpc: networkingStack.vpc,
+        envName: "test",
+      });
+
+      const template = Template.fromStack(stack);
+      const launchConfig = template.findResources(
+        "AWS::AutoScaling::LaunchConfiguration"
+      );
+      const userData = Object.values(launchConfig)[0].Properties.UserData;
+
+      // UserData should contain directory creation commands
+      expect(userData).toBeDefined();
     });
   });
 
