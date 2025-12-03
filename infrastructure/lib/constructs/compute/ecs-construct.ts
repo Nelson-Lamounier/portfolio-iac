@@ -69,6 +69,14 @@ export class EcsConstruct extends Construct {
       networkMode: ecs.NetworkMode.BRIDGE, // Default for EC2
     });
 
+    // Grant ECR permissions to task execution role
+    // Required for pulling images from ECR
+    this.taskDefinition.executionRole?.addManagedPolicy(
+      cdk.aws_iam.ManagedPolicy.fromAwsManagedPolicyName(
+        "AmazonEC2ContainerRegistryReadOnly"
+      )
+    );
+
     // Tag task definition
     Tags.of(this.taskDefinition).add("Environment", props.envName);
     Tags.of(this.taskDefinition).add("ManagedBy", "CDK");
