@@ -125,12 +125,30 @@ export class MonitoringEcsStack extends cdk.Stack {
       "    static_configs:",
       "      - targets: ['localhost:9090']",
       "",
-      "  # Node Exporter (HOST mode, so accessible via localhost)",
+      "  # Node Exporter - EC2 Service Discovery",
       "  - job_name: 'node-exporter'",
-      "    static_configs:",
-      "      - targets: ['localhost:9100']",
-      "        labels:",
-      "          instance: 'ecs-host'",
+      "    ec2_sd_configs:",
+      "      - region: " + cdk.Stack.of(this).region,
+      "        port: 9100",
+      "        filters:",
+      "          - name: tag:Purpose",
+      "            values: ['Monitoring']",
+      "          - name: instance-state-name",
+      "            values: ['running']",
+      "    relabel_configs:",
+      "      # Use private IP",
+      "      - source_labels: [__meta_ec2_private_ip]",
+      "        target_label: __address__",
+      "        replacement: '${1}:9100'",
+      "      # Add instance ID as label",
+      "      - source_labels: [__meta_ec2_instance_id]",
+      "        target_label: instance_id",
+      "      # Add availability zone",
+      "      - source_labels: [__meta_ec2_availability_zone]",
+      "        target_label: availability_zone",
+      "      # Use instance name tag as instance label",
+      "      - source_labels: [__meta_ec2_tag_Name]",
+      "        target_label: instance",
       "EOF",
       "",
       "# Create Grafana datasource configuration",
@@ -159,6 +177,13 @@ export class MonitoringEcsStack extends cdk.Stack {
     autoScalingGroup.connections.allowToAnyIpv4(
       ec2.Port.tcp(443),
       "Allow HTTPS outbound for ECS agent"
+    );
+
+    // Allow Node Exporter port (HOST mode) for Prometheus to scrape
+    // This allows Prometheus (in BRIDGE mode) to reach Node Exporter (in HOST mode)
+    autoScalingGroup.connections.allowInternally(
+      ec2.Port.tcp(9100),
+      "Allow Prometheus to scrape Node Exporter"
     );
 
     cdk.Tags.of(cluster).add("Environment", envName);
@@ -220,6 +245,19 @@ export class MonitoringEcsStack extends cdk.Stack {
       {
         networkMode: ecs.NetworkMode.BRIDGE,
       }
+    );
+
+    // Add IAM permissions for EC2 service discovery
+    taskDefinition.taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          "ec2:DescribeInstances",
+          "ec2:DescribeAvailabilityZones",
+          "ec2:DescribeTags",
+        ],
+        resources: ["*"],
+      })
     );
 
     // Add host volumes for persistent storage and config
