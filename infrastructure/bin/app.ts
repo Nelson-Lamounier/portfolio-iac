@@ -216,7 +216,7 @@ const ecsTargetGroup = loadBalancerStack.addTargetGroup({
   healthCheckPath: "/api/health",
   protocol: elbv2.ApplicationProtocol.HTTP,
   targetType: elbv2.TargetType.INSTANCE, // INSTANCE for EC2 launch type with bridge networking
-  healthCheckIntervalSeconds: 30,
+  healthCheckIntervalSeconds: 60, // Increased from 30 to 60 seconds for slower startup
   deregistrationDelay: cdk.Duration.seconds(30),
   createListener: true,
   listenerPriority: 100,

@@ -121,6 +121,9 @@ export class EcsConstruct extends Construct {
       // Deployment configuration
       minHealthyPercent: 0, // Allow all tasks to be stopped (for initial deployment)
       maxHealthyPercent: 200, // Allow up to 200% of tasks during deployment
+
+      // Health check grace period - gives container time to start before health checks begin
+      healthCheckGracePeriod: cdk.Duration.seconds(120), // 2 minutes for container startup
     });
     // Attach service to target group if provided
     if (props.targetGroup) {
