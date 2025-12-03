@@ -241,12 +241,35 @@ jobs:
             echo "  - HOSTED_ZONE_ID"
           fi
 
+      - name: Fetch ECR repository URI
+        id: fetch-ecr-uri
+        continue-on-error: true
+        run: |
+          echo "Fetching ECR repository URI from SSM..."
+          ECR_URI=$(aws ssm get-parameter \
+            --name "/ecr/${{ env.ENVIRONMENT }}/repository-uri" \
+            --query 'Parameter.Value' \
+            --output text \
+            --region ${{ env.AWS_REGION }} 2>/dev/null || echo "")
+
+          if [ -n "$ECR_URI" ]; then
+            echo "::add-mask::$ECR_URI"
+            echo "ECR_REPOSITORY_URI=$ECR_URI" >> $GITHUB_ENV
+            echo "✓ ECR repository URI found: ${ECR_URI%%/*}/***"
+          else
+            echo "::warning::ECR repository URI not found in SSM"
+            echo "::warning::Will use fallback image. Create ECR with: ./scripts/setup-ecr.sh"
+          fi
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+
       - run: make cdk-synth
         env:
           ENVIRONMENT: ${{ env.ENVIRONMENT }}
           AWS_REGION: ${{ env.AWS_REGION }}
           IMAGE_TAG: ${{ needs.build-frontend.outputs.image-tag || 'nginx:alpine' }}
           CERTIFICATE_ARN: ${{ env.CERTIFICATE_ARN }}
+          ECR_REPOSITORY_URI: ${{ env.ECR_REPOSITORY_URI }}
 
       - name: Deploy with retry
         id: deploy
@@ -274,6 +297,7 @@ jobs:
           AWS_REGION: ${{ env.AWS_REGION }}
           IMAGE_TAG: ${{ needs.build-frontend.outputs.image-tag || 'nginx:alpine' }}
           CERTIFICATE_ARN: ${{ env.CERTIFICATE_ARN }}
+          ECR_REPOSITORY_URI: ${{ env.ECR_REPOSITORY_URI }}
 
       - name: Post-deployment recovery
         if: failure() && steps.deploy.outcome == 'failure'
