@@ -47,23 +47,12 @@ export class ComputeStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ComputeStackProps) {
     super(scope, id, props);
 
-    // Get ECR repository URI from environment variable or SSM lookup
-    // Priority: Environment variable > SSM Parameter Store
-    // For CI/CD, pass via ECR_REPOSITORY_URI environment variable
-    // For local development, it will lookup from SSM (requires AWS credentials)
-    let repositoryUri: string;
-
-    if (process.env.ECR_REPOSITORY_URI) {
-      repositoryUri = process.env.ECR_REPOSITORY_URI;
-      console.log(`✓ Using ECR repository URI from environment variable`);
-    } else {
-      // Fallback to SSM lookup (requires context to be cached in cdk.context.json)
-      repositoryUri = ssm.StringParameter.valueFromLookup(
-        this,
-        `/ecr/${props.envName}/repository-uri`
-      );
-      console.log(`✓ Using ECR repository URI from SSM Parameter Store`);
-    }
+    // Lookup ECR repository URI from SSM Parameter Store
+    // The parameter is created manually via scripts/setup-ecr.sh
+    const repositoryUri = ssm.StringParameter.valueFromLookup(
+      this,
+      `/ecr/${props.envName}/repository-uri`
+    );
 
     // Resolve container image (ECR or public registry)
     const containerImageConstruct = new ContainerImageConstruct(
