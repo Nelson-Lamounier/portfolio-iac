@@ -71,3 +71,5 @@ playground/*
 Monitoring data (Prometheus & Grafana)
 monitoring/prometheus-data/
 monitoring/grafana-data/
+
+generated-diagrams/*
