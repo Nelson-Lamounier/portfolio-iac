@@ -9,11 +9,14 @@ global:
     environment: "development"
 
 # Alertmanager configuration (optional)
-# alerting:
-#   alertmanagers:
-#     - static_configs:
-#         - targets:
-#           - alertmanager:9093
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+      scheme: http
+      timeout: 10s
+      api_version: v2
 
 # Load rules once and periodically evaluate them
 rule_files:
@@ -23,6 +26,12 @@ rule_files:
 scrape_configs:
   # Prometheus itself
   - job_name: "prometheus"
+    honor_timestamps: true
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    metrics_path: /metrics
+    scheme: http
+    body_size_limit: "0"
     static_configs:
       - targets: ["localhost:9090"]
         labels:
@@ -46,14 +55,15 @@ scrape_configs:
 
   # Your Next.js application (if it exposes metrics)
   # Uncomment and adjust when you add metrics to your app
-  # - job_name: 'nextjs-app'
-  #   static_configs:
-  #     - targets: ['host.docker.internal:3000']
-  #       labels:
-  #         service: 'nextjs'
-  #         environment: 'development'
+  - job_name: 'nextjs-app'
+    metrics_path: /api/metrics
+    static_configs:
+      - targets: ['host.docker.internal:3000']
+        labels:
+          service: 'nextjs'
+          environment: 'development'
 
-  # AWS ECS metrics (when deployed)
+  # AWS ECS metrics (when deployed)clao
   # This will be configured differently in production
   # - job_name: 'ecs-tasks'
   #   ec2_sd_configs:
