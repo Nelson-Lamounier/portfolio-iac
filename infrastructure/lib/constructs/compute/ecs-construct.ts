@@ -6,6 +6,7 @@ import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as autoscaling from "aws-cdk-lib/aws-autoscaling";
 import * as logs from "aws-cdk-lib/aws-logs";
+import * as cw from "aws-cdk-lib/aws-cloudwatch";
 import { Tags } from "aws-cdk-lib";
 import { Construct } from "constructs";
 
@@ -22,6 +23,9 @@ export interface EcsConstructProps {
   memoryLimitMiB?: number; // Hard limit - task killed if exceeded
   memoryReservationMiB?: number; // Soft limit - minimum memory reserved
   targetGroup?: elbv2.IApplicationTargetGroup;
+  enableCpuAlarm?: boolean;
+  cpuAlarmThreshold?: number;
+  alarmBehavior?: ecs.AlarmBehavior;
 }
 
 export class EcsConstruct extends Construct {
@@ -30,6 +34,7 @@ export class EcsConstruct extends Construct {
   public readonly service: ecs.Ec2Service;
   public readonly taskDefinition: ecs.Ec2TaskDefinition;
   public readonly nodeExporterService: ecs.Ec2Service;
+  public readonly cpuAlarm: cw.Alarm;
 
   constructor(scope: Construct, id: string, props: EcsConstructProps) {
     super(scope, id);
@@ -68,6 +73,16 @@ export class EcsConstruct extends Construct {
     this.taskDefinition = new ecs.Ec2TaskDefinition(this, "TaskDef", {
       networkMode: ecs.NetworkMode.BRIDGE, // Default for EC2
     });
+
+    // Create CloudWatch alarm
+
+    // Grant ECR permissions to task execution role
+    // Required for pulling images from ECR
+    this.taskDefinition.executionRole?.addManagedPolicy(
+      cdk.aws_iam.ManagedPolicy.fromAwsManagedPolicyName(
+        "AmazonEC2ContainerRegistryReadOnly"
+      )
+    );
 
     // Tag task definition
     Tags.of(this.taskDefinition).add("Environment", props.envName);
@@ -134,6 +149,24 @@ export class EcsConstruct extends Construct {
           containerPort: 3000,
         })
       );
+    }
+
+    //Create CPU alarm if enabled (defauld to true)
+    if (props.enableCpuAlarm !== false) {
+      const cpuAlarmName = `${props.envName}-ECS-CPU-Alarm`;
+
+      this.cpuAlarm = new cw.Alarm(this, "CPUAlarm", {
+        alarmName: cpuAlarmName,
+        metric: this.service.metricCpuUtilization(),
+        threshold: props.cpuAlarmThreshold ?? 80,
+        evaluationPeriods: 2,
+        comparisonOperator: cw.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      });
+
+      // Enable deployment alarms
+      this.service.enableDeploymentAlarms([cpuAlarmName], {
+        behavior: props.alarmBehavior ?? ecs.AlarmBehavior.ROLLBACK_ON_ALARM,
+      });
     }
     // Tag service
     Tags.of(this.service).add("Environment", props.envName);

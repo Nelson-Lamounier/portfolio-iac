@@ -5,6 +5,7 @@ import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as ssm from "aws-cdk-lib/aws-ssm";
+import * as cw from "aws-cdk-lib/aws-cloudwatch";
 import { Construct } from "constructs";
 import { EcsConstruct } from "../../constructs/compute/ecs-construct";
 import { ContainerImageConstruct } from "../../constructs/compute/container-image-construct";
@@ -78,6 +79,9 @@ export class ComputeStack extends cdk.Stack {
       memoryLimitMiB: props.memoryLimitMiB, // Hard limit (optional)
       cpu: props.cpu,
       targetGroup: props.targetGroup, // Attach to ALB target group if provided
+      enableCpuAlarm: true,
+      cpuAlarmThreshold: 80,
+      alarmBehavior: ecs.AlarmBehavior.FAIL_ON_ALARM,
     });
 
     this.cluster = ecsConstruct.cluster;
