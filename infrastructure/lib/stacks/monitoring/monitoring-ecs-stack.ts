@@ -5,9 +5,14 @@ import * as autoscaling from "aws-cdk-lib/aws-autoscaling";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
-import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
+import * as events_targets from "aws-cdk-lib/aws-events-targets";
 import { Construct } from "constructs";
+import {
+  GrafanaConstruct,
+  PrometheusConstruct,
+  NodeExporterConstruct,
+} from "../../constructs";
 
 export interface MonitoringEcsStackProps extends cdk.StackProps {
   vpc: ec2.IVpc;
@@ -32,6 +37,46 @@ export class MonitoringEcsStack extends cdk.Stack {
 
     // Create ECS Cluster for monitoring (with EBS volume)
     this.cluster = this.createEcsCluster(vpc, envName);
+
+    // Create CloudWatch Log Groups for monitoring services
+    const monitoringTaskLogGroup = new logs.LogGroup(
+      this,
+      "MonitoringTaskLogs",
+      {
+        logGroupName: `/ecs/${this.stackName}/tasks`,
+        retention: logs.RetentionDays.TWO_WEEKS,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }
+    );
+
+    const monitoringEventLogGroup = new logs.LogGroup(
+      this,
+      "MonitoringEcsEvents",
+      {
+        logGroupName: `/ecs/${this.stackName}/events`,
+        retention: logs.RetentionDays.TWO_WEEKS,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }
+    );
+
+    // Configure ECS to send events to CloudWatch Logs
+    new cdk.aws_events.Rule(this, "MonitoringEcsEventRule", {
+      description: `Capture ECS events for ${envName} monitoring cluster`,
+      eventPattern: {
+        source: ["aws.ecs"],
+        detailType: [
+          "ECS Task State Change",
+          "ECS Container Instance State Change",
+          "ECS Service Action",
+        ],
+        detail: {
+          clusterArn: [this.cluster.clusterArn],
+        },
+      },
+      targets: [
+        new cdk.aws_events_targets.CloudWatchLogGroup(monitoringEventLogGroup),
+      ],
+    });
 
     // Create Application Load Balancer for monitoring services
     this.loadBalancer = this.createLoadBalancer(vpc, envName, allowedIpRanges);
@@ -60,7 +105,7 @@ export class MonitoringEcsStack extends cdk.Stack {
     this.prometheusUrl = `http://${this.loadBalancer.loadBalancerDnsName}/prometheus`;
 
     // Create outputs
-    this.createOutputs();
+    this.createOutputs(monitoringTaskLogGroup, monitoringEventLogGroup);
   }
 
   private createEcsCluster(vpc: ec2.IVpc, envName: string): ecs.Cluster {
@@ -276,198 +321,56 @@ export class MonitoringEcsStack extends cdk.Stack {
     envName: string,
     _albDnsName?: string
   ): ecs.Ec2Service {
-    // Task definition
-    const taskDefinition = new ecs.Ec2TaskDefinition(
-      this,
-      "PrometheusTaskDef",
-      {
-        networkMode: ecs.NetworkMode.BRIDGE,
-      }
-    );
-
-    // Add IAM permissions for EC2 service discovery
-    taskDefinition.taskRole.addToPrincipalPolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: [
-          "ec2:DescribeInstances",
-          "ec2:DescribeAvailabilityZones",
-          "ec2:DescribeTags",
-        ],
-        resources: ["*"],
-      })
-    );
-
-    // Add host volumes for persistent storage and config
-    taskDefinition.addVolume({
-      name: "prometheus-data",
-      host: {
-        sourcePath: "/mnt/prometheus-data",
-      },
-    });
-
-    taskDefinition.addVolume({
-      name: "prometheus-config",
-      host: {
-        sourcePath: "/mnt/prometheus-config",
-      },
-    });
-
-    // Container definition
-    const container = taskDefinition.addContainer("prometheus", {
-      image: ecs.ContainerImage.fromRegistry("prom/prometheus:latest"),
-      memoryReservationMiB: 256,
-      logging: ecs.LogDrivers.awsLogs({
-        streamPrefix: "prometheus",
-        logGroup: new logs.LogGroup(this, "PrometheusLogGroup", {
-          logGroupName: `/ecs/${envName}-prometheus`,
-          retention: logs.RetentionDays.ONE_WEEK,
-          removalPolicy: cdk.RemovalPolicy.DESTROY,
-        }),
-      }),
-      command: [
-        "--config.file=/etc/prometheus/prometheus.yml",
-        "--storage.tsdb.path=/prometheus",
-        "--storage.tsdb.retention.time=7d",
-        "--web.console.libraries=/usr/share/prometheus/console_libraries",
-        "--web.console.templates=/usr/share/prometheus/consoles",
-        "--web.enable-lifecycle",
-        "--web.route-prefix=/prometheus",
-        "--web.external-url=/prometheus",
-      ],
-      environment: {
-        ENVIRONMENT: envName,
-      },
-    });
-
-    container.addPortMappings({
-      containerPort: 9090,
-      protocol: ecs.Protocol.TCP,
-    });
-
-    container.addMountPoints(
-      {
-        sourceVolume: "prometheus-data",
-        containerPath: "/prometheus",
-        readOnly: false,
-      },
-      {
-        sourceVolume: "prometheus-config",
-        containerPath: "/etc/prometheus",
-        readOnly: true,
-      }
-    );
-
-    // Create service
-    const service = new ecs.Ec2Service(this, "PrometheusService", {
-      cluster,
-      taskDefinition,
-      serviceName: `${envName}-prometheus`,
-      desiredCount: 1,
+    const prometheus = new PrometheusConstruct(this, "Prometheus", {
+      cluster: cluster,
+      envName: envName,
+      dataVolumePath: "/mnt/prometheus-data",
+      configVolumePath: "/mnt/prometheus-config",
+      webRoutePrefix: "/prometheus",
+      webExternalUrl: "/prometheus",
+      enableEc2ServiceDiscovery: true,
+      region: cdk.Stack.of(this).region,
       enableExecuteCommand: true,
     });
 
-    return service;
+    return prometheus.service;
   }
 
   private createGrafanaService(
     cluster: ecs.Cluster,
     envName: string
   ): ecs.Ec2Service {
-    // Task definition
-    const taskDefinition = new ecs.Ec2TaskDefinition(this, "GrafanaTaskDef", {
-      networkMode: ecs.NetworkMode.BRIDGE,
-    });
-
-    // Add host volumes for persistent storage and provisioning
-    taskDefinition.addVolume({
-      name: "grafana-data",
-      host: {
-        sourcePath: "/mnt/grafana-data",
-      },
-    });
-
-    taskDefinition.addVolume({
-      name: "grafana-provisioning",
-      host: {
-        sourcePath: "/mnt/grafana-provisioning",
-      },
-    });
-
-    taskDefinition.addVolume({
-      name: "grafana-dashboards",
-      host: {
-        sourcePath: "/mnt/grafana-dashboards",
-      },
-    });
-
-    // Container definition
-    const container = taskDefinition.addContainer("grafana", {
-      image: ecs.ContainerImage.fromRegistry("grafana/grafana:latest"),
-      memoryReservationMiB: 256,
-      logging: ecs.LogDrivers.awsLogs({
-        streamPrefix: "grafana",
-        logGroup: new logs.LogGroup(this, "GrafanaLogGroup", {
-          logGroupName: `/ecs/${envName}-grafana`,
-          retention: logs.RetentionDays.ONE_WEEK,
-          removalPolicy: cdk.RemovalPolicy.DESTROY,
-        }),
-      }),
-      environment: {
-        GF_SECURITY_ADMIN_USER: "admin",
-        GF_SECURITY_ADMIN_PASSWORD: "admin",
-        GF_INSTALL_PLUGINS: "cloudwatch",
-        GF_USERS_ALLOW_SIGN_UP: "false",
-        GF_SERVER_ROOT_URL: "/grafana",
-        GF_SERVER_SERVE_FROM_SUB_PATH: "true",
-        GF_ANALYTICS_REPORTING_ENABLED: "false",
-        GF_METRICS_ENABLED: "false",
-        GF_PATHS_PROVISIONING: "/etc/grafana/provisioning",
-        AWS_REGION: cdk.Stack.of(this).region,
-      },
-    });
-
-    container.addPortMappings({
-      containerPort: 3000,
-      protocol: ecs.Protocol.TCP,
-    });
-
-    container.addMountPoints(
-      {
-        sourceVolume: "grafana-data",
-        containerPath: "/var/lib/grafana",
-        readOnly: false,
-      },
-      {
-        sourceVolume: "grafana-provisioning",
-        containerPath: "/etc/grafana/provisioning",
-        readOnly: true,
-      },
-      {
-        sourceVolume: "grafana-dashboards",
-        containerPath: "/var/lib/grafana/dashboards",
-        readOnly: true,
-      }
-    );
-
-    // Create service
-    const service = new ecs.Ec2Service(this, "GrafanaService", {
-      cluster,
-      taskDefinition,
-      serviceName: `${envName}-grafana`,
-      desiredCount: 1,
+    const grafana = new GrafanaConstruct(this, "Grafana", {
+      cluster: cluster,
+      envName: envName,
+      dataVolumePath: "/mnt/grafana-data",
+      provisioningVolumePath: "/mnt/grafana-provisioning",
+      dashboardsVolumePath: "/mnt/grafana-dashboards",
       enableExecuteCommand: true,
+      enableCloudWatch: true,
     });
 
-    // Add IAM permissions for CloudWatch
-    taskDefinition.taskRole.addManagedPolicy(
-      iam.ManagedPolicy.fromAwsManagedPolicyName("CloudWatchReadOnlyAccess")
-    );
-
-    return service;
+    return grafana.service;
   }
 
   private createNodeExporterService(
+    cluster: ecs.Cluster,
+    envName: string
+  ): ecs.Ec2Service {
+    const nodeExporter = new NodeExporterConstruct(this, "NodeExporter", {
+      cluster: cluster,
+      envName: envName,
+      serviceName: `${envName}-monitoring-node-exporter`,
+      memoryReservationMiB: 64,
+      logRetention: logs.RetentionDays.ONE_WEEK,
+      enableExecuteCommand: true,
+    });
+
+    return nodeExporter.service;
+  }
+
+  // OLD IMPLEMENTATION - REPLACED WITH NodeExporterConstruct
+  private _oldCreateNodeExporterService_UNUSED(
     cluster: ecs.Cluster,
     envName: string
   ): ecs.Ec2Service {
@@ -649,7 +552,10 @@ export class MonitoringEcsStack extends cdk.Stack {
     );
   }
 
-  private createOutputs(): void {
+  private createOutputs(
+    taskLogGroup: logs.LogGroup,
+    eventLogGroup: logs.LogGroup
+  ): void {
     new cdk.CfnOutput(this, "GrafanaUrl", {
       value: this.grafanaUrl,
       description: "Grafana Dashboard URL (default: admin/admin)",
@@ -672,6 +578,18 @@ export class MonitoringEcsStack extends cdk.Stack {
       value: this.cluster.clusterName,
       description: "ECS Cluster name for monitoring",
       exportName: `${this.stackName}-cluster-name`,
+    });
+
+    new cdk.CfnOutput(this, "MonitoringTaskLogGroupName", {
+      value: taskLogGroup.logGroupName,
+      description: "CloudWatch Log Group for Monitoring Task Logs",
+      exportName: `${this.stackName}-task-log-group`,
+    });
+
+    new cdk.CfnOutput(this, "MonitoringEventLogGroupName", {
+      value: eventLogGroup.logGroupName,
+      description: "CloudWatch Log Group for Monitoring ECS Events",
+      exportName: `${this.stackName}-event-log-group`,
     });
   }
 }
