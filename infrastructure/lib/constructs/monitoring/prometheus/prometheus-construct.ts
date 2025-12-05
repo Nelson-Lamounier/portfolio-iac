@@ -5,8 +5,8 @@ import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
 import { Construct } from "constructs";
-import { EcsTaskDefinitionConstruct } from "../compute/ecs-task-definition-construct";
-import { EcsServiceConstruct } from "../compute/ecs-service-construct";
+import { EcsTaskDefinitionConstruct } from "../../compute/ecs/ecs-task-definition-construct";
+import { EcsServiceConstruct } from "../../compute/ecs/ecs-service-construct";
 
 export interface PrometheusConstructProps {
   cluster: ecs.ICluster;

@@ -5,8 +5,8 @@ import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
 import { Construct } from "constructs";
-import { EcsTaskDefinitionConstruct } from "../compute/ecs-task-definition-construct";
-import { EcsServiceConstruct } from "../compute/ecs-service-construct";
+import { EcsTaskDefinitionConstruct } from "../../compute/ecs/ecs-task-definition-construct";
+import { EcsServiceConstruct } from "../../compute/ecs/ecs-service-construct";
 
 export interface GrafanaConstructProps {
   // Required parameters
@@ -186,6 +186,9 @@ export class GrafanaConstruct extends Construct {
       // No alarms by defauld (can be added externally)
       alarmConfig: undefined,
     });
+
+    // Expose the service
+    this.service = this.serviceConstruct.service;
   }
 
   /**
