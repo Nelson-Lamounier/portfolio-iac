@@ -135,7 +135,7 @@ export class GrafanaConstruct extends Construct {
       "grafana",
       {
         sourceVolume: "grafana-data",
-        containerPath: "var/lib/grafana",
+        containerPath: "/var/lib/grafana",
         readOnly: false,
       },
       {
