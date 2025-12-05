@@ -1,23 +1,18 @@
 /** @format */
 
+// Constructs organized by service domain
+
 // Networking constructs
-export * from "./networking/vpc-construct";
+export * from "./networking";
 
-// Storage constructs
-export * from "./storage/ecr-construct";
-
-// Reusable ECS sub-constructs
-export * from "./compute/ecs-cluster-construct";
-export * from "./compute/ecs-task-definition-construct";
-export * from "./compute/ecs-service-construct";
-export * from "./compute/node-exporter-construct";
+// Compute constructs
+export * from "./compute";
 
 // Monitoring constructs
-export * from "./monitoring/monitoring-construct";
-export * from "./monitoring/eventbridge-construct";
-export * from "./monitoring/grafana-construct";
-export * from "./monitoring/prometheus-construct";
+export * from "./monitoring";
+
+// Storage constructs
+export * from "./storage";
 
 // Configuration constructs
-export * from "./config/ssm-parameters-construct";
-export * from "./config/stack-outputs-construct";
+export * from "./config";
