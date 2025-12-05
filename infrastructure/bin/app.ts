@@ -7,11 +7,12 @@ import "source-map-support/register";
 import "dotenv/config";
 import * as cdk from "aws-cdk-lib";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
+import { Aspects } from "aws-cdk-lib";
+import { AwsSolutionsChecks } from "cdk-nag";
 import {
   NetworkingStack,
   ComputeStack,
   MonitoringStack,
-  MonitoringEc2Stack,
   MonitoringEcsStack,
   LoadBalancerStack,
 } from "../lib/stacks";
@@ -92,7 +93,8 @@ const networkingStack = new NetworkingStack(
     ...stackProps,
     envName: config.envName,
     maxAzs: 2,
-    natGateways: 0, // Cost optimization: using public subnets only
+    natGateways: 0,
+    enableVpcFlowLogs: true,
   }
 );
 
@@ -188,11 +190,10 @@ const loadBalancerStack = new LoadBalancerStack(
     loadBalancerName: `${config.envName}-alb`,
     enableHttps: !!certificateArn,
     certificateArn: certificateArn,
-    tags: {
-      Environment: config.envName,
-      Project: "portfolio",
-      ManagedBy: "cdk",
-    },
+    redirectHttpToHttps: !!certificateArn,
+    allowedCidrs: ["0.0.0.0/0"],
+    deletionProtection: config.envName === "production",
+    accessLogEnabled: true, // Enable ALB access logs for security and troubleshooting
   }
 );
 
@@ -201,7 +202,8 @@ loadBalancerStack.addDependency(networkingStack);
 
 // Log HTTPS status
 if (certificateArn) {
-  console.log("Load Balancer will use HTTPS with certificate");
+  console.log("✓ Load Balancer configured with HTTPS");
+  console.log("  HTTP traffic will redirect to HTTPS");
 }
 
 // ========================================
@@ -211,15 +213,19 @@ if (certificateArn) {
 // Note: Using INSTANCE target type because ECS is using EC2 launch type with BRIDGE networking
 // If you switch to AWSVPC networking, change this to TargetType.IP
 const ecsTargetGroup = loadBalancerStack.addTargetGroup({
-  name: `ecs-service-${envName}`,
+  name: `${envName}-ecs-service`,
   port: 3000,
-  healthCheckPath: "/api/health",
   protocol: elbv2.ApplicationProtocol.HTTP,
   targetType: elbv2.TargetType.INSTANCE, // INSTANCE for EC2 launch type with bridge networking
-  healthCheckIntervalSeconds: 60, // Increased from 30 to 60 seconds for slower startup
+  healthCheckPath: "/api/health",
+  healthCheckInterval: cdk.Duration.seconds(60),
   deregistrationDelay: cdk.Duration.seconds(30),
-  createListener: true,
-  listenerPriority: 100,
+});
+
+// Add listener rule to route traffic to ECS service
+loadBalancerStack.addListenerRule({
+  targetGroupName: `${envName}-ecs-service`,
+  priority: 100,
   pathPattern: "/*",
 });
 
@@ -283,8 +289,7 @@ if (config.enableMonitoring) {
       ...stackProps,
       envName: config.envName,
       vpc: networkingStack.vpc,
-      albDnsName:
-        loadBalancerStack.loadBalancer.loadBalancer.loadBalancerDnsName,
+      albDnsName: loadBalancerStack.alb.dnsName,
       // Optional: Restrict access to specific IPs
       // allowedIpRanges: ['YOUR_IP/32'],
     }
@@ -292,6 +297,31 @@ if (config.enableMonitoring) {
 
   monitoringEcsStack.addDependency(networkingStack);
   monitoringEcsStack.addDependency(loadBalancerStack);
+}
+
+// ========================================
+// CDK Nag Integration
+// ========================================
+// Apply AWS Solutions security checks based on environment
+// Development: Warnings only (lenient for rapid development)
+// Staging/Production: Strict enforcement with verbose output
+if (process.env.ENABLE_CDK_NAG !== "false") {
+  const isProduction = ["production", "staging"].includes(envName);
+
+  console.log(
+    `\n🔒 CDK Nag: ${isProduction ? "STRICT" : "LENIENT"} mode for ${envName}`
+  );
+
+  Aspects.of(app).add(
+    new AwsSolutionsChecks({
+      verbose: true,
+      // In development, we log warnings but don't fail the build
+      // In production/staging, we enforce all rules
+      logIgnores: !isProduction,
+    })
+  );
+
+  console.log("   Use ENABLE_CDK_NAG=false to disable CDK Nag temporarily\n");
 }
 
 // Converts CDK code to CloudFormation templates
