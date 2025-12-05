@@ -6,6 +6,7 @@ import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as cdk from "aws-cdk-lib";
 import { NagSuppressions } from "cdk-nag";
+import { SuppressionManager } from "../../../cdk-nag";
 
 export interface AlbConstructProps {
   vpc: ec2.IVpc;
@@ -78,19 +79,6 @@ export class AlbConstruct extends Construct {
       // Add bucket policy to allow ALB to write logs
       // No need to add bucket policy explicitly as CDK handles this automatically
       // when logAccessLogs is called
-
-      // Suppress CDK Nag warnings for access log bucket
-      NagSuppressions.addResourceSuppressions(
-        this.accessLogBucket,
-        [
-          {
-            id: "AwsSolutions-S1",
-            reason:
-              "This is an access log bucket for ALB. S3 server access logging is enabled via serverAccessLogsPrefix.",
-          },
-        ],
-        true
-      );
     }
 
     // Create the Application Load Balancer
@@ -120,20 +108,15 @@ export class AlbConstruct extends Construct {
     cdk.Tags.of(this.loadBalancer).add("ManagedBy", "CDK");
     cdk.Tags.of(this.loadBalancer).add("Name", props.loadBalancerName);
 
-    // Suppress CDK Nag warnings for internet-facing ALB
-    // AwsSolutions-EC23: Internet-facing ALBs need to accept traffic from 0.0.0.0/0
-    // This is the expected behavior for public web applications
-    NagSuppressions.addResourceSuppressions(
-      this.securityGroup,
-      [
-        {
-          id: "AwsSolutions-EC23",
-          reason:
-            "Internet-facing Application Load Balancer requires 0.0.0.0/0 access on HTTP/HTTPS ports for public web traffic. This is standard for public-facing web applications.",
-        },
-      ],
-      true // Apply to all children
-    );
+    // Apply CDK Nag suppressions for internet-facing ALB security group
+    // Stack-level suppressions don't always reach construct-level resources
+    if (props.internetFacing) {
+      NagSuppressions.addResourceSuppressions(
+        this.securityGroup,
+        SuppressionManager.getPublicAccessSuppressions(),
+        true
+      );
+    }
   }
 
   /**

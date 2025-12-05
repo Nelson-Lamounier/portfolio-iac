@@ -6,6 +6,7 @@ import { Construct } from "constructs";
 import { VpcConstruct } from "../../constructs/networking/vpc/vpc-construct";
 import { VpcFlowLogsConstruct } from "../../constructs/networking/vpc/vpc-flow-logs-construct";
 import { SubnetConfigurationHelper } from "../../constructs/networking/vpc/subnet-construct";
+import { SuppressionManager } from "../../cdk-nag";
 
 export interface NetworkingStackProps extends cdk.StackProps {
   envName: string;
@@ -161,7 +162,13 @@ export class NetworkingStack extends cdk.Stack {
     }
 
     // ========================================================================
-    // 5. RESOURCE TAGGING
+    // 5. CDK NAG SUPPRESSIONS
+    // ========================================================================
+    // Apply centralized CDK Nag suppressions
+    SuppressionManager.applyToStack(this, "NetworkingStack", envName);
+
+    // ========================================================================
+    // 6. RESOURCE TAGGING
     // ========================================================================
     cdk.Tags.of(this).add("Stack", "Networking");
     cdk.Tags.of(this).add("Environment", envName);

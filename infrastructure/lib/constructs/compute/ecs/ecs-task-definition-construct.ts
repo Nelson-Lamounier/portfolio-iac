@@ -5,6 +5,8 @@ import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as iam from "aws-cdk-lib/aws-iam";
 import { Tags } from "aws-cdk-lib";
 import { Construct } from "constructs";
+import { NagSuppressions } from "cdk-nag";
+import { SuppressionManager } from "../../../cdk-nag";
 
 export interface ContainerConfig {
   name: string;
@@ -50,25 +52,55 @@ export class EcsTaskDefinitionConstruct extends Construct {
     // We need to create this explicitly before the task definition if we want to add permissions
     let executionRole = props.executionRole;
     if (!executionRole && props.grantEcrReadAccess !== false) {
-      // Create execution role with ECR permissions
+      // Create execution role with custom inline policy instead of AWS managed policy
+      // This addresses CDK Nag AwsSolutions-IAM4
       executionRole = new iam.Role(this, "ExecutionRole", {
         assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
-        description: "Execution role for ECS task",
-        managedPolicies: [
-          iam.ManagedPolicy.fromAwsManagedPolicyName(
-            "service-role/AmazonECSTaskExecutionRolePolicy"
-          ),
-        ],
+        description:
+          "Execution role for ECS task with least privilege permissions",
       });
 
-      // Add GetAuthorizationToken permission (not included in AmazonECSTaskExecutionRolePolicy)
-      // This is required for ECS to authenticate with ECR
+      // Add CloudWatch Logs permissions
+      // Required for ECS to send container logs to CloudWatch
+      executionRole.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ["logs:CreateLogStream", "logs:PutLogEvents"],
+          resources: [
+            `arn:aws:logs:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:log-group:/ecs/${props.envName}*:*`,
+          ],
+        })
+      );
+
+      // Add ECR permissions
+      // Required for ECS to pull container images from ECR
       executionRole.addToPrincipalPolicy(
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
           actions: ["ecr:GetAuthorizationToken"],
           resources: ["*"], // GetAuthorizationToken doesn't support resource-level permissions
         })
+      );
+
+      executionRole.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: [
+            "ecr:BatchCheckLayerAvailability",
+            "ecr:GetDownloadUrlForLayer",
+            "ecr:BatchGetImage",
+          ],
+          resources: [
+            `arn:aws:ecr:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:repository/*`,
+          ],
+        })
+      );
+
+      // Add CDK Nag suppressions for execution role permissions
+      NagSuppressions.addResourceSuppressions(
+        executionRole,
+        SuppressionManager.getExecutionRoleSuppressions(props.envName),
+        true
       );
     }
 
@@ -115,9 +147,10 @@ export class EcsTaskDefinitionConstruct extends Construct {
 
     // Add port mapping with dynamic host port for BRIDGE mode
     // Or use same port for HOST mode
-    const hostPort = this.taskDefinition.networkMode === ecs.NetworkMode.HOST
-      ? config.containerPort
-      : 0; // Dynamic port for BRIDGE mode
+    const hostPort =
+      this.taskDefinition.networkMode === ecs.NetworkMode.HOST
+        ? config.containerPort
+        : 0; // Dynamic port for BRIDGE mode
 
     container.addPortMappings({
       containerPort: config.containerPort,

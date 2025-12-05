@@ -26,11 +26,7 @@ export class NodeExporterConstruct extends Construct {
   public readonly taskDefinition: ecs.Ec2TaskDefinition;
   public readonly logGroup: logs.LogGroup;
 
-  constructor(
-    scope: Construct,
-    id: string,
-    props: NodeExporterConstructProps
-  ) {
+  constructor(scope: Construct, id: string, props: NodeExporterConstructProps) {
     super(scope, id);
 
     // Create log group
@@ -40,30 +36,61 @@ export class NodeExporterConstruct extends Construct {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    // Create execution role with permissions to pull public images and write logs
+    // Create execution role with custom inline policies (CDK Nag compliant)
     const executionRole = new iam.Role(this, "ExecutionRole", {
       assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
-      description: "Execution role for Node Exporter task",
-      managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName(
-          "service-role/AmazonECSTaskExecutionRolePolicy"
-        ),
-      ],
+      description: "Execution role for Node Exporter task with least privilege",
     });
 
-    // Grant CloudWatch Logs permissions
-    this.logGroup.grantWrite(executionRole);
+    // Add CloudWatch Logs permissions
+    executionRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["logs:CreateLogStream", "logs:PutLogEvents"],
+        resources: [this.logGroup.logGroupArn + ":*"],
+      })
+    );
 
-    // Suppress CDK Nag warning for AWS managed policy
+    // Add ECR permissions for pulling public images
+    // GetAuthorizationToken is required even for public images
+    executionRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["ecr:GetAuthorizationToken"],
+        resources: ["*"], // GetAuthorizationToken doesn't support resource-level permissions
+      })
+    );
+
+    // Add permissions to pull from public ECR (Docker Hub in this case)
+    executionRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          "ecr-public:GetAuthorizationToken",
+          "sts:GetServiceBearerToken",
+        ],
+        resources: ["*"], // Required for public registry access
+      })
+    );
+
+    // Apply CDK Nag suppressions for necessary wildcards
     NagSuppressions.addResourceSuppressions(
       executionRole,
       [
         {
-          id: "AwsSolutions-IAM4",
+          id: "AwsSolutions-IAM5",
           reason:
-            "AmazonECSTaskExecutionRolePolicy is the standard AWS managed policy for ECS task execution roles. It provides necessary permissions to pull images from ECR/Docker Hub and write logs to CloudWatch.",
+            "ECR GetAuthorizationToken and public registry access do not support resource-level permissions. This is an AWS service limitation for container image authentication.",
+          appliesTo: ["Resource::*"],
+        },
+        {
+          id: "AwsSolutions-IAM5",
+          reason:
+            "CloudWatch Logs permissions use wildcard for log streams within the specific log group. This allows ECS to create log streams dynamically.",
           appliesTo: [
-            "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
+            {
+              regex: "/^Resource::.*/",
+            },
           ],
         },
       ],

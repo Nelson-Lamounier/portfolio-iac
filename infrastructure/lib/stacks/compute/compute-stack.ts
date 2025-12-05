@@ -8,13 +8,13 @@ import * as ssm from "aws-cdk-lib/aws-ssm";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as events_targets from "aws-cdk-lib/aws-events-targets";
 import { Construct } from "constructs";
-import { NagSuppressions } from "cdk-nag";
 import {
   EcsClusterConstruct,
   EcsTaskDefinitionConstruct,
   EcsServiceConstruct,
   NodeExporterConstruct,
 } from "../../constructs";
+import { SuppressionManager } from "../../cdk-nag";
 
 export interface ComputeStackProps extends cdk.StackProps {
   envName: string;
@@ -140,9 +140,7 @@ export class ComputeStackRefactored extends cdk.Stack {
           clusterArn: [this.cluster.clusterArn],
         },
       },
-      targets: [
-        new cdk.aws_events_targets.CloudWatchLogGroup(ecsEventLogGroup),
-      ],
+      targets: [new events_targets.CloudWatchLogGroup(ecsEventLogGroup)],
     });
 
     // ========================================================================
@@ -262,33 +260,8 @@ export class ComputeStackRefactored extends cdk.Stack {
     // ========================================================================
     // 9. CDK NAG SUPPRESSIONS
     // ========================================================================
-    // Suppress stack-level CDK Nag warnings
-    NagSuppressions.addStackSuppressions(this, [
-      {
-        id: "AwsSolutions-IAM5",
-        reason:
-          "Task execution roles require wildcard permissions for CloudWatch Logs and ECR access. These are standard permissions for ECS tasks.",
-        appliesTo: ["Resource::*"],
-      },
-      {
-        id: "AwsSolutions-IAM4",
-        reason:
-          "AWS managed policies are used for Lambda functions created by CDK for custom resources. These are standard CloudFormation custom resource Lambda functions.",
-        appliesTo: [
-          "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
-        ],
-      },
-      {
-        id: "AwsSolutions-L1",
-        reason:
-          "Lambda runtime versions are managed by CDK for custom resources. CDK automatically updates these with new releases.",
-      },
-      {
-        id: "AwsSolutions-ECS2",
-        reason:
-          "Environment variables NODE_ENV and PORT are non-sensitive configuration values. Sensitive values should use AWS Secrets Manager, but these basic config values are safe as environment variables.",
-      },
-    ]);
+    // Apply centralized CDK Nag suppressions
+    SuppressionManager.applyToStack(this, "ComputeStack", props.envName);
 
     // ========================================================================
     // 10. RESOURCE TAGGING

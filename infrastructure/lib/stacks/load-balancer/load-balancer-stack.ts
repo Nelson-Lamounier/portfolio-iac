@@ -7,6 +7,7 @@ import { Construct } from "constructs";
 import { AlbConstruct } from "../../constructs/networking/alb/alb-construct";
 import { AlbListenerConstruct } from "../../constructs/networking/alb/alb-listener-construct";
 import { AlbTargetGroupConstruct } from "../../constructs/networking/alb/alb-target-group-construct";
+import { SuppressionManager } from "../../cdk-nag";
 
 export interface TargetGroupConfig {
   name: string;
@@ -164,7 +165,13 @@ export class LoadBalancerStack extends cdk.Stack {
     }
 
     // ========================================================================
-    // 5. RESOURCE TAGGING
+    // 5. CDK NAG SUPPRESSIONS
+    // ========================================================================
+    // Apply centralized CDK Nag suppressions
+    SuppressionManager.applyToStack(this, "LoadBalancerStack", envName);
+
+    // ========================================================================
+    // 6. RESOURCE TAGGING
     // ========================================================================
     cdk.Tags.of(this).add("Stack", "LoadBalancer");
     cdk.Tags.of(this).add("Environment", envName);
