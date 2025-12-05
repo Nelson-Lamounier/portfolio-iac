@@ -46,21 +46,38 @@ export class EcsTaskDefinitionConstruct extends Construct {
 
     this.containers = new Map();
 
+    // Create or use provided execution role
+    // We need to create this explicitly before the task definition if we want to add permissions
+    let executionRole = props.executionRole;
+    if (!executionRole && props.grantEcrReadAccess !== false) {
+      // Create execution role with ECR permissions
+      executionRole = new iam.Role(this, "ExecutionRole", {
+        assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
+        description: "Execution role for ECS task",
+        managedPolicies: [
+          iam.ManagedPolicy.fromAwsManagedPolicyName(
+            "service-role/AmazonECSTaskExecutionRolePolicy"
+          ),
+        ],
+      });
+
+      // Add GetAuthorizationToken permission (not included in AmazonECSTaskExecutionRolePolicy)
+      // This is required for ECS to authenticate with ECR
+      executionRole.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ["ecr:GetAuthorizationToken"],
+          resources: ["*"], // GetAuthorizationToken doesn't support resource-level permissions
+        })
+      );
+    }
+
     // Create Task Definition
     this.taskDefinition = new ecs.Ec2TaskDefinition(this, "TaskDef", {
       networkMode: props.networkMode || ecs.NetworkMode.BRIDGE,
       taskRole: props.taskRole,
-      executionRole: props.executionRole,
+      executionRole: executionRole,
     });
-
-    // Grant ECR permissions if requested
-    if (props.grantEcrReadAccess !== false) {
-      this.taskDefinition.executionRole?.addManagedPolicy(
-        iam.ManagedPolicy.fromAwsManagedPolicyName(
-          "AmazonEC2ContainerRegistryReadOnly"
-        )
-      );
-    }
 
     // Add volumes if provided
     if (props.volumes) {
