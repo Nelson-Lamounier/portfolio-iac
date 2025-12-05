@@ -2058,6 +2058,27 @@ def pick(dct, *keys):
       },
       "Type": "AWS::EC2::SecurityGroupIngress",
     },
+    "MonitoringClusterMonitoringCapacityInstanceSecurityGroupfromTestMonitoringEcsStackMonitoringClusterMonitoringCapacityInstanceSecurityGroupBAF788779090414ADA84": {
+      "Properties": {
+        "Description": "Allow Grafana to query Prometheus",
+        "FromPort": 9090,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "MonitoringClusterMonitoringCapacityInstanceSecurityGroup5C8AB8D9",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "MonitoringClusterMonitoringCapacityInstanceSecurityGroup5C8AB8D9",
+            "GroupId",
+          ],
+        },
+        "ToPort": 9090,
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
     "MonitoringClusterMonitoringCapacityInstanceSecurityGroupfromTestMonitoringEcsStackMonitoringClusterMonitoringCapacityInstanceSecurityGroupBAF788779100434A5856": {
       "Properties": {
         "Description": "Allow Prometheus to scrape Node Exporter",
@@ -2204,7 +2225,8 @@ datasources:
     type: prometheus
     access: proxy
     # Use host private IP to reach Prometheus from Grafana (both in BRIDGE mode)
-    url: http://\${HOST_IP}:9090/prometheus
+    # Note: No /prometheus path - that's only for ALB routing
+    url: http://\${HOST_IP}:9090
     isDefault: true
     editable: true
     jsonData:

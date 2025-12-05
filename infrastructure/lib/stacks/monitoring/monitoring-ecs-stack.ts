@@ -30,6 +30,7 @@ export class MonitoringEcsStack extends cdk.Stack {
   public readonly loadBalancer: elbv2.ApplicationLoadBalancer;
   public readonly grafanaUrl: string;
   public readonly prometheusUrl: string;
+  private readonly autoScalingGroup: autoscaling.AutoScalingGroup;
 
   constructor(scope: Construct, id: string, props: MonitoringEcsStackProps) {
     super(scope, id, props);
@@ -37,7 +38,9 @@ export class MonitoringEcsStack extends cdk.Stack {
     const { vpc, envName, albDnsName, allowedIpRanges } = props;
 
     // Create ECS Cluster for monitoring (with EBS volume)
-    this.cluster = this.createEcsCluster(vpc, envName);
+    const { cluster, autoScalingGroup } = this.createEcsCluster(vpc, envName);
+    this.cluster = cluster;
+    this.autoScalingGroup = autoScalingGroup;
 
     // Create CloudWatch Log Groups for monitoring services
     const monitoringTaskLogGroup = new logs.LogGroup(
@@ -82,6 +85,9 @@ export class MonitoringEcsStack extends cdk.Stack {
     // Create Application Load Balancer for monitoring services
     this.loadBalancer = this.createLoadBalancer(vpc, envName, allowedIpRanges);
 
+    // Allow ALB to reach services on the instances
+    this.configureSecurityGroupConnections();
+
     // Create Prometheus service
     this.prometheusService = this.createPrometheusService(
       this.cluster,
@@ -122,7 +128,10 @@ export class MonitoringEcsStack extends cdk.Stack {
     cdk.Tags.of(this).add("ManagedBy", "CDK");
   }
 
-  private createEcsCluster(vpc: ec2.IVpc, envName: string): ecs.Cluster {
+  private createEcsCluster(
+    vpc: ec2.IVpc,
+    envName: string
+  ): { cluster: ecs.Cluster; autoScalingGroup: autoscaling.AutoScalingGroup } {
     const cluster = new ecs.Cluster(this, "MonitoringCluster", {
       vpc,
       clusterName: `${envName}-monitoring-cluster`,
@@ -238,7 +247,8 @@ export class MonitoringEcsStack extends cdk.Stack {
       "    type: prometheus",
       "    access: proxy",
       "    # Use host private IP to reach Prometheus from Grafana (both in BRIDGE mode)",
-      "    url: http://${HOST_IP}:9090/prometheus",
+      "    # Note: No /prometheus path - that's only for ALB routing",
+      "    url: http://${HOST_IP}:9090",
       "    isDefault: true",
       "    editable: true",
       "    jsonData:",
@@ -284,10 +294,17 @@ export class MonitoringEcsStack extends cdk.Stack {
       "Allow Prometheus to scrape Node Exporter"
     );
 
+    // Allow Prometheus port (BRIDGE mode) for Grafana to query
+    // This allows Grafana (in BRIDGE mode) to reach Prometheus (in BRIDGE mode)
+    autoScalingGroup.connections.allowInternally(
+      ec2.Port.tcp(9090),
+      "Allow Grafana to query Prometheus"
+    );
+
     cdk.Tags.of(cluster).add("Environment", envName);
     cdk.Tags.of(cluster).add("Purpose", "Monitoring");
 
-    return cluster;
+    return { cluster, autoScalingGroup };
   }
 
   private createLoadBalancer(
@@ -329,6 +346,22 @@ export class MonitoringEcsStack extends cdk.Stack {
     cdk.Tags.of(loadBalancer).add("Purpose", "Monitoring");
 
     return loadBalancer;
+  }
+
+  private configureSecurityGroupConnections(): void {
+    // Allow ALB to reach Prometheus (port 9090) on instances
+    this.autoScalingGroup.connections.allowFrom(
+      this.loadBalancer,
+      ec2.Port.tcp(9090),
+      "Allow ALB to reach Prometheus"
+    );
+
+    // Allow ALB to reach Grafana (port 3000) on instances
+    this.autoScalingGroup.connections.allowFrom(
+      this.loadBalancer,
+      ec2.Port.tcp(3000),
+      "Allow ALB to reach Grafana"
+    );
   }
 
   private createPrometheusService(
