@@ -1,0 +1,3376 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`MonitoringEcsStack Test Suite Snapshots ALB matches snapshot 1`] = `
+{
+  "MonitoringAlbC3EA9CCA": {
+    "Properties": {
+      "LoadBalancerAttributes": [
+        {
+          "Key": "deletion_protection.enabled",
+          "Value": "false",
+        },
+      ],
+      "Name": "test-monitoring-alb",
+      "Scheme": "internet-facing",
+      "SecurityGroups": [
+        {
+          "Fn::GetAtt": [
+            "MonitoringAlbSg8A3975B5",
+            "GroupId",
+          ],
+        },
+      ],
+      "Subnets": [
+        {
+          "Fn::ImportValue": "TestVpcStack:ExportsOutputRefTestVpcPublicSubnet1SubnetA7DB1EDF095592DF",
+        },
+        {
+          "Fn::ImportValue": "TestVpcStack:ExportsOutputRefTestVpcPublicSubnet2Subnet80A14523FD2CDFFC",
+        },
+      ],
+      "Tags": [
+        {
+          "Key": "Environment",
+          "Value": "test",
+        },
+        {
+          "Key": "ManagedBy",
+          "Value": "CDK",
+        },
+        {
+          "Key": "Name",
+          "Value": "test-monitoring-alb",
+        },
+        {
+          "Key": "Purpose",
+          "Value": "Monitoring",
+        },
+        {
+          "Key": "Stack",
+          "Value": "MonitoringEcs",
+        },
+      ],
+      "Type": "application",
+    },
+    "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+  },
+}
+`;
+
+exports[`MonitoringEcsStack Test Suite Snapshots ECS Cluster matches snapshot 1`] = `
+{
+  "MonitoringCluster1EF464DE": {
+    "Properties": {
+      "ClusterName": "test-monitoring-cluster",
+      "ClusterSettings": [
+        {
+          "Name": "containerInsights",
+          "Value": "enabled",
+        },
+      ],
+      "Tags": [
+        {
+          "Key": "Environment",
+          "Value": "test",
+        },
+        {
+          "Key": "ManagedBy",
+          "Value": "CDK",
+        },
+        {
+          "Key": "Purpose",
+          "Value": "Monitoring",
+        },
+        {
+          "Key": "Stack",
+          "Value": "MonitoringEcs",
+        },
+      ],
+    },
+    "Type": "AWS::ECS::Cluster",
+  },
+}
+`;
+
+exports[`MonitoringEcsStack Test Suite Snapshots ECS Services match snapshot 1`] = `
+{
+  "GrafanaServiceCEA7DBAC": {
+    "DependsOn": [
+      "GrafanaTaskDefinitionTaskDefTaskRoleDefaultPolicy289CAE12",
+      "GrafanaTaskDefinitionTaskDefTaskRole56F35DFD",
+      "MonitoringAlbMonitoringListenerGrafanaRuleRule9355AC64",
+    ],
+    "Properties": {
+      "Cluster": {
+        "Ref": "MonitoringCluster1EF464DE",
+      },
+      "DeploymentConfiguration": {
+        "Alarms": {
+          "AlarmNames": [],
+          "Enable": false,
+          "Rollback": false,
+        },
+        "DeploymentCircuitBreaker": {
+          "Enable": true,
+          "Rollback": true,
+        },
+        "MaximumPercent": 100,
+        "MinimumHealthyPercent": 0,
+      },
+      "DeploymentController": {
+        "Type": "ECS",
+      },
+      "DesiredCount": 1,
+      "EnableECSManagedTags": false,
+      "EnableExecuteCommand": true,
+      "HealthCheckGracePeriodSeconds": 60,
+      "LaunchType": "EC2",
+      "LoadBalancers": [
+        {
+          "ContainerName": "grafana",
+          "ContainerPort": 3000,
+          "TargetGroupArn": {
+            "Ref": "GrafanaTargetGroup52250F6F",
+          },
+        },
+      ],
+      "PlacementStrategies": [
+        {
+          "Field": "instanceId",
+          "Type": "spread",
+        },
+        {
+          "Field": "CPU",
+          "Type": "binpack",
+        },
+      ],
+      "SchedulingStrategy": "REPLICA",
+      "ServiceName": "test-grafana",
+      "Tags": [
+        {
+          "Key": "Environment",
+          "Value": "test",
+        },
+        {
+          "Key": "ManagedBy",
+          "Value": "CDK",
+        },
+        {
+          "Key": "Service",
+          "Value": "ECS",
+        },
+        {
+          "Key": "Stack",
+          "Value": "MonitoringEcs",
+        },
+      ],
+      "TaskDefinition": {
+        "Ref": "GrafanaTaskDefinitionTaskDefDCC78973",
+      },
+    },
+    "Type": "AWS::ECS::Service",
+  },
+  "NodeExporterServiceD9597F1F": {
+    "DependsOn": [
+      "NodeExporterTaskDefTaskRoleDefaultPolicy6C0B3E4E",
+      "NodeExporterTaskDefTaskRoleE2BA598D",
+    ],
+    "Properties": {
+      "Cluster": {
+        "Ref": "MonitoringCluster1EF464DE",
+      },
+      "DeploymentConfiguration": {
+        "Alarms": {
+          "AlarmNames": [],
+          "Enable": false,
+          "Rollback": false,
+        },
+        "MaximumPercent": 200,
+        "MinimumHealthyPercent": 50,
+      },
+      "DesiredCount": 1,
+      "EnableECSManagedTags": false,
+      "EnableExecuteCommand": true,
+      "LaunchType": "EC2",
+      "SchedulingStrategy": "REPLICA",
+      "ServiceName": "test-monitoring-node-exporter",
+      "Tags": [
+        {
+          "Key": "Environment",
+          "Value": "test-monitoring",
+        },
+        {
+          "Key": "ManagedBy",
+          "Value": "CDK",
+        },
+        {
+          "Key": "Service",
+          "Value": "NodeExporter",
+        },
+        {
+          "Key": "Stack",
+          "Value": "MonitoringEcs",
+        },
+      ],
+      "TaskDefinition": {
+        "Ref": "NodeExporterTaskDefC17ED60B",
+      },
+    },
+    "Type": "AWS::ECS::Service",
+  },
+  "PrometheusServiceE1678AB4": {
+    "DependsOn": [
+      "MonitoringAlbMonitoringListenerPrometheusRuleRuleDBFD25E5",
+      "PrometheusTaskDefinitionTaskDefTaskRoleDefaultPolicy82F53203",
+      "PrometheusTaskDefinitionTaskDefTaskRole14E24FE2",
+    ],
+    "Properties": {
+      "Cluster": {
+        "Ref": "MonitoringCluster1EF464DE",
+      },
+      "DeploymentConfiguration": {
+        "Alarms": {
+          "AlarmNames": [],
+          "Enable": false,
+          "Rollback": false,
+        },
+        "DeploymentCircuitBreaker": {
+          "Enable": true,
+          "Rollback": true,
+        },
+        "MaximumPercent": 100,
+        "MinimumHealthyPercent": 0,
+      },
+      "DeploymentController": {
+        "Type": "ECS",
+      },
+      "DesiredCount": 1,
+      "EnableECSManagedTags": false,
+      "EnableExecuteCommand": true,
+      "HealthCheckGracePeriodSeconds": 60,
+      "LaunchType": "EC2",
+      "LoadBalancers": [
+        {
+          "ContainerName": "prometheus",
+          "ContainerPort": 9090,
+          "TargetGroupArn": {
+            "Ref": "PrometheusTargetGroupC9DD7B03",
+          },
+        },
+      ],
+      "PlacementStrategies": [
+        {
+          "Field": "instanceId",
+          "Type": "spread",
+        },
+        {
+          "Field": "CPU",
+          "Type": "binpack",
+        },
+      ],
+      "SchedulingStrategy": "REPLICA",
+      "ServiceName": "test-prometheus",
+      "Tags": [
+        {
+          "Key": "Environment",
+          "Value": "test",
+        },
+        {
+          "Key": "ManagedBy",
+          "Value": "CDK",
+        },
+        {
+          "Key": "Service",
+          "Value": "ECS",
+        },
+        {
+          "Key": "Stack",
+          "Value": "MonitoringEcs",
+        },
+      ],
+      "TaskDefinition": {
+        "Ref": "PrometheusTaskDefinitionTaskDefBF77A607",
+      },
+    },
+    "Type": "AWS::ECS::Service",
+  },
+}
+`;
+
+exports[`MonitoringEcsStack Test Suite Snapshots Log Groups match snapshot 1`] = `
+{
+  "GrafanaLogGroup0A7E58DB": {
+    "DeletionPolicy": "Delete",
+    "Properties": {
+      "LogGroupName": "/ecs/test-grafana",
+      "RetentionInDays": 7,
+      "Tags": [
+        {
+          "Key": "Environment",
+          "Value": "test",
+        },
+        {
+          "Key": "ManagedBy",
+          "Value": "CDK",
+        },
+        {
+          "Key": "Stack",
+          "Value": "MonitoringEcs",
+        },
+      ],
+    },
+    "Type": "AWS::Logs::LogGroup",
+    "UpdateReplacePolicy": "Delete",
+  },
+  "GrafanaTaskDefinitionTaskDefgrafanaLogGroup628BB7F8": {
+    "DeletionPolicy": "Retain",
+    "Properties": {
+      "Tags": [
+        {
+          "Key": "Environment",
+          "Value": "test",
+        },
+        {
+          "Key": "ManagedBy",
+          "Value": "CDK",
+        },
+        {
+          "Key": "Stack",
+          "Value": "MonitoringEcs",
+        },
+      ],
+    },
+    "Type": "AWS::Logs::LogGroup",
+    "UpdateReplacePolicy": "Retain",
+  },
+  "MonitoringEcsEvents9FFD35AD": {
+    "DeletionPolicy": "Delete",
+    "Properties": {
+      "LogGroupName": "/ecs/TestMonitoringEcsStack/events",
+      "RetentionInDays": 14,
+      "Tags": [
+        {
+          "Key": "Environment",
+          "Value": "test",
+        },
+        {
+          "Key": "ManagedBy",
+          "Value": "CDK",
+        },
+        {
+          "Key": "Stack",
+          "Value": "MonitoringEcs",
+        },
+      ],
+    },
+    "Type": "AWS::Logs::LogGroup",
+    "UpdateReplacePolicy": "Delete",
+  },
+  "MonitoringTaskLogs2EB11CC9": {
+    "DeletionPolicy": "Delete",
+    "Properties": {
+      "LogGroupName": "/ecs/TestMonitoringEcsStack/tasks",
+      "RetentionInDays": 14,
+      "Tags": [
+        {
+          "Key": "Environment",
+          "Value": "test",
+        },
+        {
+          "Key": "ManagedBy",
+          "Value": "CDK",
+        },
+        {
+          "Key": "Stack",
+          "Value": "MonitoringEcs",
+        },
+      ],
+    },
+    "Type": "AWS::Logs::LogGroup",
+    "UpdateReplacePolicy": "Delete",
+  },
+  "NodeExporterLogGroup87EF8E53": {
+    "DeletionPolicy": "Delete",
+    "Properties": {
+      "LogGroupName": "/ecs/test-monitoring-node-exporter",
+      "RetentionInDays": 7,
+      "Tags": [
+        {
+          "Key": "Environment",
+          "Value": "test",
+        },
+        {
+          "Key": "ManagedBy",
+          "Value": "CDK",
+        },
+        {
+          "Key": "Stack",
+          "Value": "MonitoringEcs",
+        },
+      ],
+    },
+    "Type": "AWS::Logs::LogGroup",
+    "UpdateReplacePolicy": "Delete",
+  },
+  "PrometheusLogGroupC85EFB3C": {
+    "DeletionPolicy": "Delete",
+    "Properties": {
+      "LogGroupName": "/ecs/test-prometheus",
+      "RetentionInDays": 7,
+      "Tags": [
+        {
+          "Key": "Environment",
+          "Value": "test",
+        },
+        {
+          "Key": "ManagedBy",
+          "Value": "CDK",
+        },
+        {
+          "Key": "Stack",
+          "Value": "MonitoringEcs",
+        },
+      ],
+    },
+    "Type": "AWS::Logs::LogGroup",
+    "UpdateReplacePolicy": "Delete",
+  },
+  "PrometheusTaskDefinitionTaskDefprometheusLogGroup24AB6CE9": {
+    "DeletionPolicy": "Retain",
+    "Properties": {
+      "Tags": [
+        {
+          "Key": "Environment",
+          "Value": "test",
+        },
+        {
+          "Key": "ManagedBy",
+          "Value": "CDK",
+        },
+        {
+          "Key": "Stack",
+          "Value": "MonitoringEcs",
+        },
+      ],
+    },
+    "Type": "AWS::Logs::LogGroup",
+    "UpdateReplacePolicy": "Retain",
+  },
+}
+`;
+
+exports[`MonitoringEcsStack Test Suite Snapshots MonitoringEcsStack matches snapshot 1`] = `
+{
+  "Metadata": {
+    "cdk_nag": {
+      "rules_to_suppress": [
+        {
+          "applies_to": [
+            "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+          ],
+          "id": "AwsSolutions-IAM4",
+          "reason": "AWS managed policies are used for Lambda functions created by CDK for custom resources (Auto Scaling lifecycle hooks, VPC default security group restriction, EventBridge targets). These are standard CloudFormation custom resource Lambda functions managed by CDK.",
+        },
+        {
+          "applies_to": [
+            "Resource::*",
+          ],
+          "id": "AwsSolutions-IAM5",
+          "reason": "Wildcard permissions are used by CDK-managed custom resource Lambdas for EventBridge to CloudWatch Logs integration and other CDK framework operations. This is required by the CDK framework to manage resource policies and cannot be scoped further. This is standard CDK behavior.",
+        },
+        {
+          "applies_to": [
+            "Action::ecs:Submit*",
+          ],
+          "id": "AwsSolutions-IAM5",
+          "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices and is created by CDK's Auto Scaling Group construct.",
+        },
+        {
+          "applies_to": [
+            {
+              "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+            },
+          ],
+          "id": "AwsSolutions-IAM5",
+          "reason": "Auto Scaling Group lifecycle hook Lambda (DrainECSHook) requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining. This is a CDK-managed resource.",
+        },
+        {
+          "id": "AwsSolutions-L1",
+          "reason": "Lambda runtime versions are managed by CDK for custom resources. CDK automatically updates these with new releases. Upgrading CDK version will update these runtimes.",
+        },
+        {
+          "applies_to": [
+            "Resource::*",
+          ],
+          "id": "AwsSolutions-IAM5",
+          "reason": "Monitoring services (Prometheus, Grafana) require read access to CloudWatch metrics and logs across the account for comprehensive observability. This is standard practice for monitoring solutions and is read-only access.",
+        },
+        {
+          "applies_to": [
+            {
+              "regex": "/^Resource::arn:aws:logs:.*:.*:log-group:\\*$/",
+            },
+          ],
+          "id": "AwsSolutions-IAM5",
+          "reason": "Grafana CloudWatch datasource requires permissions to query logs across all log groups in the account. The wildcard is scoped to the account and region, and permissions are read-only.",
+        },
+        {
+          "id": "AwsSolutions-SNS3",
+          "reason": "SNS topic is used for internal ECS lifecycle hooks managed by CDK for the monitoring cluster. SSL enforcement is handled by AWS internal services. The lifecycle hook topic is used for draining ECS tasks during instance termination.",
+        },
+        {
+          "id": "AwsSolutions-ECS2",
+          "reason": "Environment variables like NODE_ENV, PORT, and service configuration are non-sensitive values. Sensitive values (API keys, passwords, tokens) must use AWS Secrets Manager or SSM Parameter Store with SecureString. These basic config values are safe as environment variables.",
+        },
+        {
+          "applies_to": [
+            "Resource::*",
+          ],
+          "id": "AwsSolutions-IAM5",
+          "reason": "Auto Scaling lifecycle hooks require permissions to describe instances and complete lifecycle actions. These permissions are scoped to the specific Auto Scaling Group and are necessary for proper instance lifecycle management.",
+        },
+        {
+          "id": "AwsSolutions-AS3",
+          "reason": "Auto Scaling Group notifications are optional for development environments. For production, consider enabling SNS notifications for scaling events to improve operational visibility.",
+        },
+        {
+          "id": "AwsSolutions-EC26",
+          "reason": "EBS encryption can be managed at the account level via AWS Config or enabled per-environment. For development environments, unencrypted volumes reduce costs. Production environments should enable EBS encryption.",
+        },
+        {
+          "id": "AwsSolutions-EC23",
+          "reason": "Application Load Balancer must accept traffic from the internet (0.0.0.0/0) to serve public-facing application. Security is enforced through: 1) ALB security group only allows HTTP/HTTPS, 2) Target security groups restrict access to ALB only, 3) WAF rules (if enabled), 4) Application-level authentication.",
+        },
+        {
+          "id": "AwsSolutions-ELB2",
+          "reason": "ALB access logging is disabled to reduce costs in development environments. For production, enable access logging to S3 bucket for audit and troubleshooting purposes. Logs should be retained according to compliance requirements.",
+        },
+        {
+          "id": "AwsSolutions-S1",
+          "reason": "S3 access log bucket has server access logging enabled via serverAccessLogsPrefix property. This bucket stores ALB access logs and its own access logs are stored in a separate prefix within the same bucket.",
+        },
+        {
+          "applies_to": [
+            {
+              "regex": "/^Resource::arn:aws:logs:.*:.*:log-group:/ecs/test\\*:\\*$/",
+            },
+          ],
+          "id": "AwsSolutions-IAM5",
+          "reason": "CloudWatch Logs permissions use wildcard for log streams within the environment-specific log group. This allows services to create log streams dynamically while restricting access to the specific environment. The wildcard is scoped to /ecs/{envName}* pattern.",
+        },
+      ],
+    },
+  },
+  "Outputs": {
+    "ClusterName": {
+      "Description": "ECS Cluster name for monitoring",
+      "Export": {
+        "Name": "TestMonitoringEcsStack-cluster-name",
+      },
+      "Value": {
+        "Ref": "MonitoringCluster1EF464DE",
+      },
+    },
+    "GrafanaUrl": {
+      "Description": "Grafana Dashboard URL (default: admin/admin)",
+      "Export": {
+        "Name": "TestMonitoringEcsStack-grafana-url",
+      },
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "http://",
+            {
+              "Fn::GetAtt": [
+                "MonitoringAlbC3EA9CCA",
+                "DNSName",
+              ],
+            },
+            "/grafana",
+          ],
+        ],
+      },
+    },
+    "MonitoringAlbDns": {
+      "Description": "Monitoring ALB DNS name",
+      "Export": {
+        "Name": "TestMonitoringEcsStack-alb-dns",
+      },
+      "Value": {
+        "Fn::GetAtt": [
+          "MonitoringAlbC3EA9CCA",
+          "DNSName",
+        ],
+      },
+    },
+    "MonitoringEventLogGroupName": {
+      "Description": "CloudWatch Log Group for Monitoring ECS Events",
+      "Export": {
+        "Name": "TestMonitoringEcsStack-event-log-group",
+      },
+      "Value": {
+        "Ref": "MonitoringEcsEvents9FFD35AD",
+      },
+    },
+    "MonitoringTaskLogGroupName": {
+      "Description": "CloudWatch Log Group for Monitoring Task Logs",
+      "Export": {
+        "Name": "TestMonitoringEcsStack-task-log-group",
+      },
+      "Value": {
+        "Ref": "MonitoringTaskLogs2EB11CC9",
+      },
+    },
+    "PrometheusUrl": {
+      "Description": "Prometheus URL",
+      "Export": {
+        "Name": "TestMonitoringEcsStack-prometheus-url",
+      },
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "http://",
+            {
+              "Fn::GetAtt": [
+                "MonitoringAlbC3EA9CCA",
+                "DNSName",
+              ],
+            },
+            "/prometheus",
+          ],
+        ],
+      },
+    },
+  },
+  "Parameters": {
+    "BootstrapVersion": {
+      "Default": "/cdk-bootstrap/hnb659fds/version",
+      "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+    "SsmParameterValueawsserviceecsoptimizedamiamazonlinux2recommendedimageidC96584B6F00A464EAD1953AFF4B05118Parameter": {
+      "Default": "/aws/service/ecs/optimized-ami/amazon-linux-2/recommended/image_id",
+      "Type": "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>",
+    },
+  },
+  "Resources": {
+    "AWS679f53fac002430cb0da5b7982bd22872D164C4C": {
+      "DependsOn": [
+        "AWS679f53fac002430cb0da5b7982bd2287ServiceRoleC1EA0FF2",
+      ],
+      "Properties": {
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-123456789012-eu-west-1",
+          "S3Key": "bc8ef58951f4c88e641dd23090e9d2e2e61c7530a07960e767522941e959b625.zip",
+        },
+        "Handler": "index.handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "AWS679f53fac002430cb0da5b7982bd2287ServiceRoleC1EA0FF2",
+            "Arn",
+          ],
+        },
+        "Runtime": "nodejs22.x",
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+        "Timeout": 120,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "AWS679f53fac002430cb0da5b7982bd2287ServiceRoleC1EA0FF2": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "EventsLogGroupPolicyTestMonitoringEcsStackMonitoringEcsEventRuleBAC55F74709E11DE": {
+      "DeletionPolicy": "Delete",
+      "DependsOn": [
+        "EventsLogGroupPolicyTestMonitoringEcsStackMonitoringEcsEventRuleBAC55F74CustomResourcePolicyF715384C",
+      ],
+      "Properties": {
+        "Create": {
+          "Fn::Join": [
+            "",
+            [
+              "{"service":"CloudWatchLogs","action":"putResourcePolicy","parameters":{"policyName":"TestMonitoringEcsStackEventsLogGroupPolicyTestMonitoringEcsStackMonitoringEcsEventRuleBAC55F74B1E8753F","policyDocument":"{\\"Statement\\":[{\\"Action\\":[\\"logs:PutLogEvents\\",\\"logs:CreateLogStream\\"],\\"Effect\\":\\"Allow\\",\\"Principal\\":{\\"Service\\":\\"events.amazonaws.com\\"},\\"Resource\\":\\"",
+              {
+                "Fn::GetAtt": [
+                  "MonitoringEcsEvents9FFD35AD",
+                  "Arn",
+                ],
+              },
+              "\\"}],\\"Version\\":\\"2012-10-17\\"}"},"physicalResourceId":{"id":"EventsLogGroupPolicyTestMonitoringEcsStackMonitoringEcsEventRuleBAC55F74"}}",
+            ],
+          ],
+        },
+        "Delete": "{"service":"CloudWatchLogs","action":"deleteResourcePolicy","parameters":{"policyName":"TestMonitoringEcsStackEventsLogGroupPolicyTestMonitoringEcsStackMonitoringEcsEventRuleBAC55F74B1E8753F"},"ignoreErrorCodesMatching":"ResourceNotFoundException"}",
+        "InstallLatestAwsSdk": true,
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "AWS679f53fac002430cb0da5b7982bd22872D164C4C",
+            "Arn",
+          ],
+        },
+        "Update": {
+          "Fn::Join": [
+            "",
+            [
+              "{"service":"CloudWatchLogs","action":"putResourcePolicy","parameters":{"policyName":"TestMonitoringEcsStackEventsLogGroupPolicyTestMonitoringEcsStackMonitoringEcsEventRuleBAC55F74B1E8753F","policyDocument":"{\\"Statement\\":[{\\"Action\\":[\\"logs:PutLogEvents\\",\\"logs:CreateLogStream\\"],\\"Effect\\":\\"Allow\\",\\"Principal\\":{\\"Service\\":\\"events.amazonaws.com\\"},\\"Resource\\":\\"",
+              {
+                "Fn::GetAtt": [
+                  "MonitoringEcsEvents9FFD35AD",
+                  "Arn",
+                ],
+              },
+              "\\"}],\\"Version\\":\\"2012-10-17\\"}"},"physicalResourceId":{"id":"EventsLogGroupPolicyTestMonitoringEcsStackMonitoringEcsEventRuleBAC55F74"}}",
+            ],
+          ],
+        },
+      },
+      "Type": "Custom::CloudwatchLogResourcePolicy",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "EventsLogGroupPolicyTestMonitoringEcsStackMonitoringEcsEventRuleBAC55F74CustomResourcePolicyF715384C": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "logs:PutResourcePolicy",
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": "logs:DeleteResourcePolicy",
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "EventsLogGroupPolicyTestMonitoringEcsStackMonitoringEcsEventRuleBAC55F74CustomResourcePolicyF715384C",
+        "Roles": [
+          {
+            "Ref": "AWS679f53fac002430cb0da5b7982bd2287ServiceRoleC1EA0FF2",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "GrafanaLogGroup0A7E58DB": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "LogGroupName": "/ecs/test-grafana",
+        "RetentionInDays": 7,
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "GrafanaServiceCEA7DBAC": {
+      "DependsOn": [
+        "GrafanaTaskDefinitionTaskDefTaskRoleDefaultPolicy289CAE12",
+        "GrafanaTaskDefinitionTaskDefTaskRole56F35DFD",
+        "MonitoringAlbMonitoringListenerGrafanaRuleRule9355AC64",
+      ],
+      "Properties": {
+        "Cluster": {
+          "Ref": "MonitoringCluster1EF464DE",
+        },
+        "DeploymentConfiguration": {
+          "Alarms": {
+            "AlarmNames": [],
+            "Enable": false,
+            "Rollback": false,
+          },
+          "DeploymentCircuitBreaker": {
+            "Enable": true,
+            "Rollback": true,
+          },
+          "MaximumPercent": 100,
+          "MinimumHealthyPercent": 0,
+        },
+        "DeploymentController": {
+          "Type": "ECS",
+        },
+        "DesiredCount": 1,
+        "EnableECSManagedTags": false,
+        "EnableExecuteCommand": true,
+        "HealthCheckGracePeriodSeconds": 60,
+        "LaunchType": "EC2",
+        "LoadBalancers": [
+          {
+            "ContainerName": "grafana",
+            "ContainerPort": 3000,
+            "TargetGroupArn": {
+              "Ref": "GrafanaTargetGroup52250F6F",
+            },
+          },
+        ],
+        "PlacementStrategies": [
+          {
+            "Field": "instanceId",
+            "Type": "spread",
+          },
+          {
+            "Field": "CPU",
+            "Type": "binpack",
+          },
+        ],
+        "SchedulingStrategy": "REPLICA",
+        "ServiceName": "test-grafana",
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Service",
+            "Value": "ECS",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+        "TaskDefinition": {
+          "Ref": "GrafanaTaskDefinitionTaskDefDCC78973",
+        },
+      },
+      "Type": "AWS::ECS::Service",
+    },
+    "GrafanaTargetGroup52250F6F": {
+      "Properties": {
+        "HealthCheckIntervalSeconds": 30,
+        "HealthCheckPath": "/grafana/api/health",
+        "HealthCheckTimeoutSeconds": 5,
+        "HealthyThresholdCount": 2,
+        "Matcher": {
+          "HttpCode": "200",
+        },
+        "Port": 3000,
+        "Protocol": "HTTP",
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+        "TargetGroupAttributes": [
+          {
+            "Key": "deregistration_delay.timeout_seconds",
+            "Value": "30",
+          },
+          {
+            "Key": "stickiness.enabled",
+            "Value": "false",
+          },
+        ],
+        "TargetType": "instance",
+        "UnhealthyThresholdCount": 3,
+        "VpcId": {
+          "Fn::ImportValue": "TestVpcStack:ExportsOutputRefTestVpcE77CE67811D13B85",
+        },
+      },
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+    },
+    "GrafanaTaskDefinitionTaskDefDCC78973": {
+      "Properties": {
+        "ContainerDefinitions": [
+          {
+            "Environment": [
+              {
+                "Name": "GF_SECURITY_ADMIN_USER",
+                "Value": "admin",
+              },
+              {
+                "Name": "GF_SECURITY_ADMIN_PASSWORD",
+                "Value": "admin",
+              },
+              {
+                "Name": "GF_SERVER_ROOT_URL",
+                "Value": "/grafana",
+              },
+              {
+                "Name": "GF_SERVER_SERVE_FROM_SUB_PATH",
+                "Value": "true",
+              },
+              {
+                "Name": "GF_USERS_ALLOW_SIGN_UP",
+                "Value": "false",
+              },
+              {
+                "Name": "GF_PATH_PROVISIONING",
+                "Value": "/etc/grafana/provisioning",
+              },
+              {
+                "Name": "GF_INSTALL_PLUGINS",
+                "Value": "cloudwatch",
+              },
+              {
+                "Name": "GF_ANALYTICS_REPORTING_ENABLE",
+                "Value": " false",
+              },
+              {
+                "Name": "GF_METRICS_ENABLED",
+                "Value": " false",
+              },
+              {
+                "Name": "AWS_REGION",
+                "Value": "eu-west-1",
+              },
+            ],
+            "Essential": true,
+            "Image": "grafana/grafana:latest",
+            "LogConfiguration": {
+              "LogDriver": "awslogs",
+              "Options": {
+                "awslogs-group": {
+                  "Ref": "GrafanaTaskDefinitionTaskDefgrafanaLogGroup628BB7F8",
+                },
+                "awslogs-region": "eu-west-1",
+                "awslogs-stream-prefix": "grafana",
+              },
+            },
+            "MemoryReservation": 256,
+            "MountPoints": [
+              {
+                "ContainerPath": "/var/lib/grafana",
+                "ReadOnly": false,
+                "SourceVolume": "grafana-data",
+              },
+              {
+                "ContainerPath": "/etc/grafana/provisioning",
+                "ReadOnly": true,
+                "SourceVolume": "grafana-provisioning",
+              },
+              {
+                "ContainerPath": "/var/lib/grafana/dashboards",
+                "ReadOnly": true,
+                "SourceVolume": "grafana-dashboards",
+              },
+            ],
+            "Name": "grafana",
+            "PortMappings": [
+              {
+                "ContainerPort": 3000,
+                "HostPort": 0,
+                "Protocol": "tcp",
+              },
+            ],
+          },
+        ],
+        "ExecutionRoleArn": {
+          "Fn::GetAtt": [
+            "GrafanaTaskDefinitionTaskDefExecutionRole88219EFE",
+            "Arn",
+          ],
+        },
+        "Family": "TestMonitoringEcsStackGrafanaTaskDefinitionTaskDef1BEBD994",
+        "NetworkMode": "bridge",
+        "RequiresCompatibilities": [
+          "EC2",
+        ],
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+        "TaskRoleArn": {
+          "Fn::GetAtt": [
+            "GrafanaTaskDefinitionTaskDefTaskRole56F35DFD",
+            "Arn",
+          ],
+        },
+        "Volumes": [
+          {
+            "Host": {
+              "SourcePath": "/mnt/grafana-data",
+            },
+            "Name": "grafana-data",
+          },
+          {
+            "Host": {
+              "SourcePath": "/mnt/grafana-provisioning",
+            },
+            "Name": "grafana-provisioning",
+          },
+          {
+            "Host": {
+              "SourcePath": "/mnt/grafana-dashboards",
+            },
+            "Name": "grafana-dashboards",
+          },
+        ],
+      },
+      "Type": "AWS::ECS::TaskDefinition",
+    },
+    "GrafanaTaskDefinitionTaskDefExecutionRole88219EFE": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "GrafanaTaskDefinitionTaskDefExecutionRoleDefaultPolicy2F2E3FDC": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "GrafanaTaskDefinitionTaskDefgrafanaLogGroup628BB7F8",
+                  "Arn",
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "GrafanaTaskDefinitionTaskDefExecutionRoleDefaultPolicy2F2E3FDC",
+        "Roles": [
+          {
+            "Ref": "GrafanaTaskDefinitionTaskDefExecutionRole88219EFE",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "GrafanaTaskDefinitionTaskDefTaskRole56F35DFD": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "GrafanaTaskDefinitionTaskDefTaskRoleDefaultPolicy289CAE12": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "cloudwatch:DescribeAlarmsForMetric",
+                "cloudwatch:DescribeAlarmHistory",
+                "cloudwatch:DescribeAlarms",
+                "cloudwatch:ListMetrics",
+                "cloudwatch:GetMetricStatistics",
+                "cloudwatch:GetMetricData",
+                "cloudwatch:GetInsightRuleReport",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "logs:DescribeLogGroups",
+                "logs:GetLogGroupFields",
+                "logs:StartQuery",
+                "logs:StopQuery",
+                "logs:GetQueryResults",
+                "logs:GetLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": "arn:aws:logs:eu-west-1:123456789012:log-group:*",
+            },
+            {
+              "Action": [
+                "ec2:DescribeTags",
+                "ec2:DescribeInstances",
+                "ec2:DescribeRegions",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": "tag:GetResources",
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "ssmmessages:CreateControlChannel",
+                "ssmmessages:CreateDataChannel",
+                "ssmmessages:OpenControlChannel",
+                "ssmmessages:OpenDataChannel",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": "logs:DescribeLogGroups",
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:DescribeLogStreams",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "GrafanaTaskDefinitionTaskDefTaskRoleDefaultPolicy289CAE12",
+        "Roles": [
+          {
+            "Ref": "GrafanaTaskDefinitionTaskDefTaskRole56F35DFD",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "GrafanaTaskDefinitionTaskDefgrafanaLogGroup628BB7F8": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "MonitoringAlbC3EA9CCA": {
+      "Properties": {
+        "LoadBalancerAttributes": [
+          {
+            "Key": "deletion_protection.enabled",
+            "Value": "false",
+          },
+        ],
+        "Name": "test-monitoring-alb",
+        "Scheme": "internet-facing",
+        "SecurityGroups": [
+          {
+            "Fn::GetAtt": [
+              "MonitoringAlbSg8A3975B5",
+              "GroupId",
+            ],
+          },
+        ],
+        "Subnets": [
+          {
+            "Fn::ImportValue": "TestVpcStack:ExportsOutputRefTestVpcPublicSubnet1SubnetA7DB1EDF095592DF",
+          },
+          {
+            "Fn::ImportValue": "TestVpcStack:ExportsOutputRefTestVpcPublicSubnet2Subnet80A14523FD2CDFFC",
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Name",
+            "Value": "test-monitoring-alb",
+          },
+          {
+            "Key": "Purpose",
+            "Value": "Monitoring",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+        "Type": "application",
+      },
+      "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+    },
+    "MonitoringAlbMonitoringListener43CD78AE": {
+      "Properties": {
+        "DefaultActions": [
+          {
+            "RedirectConfig": {
+              "Path": "/grafana",
+              "StatusCode": "HTTP_301",
+            },
+            "Type": "redirect",
+          },
+        ],
+        "LoadBalancerArn": {
+          "Ref": "MonitoringAlbC3EA9CCA",
+        },
+        "Port": 80,
+        "Protocol": "HTTP",
+      },
+      "Type": "AWS::ElasticLoadBalancingV2::Listener",
+    },
+    "MonitoringAlbMonitoringListenerGrafanaRuleRule9355AC64": {
+      "Properties": {
+        "Actions": [
+          {
+            "TargetGroupArn": {
+              "Ref": "GrafanaTargetGroup52250F6F",
+            },
+            "Type": "forward",
+          },
+        ],
+        "Conditions": [
+          {
+            "Field": "path-pattern",
+            "PathPatternConfig": {
+              "Values": [
+                "/grafana*",
+              ],
+            },
+          },
+        ],
+        "ListenerArn": {
+          "Ref": "MonitoringAlbMonitoringListener43CD78AE",
+        },
+        "Priority": 100,
+      },
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+    },
+    "MonitoringAlbMonitoringListenerPrometheusRuleRuleDBFD25E5": {
+      "Properties": {
+        "Actions": [
+          {
+            "TargetGroupArn": {
+              "Ref": "PrometheusTargetGroupC9DD7B03",
+            },
+            "Type": "forward",
+          },
+        ],
+        "Conditions": [
+          {
+            "Field": "path-pattern",
+            "PathPatternConfig": {
+              "Values": [
+                "/prometheus*",
+              ],
+            },
+          },
+        ],
+        "ListenerArn": {
+          "Ref": "MonitoringAlbMonitoringListener43CD78AE",
+        },
+        "Priority": 200,
+      },
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+    },
+    "MonitoringAlbSg8A3975B5": {
+      "Properties": {
+        "GroupDescription": "Security group for monitoring ALB",
+        "SecurityGroupEgress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "Description": "Allow all outbound traffic by default",
+            "IpProtocol": "-1",
+          },
+        ],
+        "SecurityGroupIngress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "Description": "Allow HTTP access from 0.0.0.0/0",
+            "FromPort": 80,
+            "IpProtocol": "tcp",
+            "ToPort": 80,
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+        "VpcId": {
+          "Fn::ImportValue": "TestVpcStack:ExportsOutputRefTestVpcE77CE67811D13B85",
+        },
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+    },
+    "MonitoringCluster1EF464DE": {
+      "Properties": {
+        "ClusterName": "test-monitoring-cluster",
+        "ClusterSettings": [
+          {
+            "Name": "containerInsights",
+            "Value": "enabled",
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Purpose",
+            "Value": "Monitoring",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+      },
+      "Type": "AWS::ECS::Cluster",
+    },
+    "MonitoringClusterMonitoringCapacityASGBE87BCE8": {
+      "Properties": {
+        "DesiredCapacity": "1",
+        "LaunchConfigurationName": {
+          "Ref": "MonitoringClusterMonitoringCapacityLaunchConfig5DD09A03",
+        },
+        "MaxSize": "1",
+        "MinSize": "1",
+        "Tags": [
+          {
+            "Key": "Environment",
+            "PropagateAtLaunch": true,
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "PropagateAtLaunch": true,
+            "Value": "CDK",
+          },
+          {
+            "Key": "Name",
+            "PropagateAtLaunch": true,
+            "Value": "TestMonitoringEcsStack/MonitoringCluster/MonitoringCapacity",
+          },
+          {
+            "Key": "Purpose",
+            "PropagateAtLaunch": true,
+            "Value": "Monitoring",
+          },
+          {
+            "Key": "Stack",
+            "PropagateAtLaunch": true,
+            "Value": "MonitoringEcs",
+          },
+        ],
+        "VPCZoneIdentifier": [
+          {
+            "Fn::ImportValue": "TestVpcStack:ExportsOutputRefTestVpcPublicSubnet1SubnetA7DB1EDF095592DF",
+          },
+          {
+            "Fn::ImportValue": "TestVpcStack:ExportsOutputRefTestVpcPublicSubnet2Subnet80A14523FD2CDFFC",
+          },
+        ],
+      },
+      "Type": "AWS::AutoScaling::AutoScalingGroup",
+      "UpdatePolicy": {
+        "AutoScalingReplacingUpdate": {
+          "WillReplace": true,
+        },
+        "AutoScalingScheduledAction": {
+          "IgnoreUnmodifiedGroupSizeProperties": true,
+        },
+      },
+    },
+    "MonitoringClusterMonitoringCapacityDrainECSHookFunction86B34C4D": {
+      "DependsOn": [
+        "MonitoringClusterMonitoringCapacityDrainECSHookFunctionServiceRoleDefaultPolicyD9624C1D",
+        "MonitoringClusterMonitoringCapacityDrainECSHookFunctionServiceRole0470AECE",
+      ],
+      "Properties": {
+        "Code": {
+          "ZipFile": "import boto3, json, os, time
+
+ecs = boto3.client('ecs')
+autoscaling = boto3.client('autoscaling')
+
+
+def lambda_handler(event, context):
+  print(json.dumps(dict(event, ResponseURL='...')))
+  cluster = os.environ['CLUSTER']
+  snsTopicArn = event['Records'][0]['Sns']['TopicArn']
+  lifecycle_event = json.loads(event['Records'][0]['Sns']['Message'])
+  instance_id = lifecycle_event.get('EC2InstanceId')
+  if not instance_id:
+    print(f"Got event without EC2InstanceId: { json.dumps(dict(event, ResponseURL='...')) }")
+    return
+
+  instance_arn = container_instance_arn(cluster, instance_id)
+  print('Instance %s has container instance ARN %s' % (lifecycle_event['EC2InstanceId'], instance_arn))
+
+  if not instance_arn:
+    return
+
+  task_arns = container_instance_task_arns(cluster, instance_arn)
+
+  if task_arns:
+    print('Instance ARN %s has task ARNs %s' % (instance_arn, ', '.join(task_arns)))
+
+  while has_tasks(cluster, instance_arn, task_arns):
+    time.sleep(10)
+
+  try:
+    print('Terminating instance %s' % instance_id)
+    autoscaling.complete_lifecycle_action(
+        LifecycleActionResult='CONTINUE',
+        **pick(lifecycle_event, 'LifecycleHookName', 'LifecycleActionToken', 'AutoScalingGroupName'))
+  except Exception as e:
+    # Lifecycle action may have already completed.
+    print(str(e))
+
+
+def container_instance_arn(cluster, instance_id):
+  """Turn an instance ID into a container instance ARN."""
+  arns = ecs.list_container_instances(cluster=cluster, filter='ec2InstanceId==' + instance_id)['containerInstanceArns']
+  if not arns:
+    return None
+  return arns[0]
+
+def container_instance_task_arns(cluster, instance_arn):
+  """Fetch tasks for a container instance ARN."""
+  arns = ecs.list_tasks(cluster=cluster, containerInstance=instance_arn)['taskArns']
+  return arns
+
+def has_tasks(cluster, instance_arn, task_arns):
+  """Return True if the instance is running tasks for the given cluster."""
+  instances = ecs.describe_container_instances(cluster=cluster, containerInstances=[instance_arn])['containerInstances']
+  if not instances:
+    return False
+  instance = instances[0]
+
+  if instance['status'] == 'ACTIVE':
+    # Start draining, then try again later
+    set_container_instance_to_draining(cluster, instance_arn)
+    return True
+
+  task_count = None
+
+  if task_arns:
+    # Fetch details for tasks running on the container instance
+    tasks = ecs.describe_tasks(cluster=cluster, tasks=task_arns)['tasks']
+    if tasks:
+      # Consider any non-stopped tasks as running
+      task_count = sum(task['lastStatus'] != 'STOPPED' for task in tasks) + instance['pendingTasksCount']
+
+  if not task_count:
+    # Fallback to instance task counts if detailed task information is unavailable
+    task_count = instance['runningTasksCount'] + instance['pendingTasksCount']
+
+  print('Instance %s has %s tasks' % (instance_arn, task_count))
+
+  return task_count > 0
+
+def set_container_instance_to_draining(cluster, instance_arn):
+  ecs.update_container_instances_state(
+      cluster=cluster,
+      containerInstances=[instance_arn], status='DRAINING')
+
+
+def pick(dct, *keys):
+  """Pick a subset of a dict."""
+  return {k: v for k, v in dct.items() if k in keys}
+",
+        },
+        "Environment": {
+          "Variables": {
+            "CLUSTER": {
+              "Ref": "MonitoringCluster1EF464DE",
+            },
+          },
+        },
+        "Handler": "index.lambda_handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "MonitoringClusterMonitoringCapacityDrainECSHookFunctionServiceRole0470AECE",
+            "Arn",
+          ],
+        },
+        "Runtime": "python3.13",
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Name",
+            "Value": "TestMonitoringEcsStack/MonitoringCluster/MonitoringCapacity",
+          },
+          {
+            "Key": "Purpose",
+            "Value": "Monitoring",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+        "Timeout": 310,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "MonitoringClusterMonitoringCapacityDrainECSHookFunctionAllowInvokeTestMonitoringEcsStackMonitoringClusterMonitoringCapacityLifecycleHookDrainHookTopic04C46395156F6696": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "MonitoringClusterMonitoringCapacityDrainECSHookFunction86B34C4D",
+            "Arn",
+          ],
+        },
+        "Principal": "sns.amazonaws.com",
+        "SourceArn": {
+          "Ref": "MonitoringClusterMonitoringCapacityLifecycleHookDrainHookTopic4B5ECAA3",
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "MonitoringClusterMonitoringCapacityDrainECSHookFunctionServiceRole0470AECE": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Name",
+            "Value": "TestMonitoringEcsStack/MonitoringCluster/MonitoringCapacity",
+          },
+          {
+            "Key": "Purpose",
+            "Value": "Monitoring",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "MonitoringClusterMonitoringCapacityDrainECSHookFunctionServiceRoleDefaultPolicyD9624C1D": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "ec2:DescribeInstances",
+                "ec2:DescribeInstanceAttribute",
+                "ec2:DescribeInstanceStatus",
+                "ec2:DescribeHosts",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": "autoscaling:CompleteLifecycleAction",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":autoscaling:eu-west-1:123456789012:autoScalingGroup:*:autoScalingGroupName/",
+                    {
+                      "Ref": "MonitoringClusterMonitoringCapacityASGBE87BCE8",
+                    },
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": [
+                "ecs:DescribeContainerInstances",
+                "ecs:DescribeTasks",
+              ],
+              "Condition": {
+                "ArnEquals": {
+                  "ecs:cluster": {
+                    "Fn::GetAtt": [
+                      "MonitoringCluster1EF464DE",
+                      "Arn",
+                    ],
+                  },
+                },
+              },
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "ecs:ListContainerInstances",
+                "ecs:SubmitContainerStateChange",
+                "ecs:SubmitTaskStateChange",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "MonitoringCluster1EF464DE",
+                  "Arn",
+                ],
+              },
+            },
+            {
+              "Action": [
+                "ecs:UpdateContainerInstancesState",
+                "ecs:ListTasks",
+              ],
+              "Condition": {
+                "ArnEquals": {
+                  "ecs:cluster": {
+                    "Fn::GetAtt": [
+                      "MonitoringCluster1EF464DE",
+                      "Arn",
+                    ],
+                  },
+                },
+              },
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "MonitoringClusterMonitoringCapacityDrainECSHookFunctionServiceRoleDefaultPolicyD9624C1D",
+        "Roles": [
+          {
+            "Ref": "MonitoringClusterMonitoringCapacityDrainECSHookFunctionServiceRole0470AECE",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "MonitoringClusterMonitoringCapacityDrainECSHookFunctionTopic922C580D": {
+      "Properties": {
+        "Endpoint": {
+          "Fn::GetAtt": [
+            "MonitoringClusterMonitoringCapacityDrainECSHookFunction86B34C4D",
+            "Arn",
+          ],
+        },
+        "Protocol": "lambda",
+        "TopicArn": {
+          "Ref": "MonitoringClusterMonitoringCapacityLifecycleHookDrainHookTopic4B5ECAA3",
+        },
+      },
+      "Type": "AWS::SNS::Subscription",
+    },
+    "MonitoringClusterMonitoringCapacityInstanceProfileA6490EEB": {
+      "Properties": {
+        "Roles": [
+          {
+            "Ref": "MonitoringClusterMonitoringCapacityInstanceRole769E69EB",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::InstanceProfile",
+    },
+    "MonitoringClusterMonitoringCapacityInstanceRole769E69EB": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ec2.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Name",
+            "Value": "TestMonitoringEcsStack/MonitoringCluster/MonitoringCapacity",
+          },
+          {
+            "Key": "Purpose",
+            "Value": "Monitoring",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "MonitoringClusterMonitoringCapacityInstanceRoleDefaultPolicy7A2118B2": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "ecs:DeregisterContainerInstance",
+                "ecs:RegisterContainerInstance",
+                "ecs:Submit*",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "MonitoringCluster1EF464DE",
+                  "Arn",
+                ],
+              },
+            },
+            {
+              "Action": [
+                "ecs:Poll",
+                "ecs:StartTelemetrySession",
+              ],
+              "Condition": {
+                "ArnEquals": {
+                  "ecs:cluster": {
+                    "Fn::GetAtt": [
+                      "MonitoringCluster1EF464DE",
+                      "Arn",
+                    ],
+                  },
+                },
+              },
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "ecs:DiscoverPollEndpoint",
+                "ecr:GetAuthorizationToken",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "MonitoringClusterMonitoringCapacityInstanceRoleDefaultPolicy7A2118B2",
+        "Roles": [
+          {
+            "Ref": "MonitoringClusterMonitoringCapacityInstanceRole769E69EB",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "MonitoringClusterMonitoringCapacityInstanceSecurityGroup5C8AB8D9": {
+      "Properties": {
+        "GroupDescription": "TestMonitoringEcsStack/MonitoringCluster/MonitoringCapacity/InstanceSecurityGroup",
+        "SecurityGroupEgress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "Description": "Allow all outbound traffic by default",
+            "IpProtocol": "-1",
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Name",
+            "Value": "TestMonitoringEcsStack/MonitoringCluster/MonitoringCapacity",
+          },
+          {
+            "Key": "Purpose",
+            "Value": "Monitoring",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+        "VpcId": {
+          "Fn::ImportValue": "TestVpcStack:ExportsOutputRefTestVpcE77CE67811D13B85",
+        },
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+    },
+    "MonitoringClusterMonitoringCapacityInstanceSecurityGroupfromTestMonitoringEcsStackMonitoringAlbSgA5FAD40630004373899B": {
+      "Properties": {
+        "Description": "Allow ALB to reach Grafana",
+        "FromPort": 3000,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "MonitoringClusterMonitoringCapacityInstanceSecurityGroup5C8AB8D9",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "MonitoringAlbSg8A3975B5",
+            "GroupId",
+          ],
+        },
+        "ToPort": 3000,
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
+    "MonitoringClusterMonitoringCapacityInstanceSecurityGroupfromTestMonitoringEcsStackMonitoringAlbSgA5FAD40632768655352F5F1A30": {
+      "Properties": {
+        "Description": "Load balancer to target",
+        "FromPort": 32768,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "MonitoringClusterMonitoringCapacityInstanceSecurityGroup5C8AB8D9",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "MonitoringAlbSg8A3975B5",
+            "GroupId",
+          ],
+        },
+        "ToPort": 65535,
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
+    "MonitoringClusterMonitoringCapacityInstanceSecurityGroupfromTestMonitoringEcsStackMonitoringAlbSgA5FAD40690903579EAFC": {
+      "Properties": {
+        "Description": "Allow ALB to reach Prometheus",
+        "FromPort": 9090,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "MonitoringClusterMonitoringCapacityInstanceSecurityGroup5C8AB8D9",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "MonitoringAlbSg8A3975B5",
+            "GroupId",
+          ],
+        },
+        "ToPort": 9090,
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
+    "MonitoringClusterMonitoringCapacityInstanceSecurityGroupfromTestMonitoringEcsStackMonitoringClusterMonitoringCapacityInstanceSecurityGroupBAF788779100434A5856": {
+      "Properties": {
+        "Description": "Allow Prometheus to scrape Node Exporter",
+        "FromPort": 9100,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "MonitoringClusterMonitoringCapacityInstanceSecurityGroup5C8AB8D9",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "MonitoringClusterMonitoringCapacityInstanceSecurityGroup5C8AB8D9",
+            "GroupId",
+          ],
+        },
+        "ToPort": 9100,
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
+    "MonitoringClusterMonitoringCapacityLaunchConfig5DD09A03": {
+      "DependsOn": [
+        "MonitoringClusterMonitoringCapacityInstanceRoleDefaultPolicy7A2118B2",
+        "MonitoringClusterMonitoringCapacityInstanceRole769E69EB",
+      ],
+      "Properties": {
+        "AssociatePublicIpAddress": true,
+        "BlockDeviceMappings": [
+          {
+            "DeviceName": "/dev/xvda",
+            "Ebs": {
+              "DeleteOnTermination": true,
+              "Encrypted": true,
+              "VolumeSize": 30,
+              "VolumeType": "gp3",
+            },
+          },
+        ],
+        "IamInstanceProfile": {
+          "Ref": "MonitoringClusterMonitoringCapacityInstanceProfileA6490EEB",
+        },
+        "ImageId": {
+          "Ref": "SsmParameterValueawsserviceecsoptimizedamiamazonlinux2recommendedimageidC96584B6F00A464EAD1953AFF4B05118Parameter",
+        },
+        "InstanceType": "t3.small",
+        "SecurityGroups": [
+          {
+            "Fn::GetAtt": [
+              "MonitoringClusterMonitoringCapacityInstanceSecurityGroup5C8AB8D9",
+              "GroupId",
+            ],
+          },
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash
+echo ECS_CLUSTER=",
+                {
+                  "Ref": "MonitoringCluster1EF464DE",
+                },
+                " >> /etc/ecs/ecs.config
+sudo iptables --insert FORWARD 1 --in-interface docker+ --destination 169.254.169.254/32 --jump DROP
+sudo service iptables save
+echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config
+#!/bin/bash
+set -e
+
+# Create data directories
+mkdir -p /mnt/prometheus-data
+mkdir -p /mnt/grafana-data
+mkdir -p /mnt/prometheus-config
+mkdir -p /mnt/grafana-provisioning/datasources
+mkdir -p /mnt/grafana-provisioning/dashboards
+mkdir -p /mnt/grafana-dashboards
+
+# Create Prometheus configuration
+cat > /mnt/prometheus-config/prometheus.yml << 'EOF'
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: 'test'
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Node Exporter - EC2 Service Discovery (All Clusters)
+  - job_name: 'node-exporter'
+    ec2_sd_configs:
+      - region: eu-west-1
+        port: 9100
+        filters:
+          # Filter by environment tag to get all clusters in this environment
+          - name: tag:Environment
+            values: ['test']
+          - name: instance-state-name
+            values: ['running']
+    relabel_configs:
+      # Use private IP
+      - source_labels: [__meta_ec2_private_ip]
+        target_label: __address__
+        replacement: '$1:9100'
+      # Add instance ID as label
+      - source_labels: [__meta_ec2_instance_id]
+        target_label: instance_id
+      # Add availability zone
+      - source_labels: [__meta_ec2_availability_zone]
+        target_label: availability_zone
+      # Add cluster name from Purpose tag (Monitoring vs Application)
+      - source_labels: [__meta_ec2_tag_Purpose]
+        target_label: cluster
+        replacement: '$1'
+      # If no Purpose tag, derive from Name tag
+      - source_labels: [__meta_ec2_tag_Name]
+        regex: '.*monitoring.*'
+        target_label: cluster
+        replacement: 'Monitoring'
+      # Default to Application cluster if not monitoring
+      - source_labels: [__meta_ec2_tag_Name, cluster]
+        regex: '.*;$'
+        target_label: cluster
+        replacement: 'Application'
+      # Use instance name tag as instance label
+      - source_labels: [__meta_ec2_tag_Name]
+        target_label: instance
+EOF
+
+# Get host private IP for Grafana to reach Prometheus
+HOST_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
+
+# Create Grafana datasource configuration
+cat > /mnt/grafana-provisioning/datasources/prometheus.yml << EOF
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    # Use host private IP to reach Prometheus from Grafana (both in BRIDGE mode)
+    url: http://\${HOST_IP}:9090/prometheus
+    isDefault: true
+    editable: true
+    jsonData:
+      timeInterval: '15s'
+EOF
+
+# Create dashboard provisioning configuration
+cat > /mnt/grafana-provisioning/dashboards/dashboards.yml << 'EOF'
+apiVersion: 1
+
+providers:
+  - name: 'Default'
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+EOF
+
+# Copy dashboard to Grafana dashboards directory
+cp /mnt/grafana-dashboards/infrastructure-overview.json /mnt/grafana-dashboards/ 2>/dev/null || echo 'Dashboard will be added manually'
+
+# Set permissions
+chown -R 65534:65534 /mnt/prometheus-data /mnt/prometheus-config
+chown -R 472:472 /mnt/grafana-data /mnt/grafana-provisioning /mnt/grafana-dashboards
+chmod -R 755 /mnt/prometheus-data /mnt/prometheus-config
+chmod -R 755 /mnt/grafana-data /mnt/grafana-provisioning /mnt/grafana-dashboards",
+              ],
+            ],
+          },
+        },
+      },
+      "Type": "AWS::AutoScaling::LaunchConfiguration",
+    },
+    "MonitoringClusterMonitoringCapacityLifecycleHookDrainHook9A1040B9": {
+      "DependsOn": [
+        "MonitoringClusterMonitoringCapacityLifecycleHookDrainHookRoleDefaultPolicyCFB1FD2C",
+        "MonitoringClusterMonitoringCapacityLifecycleHookDrainHookRole79D37462",
+      ],
+      "Properties": {
+        "AutoScalingGroupName": {
+          "Ref": "MonitoringClusterMonitoringCapacityASGBE87BCE8",
+        },
+        "DefaultResult": "CONTINUE",
+        "HeartbeatTimeout": 300,
+        "LifecycleTransition": "autoscaling:EC2_INSTANCE_TERMINATING",
+        "NotificationTargetARN": {
+          "Ref": "MonitoringClusterMonitoringCapacityLifecycleHookDrainHookTopic4B5ECAA3",
+        },
+        "RoleARN": {
+          "Fn::GetAtt": [
+            "MonitoringClusterMonitoringCapacityLifecycleHookDrainHookRole79D37462",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "AWS::AutoScaling::LifecycleHook",
+    },
+    "MonitoringClusterMonitoringCapacityLifecycleHookDrainHookRole79D37462": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "autoscaling.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Name",
+            "Value": "TestMonitoringEcsStack/MonitoringCluster/MonitoringCapacity",
+          },
+          {
+            "Key": "Purpose",
+            "Value": "Monitoring",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "MonitoringClusterMonitoringCapacityLifecycleHookDrainHookRoleDefaultPolicyCFB1FD2C": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sns:Publish",
+              "Effect": "Allow",
+              "Resource": {
+                "Ref": "MonitoringClusterMonitoringCapacityLifecycleHookDrainHookTopic4B5ECAA3",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "MonitoringClusterMonitoringCapacityLifecycleHookDrainHookRoleDefaultPolicyCFB1FD2C",
+        "Roles": [
+          {
+            "Ref": "MonitoringClusterMonitoringCapacityLifecycleHookDrainHookRole79D37462",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "MonitoringClusterMonitoringCapacityLifecycleHookDrainHookTopic4B5ECAA3": {
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Name",
+            "Value": "TestMonitoringEcsStack/MonitoringCluster/MonitoringCapacity",
+          },
+          {
+            "Key": "Purpose",
+            "Value": "Monitoring",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+      },
+      "Type": "AWS::SNS::Topic",
+    },
+    "MonitoringEcsEventRuleAF4771A7": {
+      "Properties": {
+        "Description": "Capture ECS events for test monitoring cluster",
+        "EventPattern": {
+          "detail": {
+            "clusterArn": [
+              {
+                "Fn::GetAtt": [
+                  "MonitoringCluster1EF464DE",
+                  "Arn",
+                ],
+              },
+            ],
+          },
+          "detail-type": [
+            "ECS Task State Change",
+            "ECS Container Instance State Change",
+            "ECS Service Action",
+          ],
+          "source": [
+            "aws.ecs",
+          ],
+        },
+        "State": "ENABLED",
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+        "Targets": [
+          {
+            "Arn": {
+              "Fn::Join": [
+                "",
+                [
+                  "arn:",
+                  {
+                    "Ref": "AWS::Partition",
+                  },
+                  ":logs:eu-west-1:123456789012:log-group:",
+                  {
+                    "Ref": "MonitoringEcsEvents9FFD35AD",
+                  },
+                ],
+              ],
+            },
+            "Id": "Target0",
+          },
+        ],
+      },
+      "Type": "AWS::Events::Rule",
+    },
+    "MonitoringEcsEvents9FFD35AD": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "LogGroupName": "/ecs/TestMonitoringEcsStack/events",
+        "RetentionInDays": 14,
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "MonitoringTaskLogs2EB11CC9": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "LogGroupName": "/ecs/TestMonitoringEcsStack/tasks",
+        "RetentionInDays": 14,
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "NodeExporterExecutionRoleD4F3149C": {
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECR GetAuthorizationToken and public registry access do not support resource-level permissions. This is an AWS service limitation for container image authentication.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::.*/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "CloudWatch Logs permissions use wildcard for log streams within the specific log group. This allows ECS to create log streams dynamically.",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Description": "Execution role for Node Exporter task with least privilege",
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "NodeExporterExecutionRoleDefaultPolicyA936CFE0": {
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECR GetAuthorizationToken and public registry access do not support resource-level permissions. This is an AWS service limitation for container image authentication.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::.*/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "CloudWatch Logs permissions use wildcard for log streams within the specific log group. This allows ECS to create log streams dynamically.",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetAtt": [
+                        "NodeExporterLogGroup87EF8E53",
+                        "Arn",
+                      ],
+                    },
+                    ":*",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": "ecr:GetAuthorizationToken",
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "ecr-public:GetAuthorizationToken",
+                "sts:GetServiceBearerToken",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "NodeExporterLogGroup87EF8E53",
+                  "Arn",
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "NodeExporterExecutionRoleDefaultPolicyA936CFE0",
+        "Roles": [
+          {
+            "Ref": "NodeExporterExecutionRoleD4F3149C",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "NodeExporterLogGroup87EF8E53": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "LogGroupName": "/ecs/test-monitoring-node-exporter",
+        "RetentionInDays": 7,
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "NodeExporterServiceD9597F1F": {
+      "DependsOn": [
+        "NodeExporterTaskDefTaskRoleDefaultPolicy6C0B3E4E",
+        "NodeExporterTaskDefTaskRoleE2BA598D",
+      ],
+      "Properties": {
+        "Cluster": {
+          "Ref": "MonitoringCluster1EF464DE",
+        },
+        "DeploymentConfiguration": {
+          "Alarms": {
+            "AlarmNames": [],
+            "Enable": false,
+            "Rollback": false,
+          },
+          "MaximumPercent": 200,
+          "MinimumHealthyPercent": 50,
+        },
+        "DesiredCount": 1,
+        "EnableECSManagedTags": false,
+        "EnableExecuteCommand": true,
+        "LaunchType": "EC2",
+        "SchedulingStrategy": "REPLICA",
+        "ServiceName": "test-monitoring-node-exporter",
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test-monitoring",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Service",
+            "Value": "NodeExporter",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+        "TaskDefinition": {
+          "Ref": "NodeExporterTaskDefC17ED60B",
+        },
+      },
+      "Type": "AWS::ECS::Service",
+    },
+    "NodeExporterTaskDefC17ED60B": {
+      "Properties": {
+        "ContainerDefinitions": [
+          {
+            "Command": [
+              "--path.procfs=/host/proc",
+              "--path.sysfs=/host/sys",
+              "--path.rootfs=/rootfs",
+              "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($|/)",
+            ],
+            "Essential": true,
+            "Image": "prom/node-exporter:latest",
+            "LogConfiguration": {
+              "LogDriver": "awslogs",
+              "Options": {
+                "awslogs-group": {
+                  "Ref": "NodeExporterLogGroup87EF8E53",
+                },
+                "awslogs-region": "eu-west-1",
+                "awslogs-stream-prefix": "node-exporter",
+              },
+            },
+            "MemoryReservation": 64,
+            "MountPoints": [
+              {
+                "ContainerPath": "/host/proc",
+                "ReadOnly": true,
+                "SourceVolume": "proc",
+              },
+              {
+                "ContainerPath": "/host/sys",
+                "ReadOnly": true,
+                "SourceVolume": "sys",
+              },
+              {
+                "ContainerPath": "/rootfs",
+                "ReadOnly": true,
+                "SourceVolume": "rootfs",
+              },
+            ],
+            "Name": "node-exporter",
+            "PortMappings": [
+              {
+                "ContainerPort": 9100,
+                "HostPort": 9100,
+                "Protocol": "tcp",
+              },
+            ],
+          },
+        ],
+        "ExecutionRoleArn": {
+          "Fn::GetAtt": [
+            "NodeExporterExecutionRoleD4F3149C",
+            "Arn",
+          ],
+        },
+        "Family": "TestMonitoringEcsStackNodeExporterTaskDef8AFD7D23",
+        "NetworkMode": "host",
+        "RequiresCompatibilities": [
+          "EC2",
+        ],
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test-monitoring",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+        "TaskRoleArn": {
+          "Fn::GetAtt": [
+            "NodeExporterTaskDefTaskRoleE2BA598D",
+            "Arn",
+          ],
+        },
+        "Volumes": [
+          {
+            "Host": {
+              "SourcePath": "/proc",
+            },
+            "Name": "proc",
+          },
+          {
+            "Host": {
+              "SourcePath": "/sys",
+            },
+            "Name": "sys",
+          },
+          {
+            "Host": {
+              "SourcePath": "/",
+            },
+            "Name": "rootfs",
+          },
+        ],
+      },
+      "Type": "AWS::ECS::TaskDefinition",
+    },
+    "NodeExporterTaskDefTaskRoleDefaultPolicy6C0B3E4E": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "ssmmessages:CreateControlChannel",
+                "ssmmessages:CreateDataChannel",
+                "ssmmessages:OpenControlChannel",
+                "ssmmessages:OpenDataChannel",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": "logs:DescribeLogGroups",
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:DescribeLogStreams",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "NodeExporterTaskDefTaskRoleDefaultPolicy6C0B3E4E",
+        "Roles": [
+          {
+            "Ref": "NodeExporterTaskDefTaskRoleE2BA598D",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "NodeExporterTaskDefTaskRoleE2BA598D": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test-monitoring",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "PrometheusLogGroupC85EFB3C": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "LogGroupName": "/ecs/test-prometheus",
+        "RetentionInDays": 7,
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "PrometheusServiceE1678AB4": {
+      "DependsOn": [
+        "MonitoringAlbMonitoringListenerPrometheusRuleRuleDBFD25E5",
+        "PrometheusTaskDefinitionTaskDefTaskRoleDefaultPolicy82F53203",
+        "PrometheusTaskDefinitionTaskDefTaskRole14E24FE2",
+      ],
+      "Properties": {
+        "Cluster": {
+          "Ref": "MonitoringCluster1EF464DE",
+        },
+        "DeploymentConfiguration": {
+          "Alarms": {
+            "AlarmNames": [],
+            "Enable": false,
+            "Rollback": false,
+          },
+          "DeploymentCircuitBreaker": {
+            "Enable": true,
+            "Rollback": true,
+          },
+          "MaximumPercent": 100,
+          "MinimumHealthyPercent": 0,
+        },
+        "DeploymentController": {
+          "Type": "ECS",
+        },
+        "DesiredCount": 1,
+        "EnableECSManagedTags": false,
+        "EnableExecuteCommand": true,
+        "HealthCheckGracePeriodSeconds": 60,
+        "LaunchType": "EC2",
+        "LoadBalancers": [
+          {
+            "ContainerName": "prometheus",
+            "ContainerPort": 9090,
+            "TargetGroupArn": {
+              "Ref": "PrometheusTargetGroupC9DD7B03",
+            },
+          },
+        ],
+        "PlacementStrategies": [
+          {
+            "Field": "instanceId",
+            "Type": "spread",
+          },
+          {
+            "Field": "CPU",
+            "Type": "binpack",
+          },
+        ],
+        "SchedulingStrategy": "REPLICA",
+        "ServiceName": "test-prometheus",
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Service",
+            "Value": "ECS",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+        "TaskDefinition": {
+          "Ref": "PrometheusTaskDefinitionTaskDefBF77A607",
+        },
+      },
+      "Type": "AWS::ECS::Service",
+    },
+    "PrometheusTargetGroupC9DD7B03": {
+      "Properties": {
+        "HealthCheckIntervalSeconds": 30,
+        "HealthCheckPath": "/prometheus/-/healthy",
+        "HealthCheckTimeoutSeconds": 5,
+        "HealthyThresholdCount": 2,
+        "Matcher": {
+          "HttpCode": "200",
+        },
+        "Port": 9090,
+        "Protocol": "HTTP",
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+        "TargetGroupAttributes": [
+          {
+            "Key": "deregistration_delay.timeout_seconds",
+            "Value": "30",
+          },
+          {
+            "Key": "stickiness.enabled",
+            "Value": "false",
+          },
+        ],
+        "TargetType": "instance",
+        "UnhealthyThresholdCount": 3,
+        "VpcId": {
+          "Fn::ImportValue": "TestVpcStack:ExportsOutputRefTestVpcE77CE67811D13B85",
+        },
+      },
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+    },
+    "PrometheusTaskDefinitionTaskDefBF77A607": {
+      "Properties": {
+        "ContainerDefinitions": [
+          {
+            "Command": [
+              "--config.file=/etc/prometheus/prometheus.yml",
+              "--storage.tsdb.path=/prometheus",
+              "--storage.tsdb.retention.time=7d",
+              "--web.console.libraries=/usr/share/prometheus/console_libraries",
+              "--web.console.templates=/usr/share/prometheus/consoles",
+              "--web.route-prefix=/prometheus",
+              "--web.external-url=/prometheus",
+              "--web.enable-lifecycle",
+            ],
+            "Environment": [
+              {
+                "Name": "ENVIRONMENT",
+                "Value": "test",
+              },
+            ],
+            "Essential": true,
+            "Image": "prom/prometheus:latest",
+            "LogConfiguration": {
+              "LogDriver": "awslogs",
+              "Options": {
+                "awslogs-group": {
+                  "Ref": "PrometheusTaskDefinitionTaskDefprometheusLogGroup24AB6CE9",
+                },
+                "awslogs-region": "eu-west-1",
+                "awslogs-stream-prefix": "prometheus",
+              },
+            },
+            "MemoryReservation": 256,
+            "MountPoints": [
+              {
+                "ContainerPath": "/prometheus",
+                "ReadOnly": false,
+                "SourceVolume": "prometheus-data",
+              },
+              {
+                "ContainerPath": "/etc/prometheus",
+                "ReadOnly": true,
+                "SourceVolume": "prometheus-config",
+              },
+            ],
+            "Name": "prometheus",
+            "PortMappings": [
+              {
+                "ContainerPort": 9090,
+                "HostPort": 0,
+                "Protocol": "tcp",
+              },
+            ],
+          },
+        ],
+        "ExecutionRoleArn": {
+          "Fn::GetAtt": [
+            "PrometheusTaskDefinitionTaskDefExecutionRoleCCEF99A7",
+            "Arn",
+          ],
+        },
+        "Family": "TestMonitoringEcsStackPrometheusTaskDefinitionTaskDefBDDCB65E",
+        "NetworkMode": "bridge",
+        "RequiresCompatibilities": [
+          "EC2",
+        ],
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+        "TaskRoleArn": {
+          "Fn::GetAtt": [
+            "PrometheusTaskDefinitionTaskDefTaskRole14E24FE2",
+            "Arn",
+          ],
+        },
+        "Volumes": [
+          {
+            "Host": {
+              "SourcePath": "/mnt/prometheus-data",
+            },
+            "Name": "prometheus-data",
+          },
+          {
+            "Host": {
+              "SourcePath": "/mnt/prometheus-config",
+            },
+            "Name": "prometheus-config",
+          },
+        ],
+      },
+      "Type": "AWS::ECS::TaskDefinition",
+    },
+    "PrometheusTaskDefinitionTaskDefExecutionRoleCCEF99A7": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "PrometheusTaskDefinitionTaskDefExecutionRoleDefaultPolicy7AC349EC": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "PrometheusTaskDefinitionTaskDefprometheusLogGroup24AB6CE9",
+                  "Arn",
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "PrometheusTaskDefinitionTaskDefExecutionRoleDefaultPolicy7AC349EC",
+        "Roles": [
+          {
+            "Ref": "PrometheusTaskDefinitionTaskDefExecutionRoleCCEF99A7",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "PrometheusTaskDefinitionTaskDefTaskRole14E24FE2": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "PrometheusTaskDefinitionTaskDefTaskRoleDefaultPolicy82F53203": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "ec2:DescribeInstances",
+                "ec2:DescribeAvailabilityZones",
+                "ec2:DescribeTags",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "ssmmessages:CreateControlChannel",
+                "ssmmessages:CreateDataChannel",
+                "ssmmessages:OpenControlChannel",
+                "ssmmessages:OpenDataChannel",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": "logs:DescribeLogGroups",
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:DescribeLogStreams",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "PrometheusTaskDefinitionTaskDefTaskRoleDefaultPolicy82F53203",
+        "Roles": [
+          {
+            "Ref": "PrometheusTaskDefinitionTaskDefTaskRole14E24FE2",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "PrometheusTaskDefinitionTaskDefprometheusLogGroup24AB6CE9": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "MonitoringEcs",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Retain",
+    },
+  },
+  "Rules": {
+    "CheckBootstrapVersion": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Contains": [
+                  [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                  ],
+                  {
+                    "Ref": "BootstrapVersion",
+                  },
+                ],
+              },
+            ],
+          },
+          "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI.",
+        },
+      ],
+    },
+  },
+}
+`;
+
+exports[`MonitoringEcsStack Test Suite Snapshots Target Groups match snapshot 1`] = `
+{
+  "GrafanaTargetGroup52250F6F": {
+    "Properties": {
+      "HealthCheckIntervalSeconds": 30,
+      "HealthCheckPath": "/grafana/api/health",
+      "HealthCheckTimeoutSeconds": 5,
+      "HealthyThresholdCount": 2,
+      "Matcher": {
+        "HttpCode": "200",
+      },
+      "Port": 3000,
+      "Protocol": "HTTP",
+      "Tags": [
+        {
+          "Key": "Environment",
+          "Value": "test",
+        },
+        {
+          "Key": "ManagedBy",
+          "Value": "CDK",
+        },
+        {
+          "Key": "Stack",
+          "Value": "MonitoringEcs",
+        },
+      ],
+      "TargetGroupAttributes": [
+        {
+          "Key": "deregistration_delay.timeout_seconds",
+          "Value": "30",
+        },
+        {
+          "Key": "stickiness.enabled",
+          "Value": "false",
+        },
+      ],
+      "TargetType": "instance",
+      "UnhealthyThresholdCount": 3,
+      "VpcId": {
+        "Fn::ImportValue": "TestVpcStack:ExportsOutputRefTestVpcE77CE67811D13B85",
+      },
+    },
+    "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+  },
+  "PrometheusTargetGroupC9DD7B03": {
+    "Properties": {
+      "HealthCheckIntervalSeconds": 30,
+      "HealthCheckPath": "/prometheus/-/healthy",
+      "HealthCheckTimeoutSeconds": 5,
+      "HealthyThresholdCount": 2,
+      "Matcher": {
+        "HttpCode": "200",
+      },
+      "Port": 9090,
+      "Protocol": "HTTP",
+      "Tags": [
+        {
+          "Key": "Environment",
+          "Value": "test",
+        },
+        {
+          "Key": "ManagedBy",
+          "Value": "CDK",
+        },
+        {
+          "Key": "Stack",
+          "Value": "MonitoringEcs",
+        },
+      ],
+      "TargetGroupAttributes": [
+        {
+          "Key": "deregistration_delay.timeout_seconds",
+          "Value": "30",
+        },
+        {
+          "Key": "stickiness.enabled",
+          "Value": "false",
+        },
+      ],
+      "TargetType": "instance",
+      "UnhealthyThresholdCount": 3,
+      "VpcId": {
+        "Fn::ImportValue": "TestVpcStack:ExportsOutputRefTestVpcE77CE67811D13B85",
+      },
+    },
+    "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+  },
+}
+`;
