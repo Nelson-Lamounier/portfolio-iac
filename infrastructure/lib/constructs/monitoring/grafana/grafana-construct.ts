@@ -153,9 +153,63 @@ export class GrafanaConstruct extends Construct {
     // ========================================================================
     // 3. ADD IAM PERMISSIONS FOR CLOUDWATCH (if enabled)
     // ========================================================================
+    // Replace AWS managed policy with custom inline policy for CDK Nag compliance
     if (props.enableCloudWatch !== false) {
-      this.taskDefinition.taskRole.addManagedPolicy(
-        iam.ManagedPolicy.fromAwsManagedPolicyName("CloudWatchReadOnlyAccess")
+      // Add CloudWatch read permissions for Grafana CloudWatch datasource
+      this.taskDefinition.taskRole.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: [
+            "cloudwatch:DescribeAlarmsForMetric",
+            "cloudwatch:DescribeAlarmHistory",
+            "cloudwatch:DescribeAlarms",
+            "cloudwatch:ListMetrics",
+            "cloudwatch:GetMetricStatistics",
+            "cloudwatch:GetMetricData",
+            "cloudwatch:GetInsightRuleReport",
+          ],
+          resources: ["*"], // CloudWatch metrics don't support resource-level permissions
+        })
+      );
+
+      // Add CloudWatch Logs read permissions
+      this.taskDefinition.taskRole.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: [
+            "logs:DescribeLogGroups",
+            "logs:GetLogGroupFields",
+            "logs:StartQuery",
+            "logs:StopQuery",
+            "logs:GetQueryResults",
+            "logs:GetLogEvents",
+          ],
+          resources: [
+            `arn:aws:logs:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:log-group:*`,
+          ],
+        })
+      );
+
+      // Add EC2 read permissions for CloudWatch datasource
+      this.taskDefinition.taskRole.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: [
+            "ec2:DescribeTags",
+            "ec2:DescribeInstances",
+            "ec2:DescribeRegions",
+          ],
+          resources: ["*"], // EC2 describe actions don't support resource-level permissions
+        })
+      );
+
+      // Add resource group tagging permissions
+      this.taskDefinition.taskRole.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ["tag:GetResources"],
+          resources: ["*"], // Tag API doesn't support resource-level permissions
+        })
       );
     }
 

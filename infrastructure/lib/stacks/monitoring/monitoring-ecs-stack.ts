@@ -13,6 +13,7 @@ import {
   PrometheusConstruct,
   NodeExporterConstruct,
 } from "../../constructs";
+import { SuppressionManager } from "../../cdk-nag";
 
 export interface MonitoringEcsStackProps extends cdk.StackProps {
   vpc: ec2.IVpc;
@@ -106,6 +107,19 @@ export class MonitoringEcsStack extends cdk.Stack {
 
     // Create outputs
     this.createOutputs(monitoringTaskLogGroup, monitoringEventLogGroup);
+
+    // ========================================================================
+    // CDK NAG SUPPRESSIONS
+    // ========================================================================
+    // Apply centralized CDK Nag suppressions
+    SuppressionManager.applyToStack(this, "MonitoringStack", envName);
+
+    // ========================================================================
+    // RESOURCE TAGGING
+    // ========================================================================
+    cdk.Tags.of(this).add("Stack", "MonitoringEcs");
+    cdk.Tags.of(this).add("Environment", envName);
+    cdk.Tags.of(this).add("ManagedBy", "CDK");
   }
 
   private createEcsCluster(vpc: ec2.IVpc, envName: string): ecs.Cluster {
@@ -202,8 +216,9 @@ export class MonitoringEcsStack extends cdk.Stack {
       "        regex: '.*monitoring.*'",
       "        target_label: cluster",
       "        replacement: 'Monitoring'",
-      "      - source_labels: [__meta_ec2_tag_Name]",
-      "        regex: '(?!.*monitoring).*'",
+      "      # Default to Application cluster if not monitoring",
+      "      - source_labels: [__meta_ec2_tag_Name, cluster]",
+      "        regex: '.*;$'",
       "        target_label: cluster",
       "        replacement: 'Application'",
       "      # Use instance name tag as instance label",
@@ -357,9 +372,10 @@ export class MonitoringEcsStack extends cdk.Stack {
     cluster: ecs.Cluster,
     envName: string
   ): ecs.Ec2Service {
+    // Use a unique name to avoid conflict with ComputeStack's NodeExporter
     const nodeExporter = new NodeExporterConstruct(this, "NodeExporter", {
       cluster: cluster,
-      envName: envName,
+      envName: `${envName}-monitoring`, // This creates log group: /ecs/development-monitoring-node-exporter
       serviceName: `${envName}-monitoring-node-exporter`,
       memoryReservationMiB: 64,
       logRetention: logs.RetentionDays.ONE_WEEK,

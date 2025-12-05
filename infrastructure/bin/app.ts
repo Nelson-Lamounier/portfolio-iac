@@ -289,7 +289,7 @@ if (config.enableMonitoring) {
       ...stackProps,
       envName: config.envName,
       vpc: networkingStack.vpc,
-      albDnsName: loadBalancerStack.alb.dnsName,
+      albDnsName: loadBalancerStack.alb.loadBalancer.loadBalancerDnsName,
       // Optional: Restrict access to specific IPs
       // allowedIpRanges: ['YOUR_IP/32'],
     }

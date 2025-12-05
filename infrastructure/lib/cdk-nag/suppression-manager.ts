@@ -211,6 +211,21 @@ export class SuppressionManager {
           "Monitoring services (Prometheus, Grafana) require read access to CloudWatch metrics and logs across the account for comprehensive observability. This is standard practice for monitoring solutions and is read-only access.",
         appliesTo: ["Resource::*"],
       },
+      {
+        id: "AwsSolutions-IAM5",
+        reason:
+          "Grafana CloudWatch datasource requires permissions to query logs across all log groups in the account. The wildcard is scoped to the account and region, and permissions are read-only.",
+        appliesTo: [
+          {
+            regex: "/^Resource::arn:aws:logs:.*:.*:log-group:\\*$/",
+          },
+        ],
+      },
+      {
+        id: "AwsSolutions-SNS3",
+        reason:
+          "SNS topic is used for internal ECS lifecycle hooks managed by CDK for the monitoring cluster. SSL enforcement is handled by AWS internal services. The lifecycle hook topic is used for draining ECS tasks during instance termination.",
+      },
     ];
   }
 
