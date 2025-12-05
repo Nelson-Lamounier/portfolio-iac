@@ -2,9 +2,11 @@
 
 import * as cdk from "aws-cdk-lib";
 import * as ecs from "aws-cdk-lib/aws-ecs";
+import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
 import { Tags } from "aws-cdk-lib";
 import { Construct } from "constructs";
+import { NagSuppressions } from "cdk-nag";
 
 export interface NodeExporterConstructProps {
   cluster: ecs.ICluster;
@@ -38,9 +40,40 @@ export class NodeExporterConstruct extends Construct {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
+    // Create execution role with permissions to pull public images and write logs
+    const executionRole = new iam.Role(this, "ExecutionRole", {
+      assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
+      description: "Execution role for Node Exporter task",
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName(
+          "service-role/AmazonECSTaskExecutionRolePolicy"
+        ),
+      ],
+    });
+
+    // Grant CloudWatch Logs permissions
+    this.logGroup.grantWrite(executionRole);
+
+    // Suppress CDK Nag warning for AWS managed policy
+    NagSuppressions.addResourceSuppressions(
+      executionRole,
+      [
+        {
+          id: "AwsSolutions-IAM4",
+          reason:
+            "AmazonECSTaskExecutionRolePolicy is the standard AWS managed policy for ECS task execution roles. It provides necessary permissions to pull images from ECR/Docker Hub and write logs to CloudWatch.",
+          appliesTo: [
+            "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
+          ],
+        },
+      ],
+      true
+    );
+
     // Create task definition with HOST network mode
     this.taskDefinition = new ecs.Ec2TaskDefinition(this, "TaskDef", {
       networkMode: ecs.NetworkMode.HOST,
+      executionRole: executionRole,
     });
 
     // Add volumes for host metrics collection
