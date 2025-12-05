@@ -3736,6 +3736,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"cdk-nag@npm:^2.37.55":
+  version: 2.37.55
+  resolution: "cdk-nag@npm:2.37.55"
+  peerDependencies:
+    aws-cdk-lib: ^2.176.0
+    constructs: ^10.0.5
+  checksum: 4be270819a7ca65231d69e47c70327fe185cd036be530d526936385d265addb90612da64a5015d5e90c016c7e130a137395d89e4215dac4a2cf044b5bba84636
+  languageName: node
+  linkType: hard
+
 "chalk@npm:^4.0.0, chalk@npm:^4.1.2":
   version: 4.1.2
   resolution: "chalk@npm:4.1.2"
@@ -5846,6 +5856,7 @@ __metadata:
     "@types/node": "npm:^20.10.0"
     aws-cdk: "npm:^2.150.0"
     aws-cdk-lib: "npm:^2.150.0"
+    cdk-nag: "npm:^2.37.55"
     constructs: "npm:^10.3.0"
     dotenv: "npm:^16.3.1"
     jest: "npm:^29.7.0"
@@ -10952,7 +10963,7 @@ __metadata:
 
 "typescript@patch:typescript@npm%3A^5.3.0#optional!builtin<compat/typescript>, typescript@patch:typescript@npm%3A^5.8.3#optional!builtin<compat/typescript>":
   version: 5.9.3
-  resolution: "typescript@patch:typescript@npm%3A5.9.3#optional!builtin<compat/typescript>::version=5.9.3&hash=29ae49"
+  resolution: "typescript@patch:typescript@npm%3A5.9.3#optional!builtin<compat/typescript>::version=5.9.3&hash=e012d7"
   bin:
     tsc: bin/tsc
     tsserver: bin/tsserver
