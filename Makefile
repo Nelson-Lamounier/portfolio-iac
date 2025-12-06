@@ -37,6 +37,7 @@ help:
 	@echo "  deploy-dev-with-monitoring      - Deploy dev account with cross-account monitoring support"
 	@echo "  setup-cross-account-access      - Setup cross-account access in dev/staging/prod"
 	@echo "  setup-multi-account-monitoring  - Configure multi-account data collection"
+	@echo "  setup-cross-account-scraping    - Setup Prometheus to scrape dev/staging/prod (after VPC peering)"
 	@echo "  check-monitoring-centralized    - Check centralized monitoring status"
 	@echo "  destroy-monitoring-centralized  - Destroy centralized monitoring"
 	@echo "  logs-monitoring-centralized     - Show log groups for centralized monitoring"
@@ -378,6 +379,14 @@ setup-multi-account-monitoring:
 	@echo "Setting up multi-account monitoring"
 	@echo "========================================="
 	@./scripts/monitoring/setup-multi-account.sh
+
+# Setup cross-account Prometheus scraping (after VPC peering)
+setup-cross-account-scraping:
+	@echo "========================================="
+	@echo "Setting up cross-account Prometheus scraping"
+	@echo "========================================="
+	@chmod +x ./scripts/monitoring/setup-cross-account-scraping.sh
+	@./scripts/monitoring/setup-cross-account-scraping.sh
 
 # Generate Prometheus config for multi-account
 generate-prometheus-config:
