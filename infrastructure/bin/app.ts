@@ -86,12 +86,26 @@ const stackProps: cdk.StackProps = {
 // ========================================
 // Creates VPC, subnets, and routing
 // This stack is independent and can be deployed first
+//
+// VPC CIDR allocation for multi-account setup:
+// - Pipeline:    10.0.0.0/16 (default)
+// - Development: 10.1.0.0/16
+// - Staging:     10.2.0.0/16
+// - Production:  10.3.0.0/16
+const vpcCidrMap: Record<string, string> = {
+  pipeline: "10.0.0.0/16",
+  development: "10.1.0.0/16",
+  staging: "10.2.0.0/16",
+  production: "10.3.0.0/16",
+};
+
 const networkingStack = new NetworkingStack(
   app,
   `NetworkingStack-${config.envName}`,
   {
     ...stackProps,
     envName: config.envName,
+    vpcCidr: vpcCidrMap[config.envName] || "10.0.0.0/16",
     maxAzs: 2,
     natGateways: 0,
     enableVpcFlowLogs: true,
