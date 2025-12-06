@@ -24,7 +24,6 @@ help:
 	@echo "  cdk-deploy           - Deploy CDK stacks"
 	@echo "  recover-stacks       - Automatically recover failed stacks (ENV=development)"
 	@echo "  deploy-lb-local      - Deploy Load Balancer locally for testing (ENV=development)"
-	@echo "  deploy-lb-http       - Deploy Load Balancer with HTTP only (ENV=development)"
 	@echo ""
 	@echo "Monitoring targets:"
 	@echo "  deploy-monitoring       - Deploy monitoring stack (alias for deploy-monitoring-ecs)"
@@ -35,7 +34,9 @@ help:
 	@echo ""
 	@echo "Centralized Monitoring (Pipeline Account):"
 	@echo "  deploy-monitoring-centralized   - Deploy centralized monitoring to pipeline account"
+	@echo "  deploy-dev-with-monitoring      - Deploy dev account with cross-account monitoring support"
 	@echo "  setup-cross-account-access      - Setup cross-account access in dev/staging/prod"
+	@echo "  setup-multi-account-monitoring  - Configure multi-account data collection"
 	@echo "  check-monitoring-centralized    - Check centralized monitoring status"
 	@echo "  destroy-monitoring-centralized  - Destroy centralized monitoring"
 	@echo "  logs-monitoring-centralized     - Show log groups for centralized monitoring"
@@ -82,13 +83,13 @@ test-infrastructure:
 
 test-monitoring-e2e:
 	@echo "Running monitoring E2E tests..."
-	@chmod +x ./scripts/test-monitoring-setup.sh
-	./scripts/test-monitoring-setup.sh $(ENVIRONMENT)
+	@chmod +x ./scripts/monitoring/test-setup.sh
+	./scripts/monitoring/test-setup.sh $(ENVIRONMENT)
 
 update-prometheus-config:
 	@echo "Updating Prometheus configuration..."
-	@chmod +x ./scripts/update-prometheus-config.sh
-	./scripts/update-prometheus-config.sh $(ENVIRONMENT)
+	@chmod +x ./scripts/monitoring/update-prometheus-config.sh
+	./scripts/monitoring/update-prometheus-config.sh $(ENVIRONMENT)
 
 test-ci:
 	@echo "Running all CI tests..."
@@ -129,31 +130,31 @@ clean:
 # AWS/Deployment targets
 check-infra:
 	@echo "Checking if infrastructure exists..."
-	@./scripts/check-infrastructure.sh
+	@./scripts/aws/check-infrastructure.sh
 
 fetch-ecr-uri:
 	@echo "Fetching ECR repository URI..."
-	@./scripts/fetch-ecr-uri.sh
+	@./scripts/aws/fetch-ecr-uri.sh
 
 fetch-aws-accounts:
 	@echo "Fetching AWS account IDs..."
-	@./scripts/fetch-aws-accounts.sh
+	@./scripts/aws/fetch-aws-accounts.sh
 
 setup-domain-params:
 	@echo "Setting up domain configuration in SSM Parameter Store..."
-	@./scripts/setup-domain-parameters.sh
+	@./scripts/setup/domain-parameters.sh
 
 verify-cdk-bootstrap:
 	@echo "Verifying CDK bootstrap..."
-	@./scripts/verify-cdk-bootstrap.sh
+	@./scripts/aws/verify-cdk-bootstrap.sh
 
 docker-build-push:
 	@echo "Building and pushing Docker image..."
-	@./scripts/docker-build-push.sh
+	@./scripts/docker/build-push.sh
 
 cleanup-buildcache:
 	@echo "Cleaning up buildcache tag from ECR..."
-	@./scripts/cleanup-buildcache.sh
+	@./scripts/docker/cleanup-buildcache.sh
 
 cdk-synth:
 	@echo "Synthesizing CDK stacks..."
@@ -165,15 +166,11 @@ cdk-deploy:
 
 deploy-lb-local:
 	@echo "Deploying Load Balancer locally for environment: $(ENV)"
-	@./scripts/deploy-lb-local.sh $(ENV)
-
-deploy-lb-http:
-	@echo "Deploying Load Balancer (HTTP only) for environment: $(ENV)"
-	@./scripts/deploy-lb-http-only.sh $(ENV)
+	@./scripts/deploy/lb-local.sh $(ENV)
 
 recover-stacks:
 	@echo "Recovering stacks for environment: $(ENV)"
-	@./scripts/recover-stack.sh $(ENV)
+	@./scripts/aws/recover-stack.sh $(ENV)
 
 # Monitoring deployment targets
 # Map short names to full environment names
@@ -249,27 +246,85 @@ deploy-monitoring-centralized-only:
 		MonitoringEcsStack-pipeline \
 		--require-approval never
 
+# Deploy development account with cross-account monitoring support
+deploy-dev-with-monitoring:
+	@echo "========================================="
+	@echo "Deploying Development with Cross-Account Monitoring"
+	@echo "========================================="
+	@echo ""
+	@chmod +x ./scripts/deploy/dev-with-monitoring.sh
+	./scripts/deploy/dev-with-monitoring.sh
+	@echo ""
+	@echo "✓ Development environment deployed with monitoring support!"
+	@echo ""
+	@echo "Next steps:"
+	@echo "  1. Deploy VPC peering: make deploy-vpc-peering"
+	@echo "  2. Test connectivity: See docs/monitoring/QUICK_TEST_GUIDE.md"
+
 # Setup cross-account access in application accounts
 setup-cross-account-access:
 	@echo "========================================="
 	@echo "Setting up cross-account monitoring access"
 	@echo "========================================="
 	@echo ""
-	@echo "This will create IAM roles and EventBridge rules in:"
-	@echo "  - Development account"
-	@echo "  - Staging account"
-	@echo "  - Production account"
+	@echo "This will create IAM roles and EventBridge rules in application accounts"
+	@echo "Only environments with enableEventBridge=true will be deployed"
 	@echo ""
 	@echo "Deploying to development..."
 	@cd infrastructure && ENVIRONMENT=development yarn cdk deploy CrossAccountMonitoring-development --require-approval never
 	@echo ""
-	@echo "Deploying to staging..."
+	@echo "✓ Cross-account access configured for development!"
+	@echo ""
+	@echo "Note: To enable for staging/production, set enableEventBridge=true in config/environments.ts"
+
+# Deploy cross-account access to a specific environment
+setup-cross-account-access-staging:
+	@echo "Deploying cross-account access to staging..."
 	@cd infrastructure && ENVIRONMENT=staging yarn cdk deploy CrossAccountMonitoring-staging --require-approval never
-	@echo ""
-	@echo "Deploying to production..."
+
+setup-cross-account-access-production:
+	@echo "Deploying cross-account access to production..."
 	@cd infrastructure && ENVIRONMENT=production yarn cdk deploy CrossAccountMonitoring-production --require-approval never
+
+# Deploy VPC peering between pipeline and application accounts
+.PHONY: deploy-vpc-peering check-vpc-peering
+
+deploy-vpc-peering:
+	@echo "========================================="
+	@echo "Deploying VPC Peering"
+	@echo "========================================="
 	@echo ""
-	@echo "✓ Cross-account access configured!"
+	@echo "Prerequisites:"
+	@echo "  - Pipeline VPC: 10.0.0.0/16"
+	@echo "  - Development VPC: 10.1.0.0/16 (must NOT overlap)"
+	@echo ""
+	@echo "Checking VPC CIDRs..."
+	@PIPELINE_CIDR=$$(aws ec2 describe-vpcs --filters "Name=tag:Environment,Values=pipeline" --query 'Vpcs[0].CidrBlock' --output text 2>/dev/null || echo "NOT_FOUND"); \
+	DEV_CIDR=$$(aws ec2 describe-vpcs --filters "Name=tag:Environment,Values=development" --query 'Vpcs[0].CidrBlock' --output text 2>/dev/null || echo "NOT_FOUND"); \
+	echo "  Pipeline CIDR: $$PIPELINE_CIDR"; \
+	echo "  Development CIDR: $$DEV_CIDR"; \
+	if [ "$$PIPELINE_CIDR" = "$$DEV_CIDR" ]; then \
+		echo ""; \
+		echo "ERROR: VPC CIDRs overlap! VPC peering requires non-overlapping CIDRs."; \
+		echo "Update development VPC to use 10.1.0.0/16 and redeploy NetworkingStack-development"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "Deploying VPC peering stack..."
+	@cd infrastructure && ENVIRONMENT=pipeline yarn cdk deploy VpcPeeringStack-pipeline --require-approval never
+	@echo ""
+	@echo "✓ VPC peering deployed!"
+	@echo ""
+	@echo "Verify with: make check-vpc-peering"
+
+check-vpc-peering:
+	@echo "========================================="
+	@echo "VPC Peering Status"
+	@echo "========================================="
+	@aws ec2 describe-vpc-peering-connections \
+		--filters "Name=status-code,Values=active,pending-acceptance,provisioning" \
+		--query 'VpcPeeringConnections[*].{ID:VpcPeeringConnectionId,Status:Status.Code,Requester:RequesterVpcInfo.CidrBlock,Accepter:AccepterVpcInfo.CidrBlock}' \
+		--output table || echo "No peering connections found"
 
 # Check centralized monitoring status
 check-monitoring-centralized:
@@ -316,6 +371,33 @@ logs-monitoring-centralized:
 	@echo "Usage examples:"
 	@echo "  aws logs tail /ecs/pipeline-grafana --follow"
 	@echo "  aws logs tail /ecs/pipeline-prometheus --since 1h"
+
+# Setup multi-account data collection
+setup-multi-account-monitoring:
+	@echo "========================================="
+	@echo "Setting up multi-account monitoring"
+	@echo "========================================="
+	@./scripts/monitoring/setup-multi-account.sh
+
+# Generate Prometheus config for multi-account
+generate-prometheus-config:
+	@echo "Generating Prometheus configuration..."
+	@./scripts/monitoring/generate-prometheus-config.sh \
+		pipeline \
+		$${AWS_REGION:-eu-west-1} \
+		$${AWS_ACCOUNT_ID_DEV} \
+		$${AWS_ACCOUNT_ID_STAGING} \
+		$${AWS_ACCOUNT_ID_PROD}
+
+# Generate Grafana datasources for multi-account
+generate-grafana-datasources:
+	@echo "Generating Grafana datasources..."
+	@./scripts/monitoring/generate-grafana-datasources.sh \
+		"http://localhost:9090/prometheus" \
+		$${AWS_REGION:-eu-west-1} \
+		$${AWS_ACCOUNT_ID_DEV} \
+		$${AWS_ACCOUNT_ID_STAGING} \
+		$${AWS_ACCOUNT_ID_PROD}
 
 
 ##############################################################################
