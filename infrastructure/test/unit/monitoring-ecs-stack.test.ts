@@ -174,7 +174,7 @@ describe("MonitoringEcsStack", () => {
 
       const template = Template.fromStack(stack);
       template.hasResourceProperties("AWS::ECS::Service", {
-        ServiceName: "test-node-exporter",
+        ServiceName: "test-monitoring-node-exporter",
         DesiredCount: 1,
         EnableExecuteCommand: true,
       });
@@ -218,7 +218,8 @@ describe("MonitoringEcsStack", () => {
       });
 
       const template = Template.fromStack(stack);
-      template.resourceCountIs("AWS::Logs::LogGroup", 3);
+      // 7 log groups: 2 stack-level (tasks, events) + 3 service-level (prometheus, grafana, node-exporter) + 2 construct-level
+      template.resourceCountIs("AWS::Logs::LogGroup", 7);
 
       template.hasResourceProperties("AWS::Logs::LogGroup", {
         LogGroupName: "/ecs/test-prometheus",
@@ -231,7 +232,7 @@ describe("MonitoringEcsStack", () => {
       });
 
       template.hasResourceProperties("AWS::Logs::LogGroup", {
-        LogGroupName: "/ecs/test-node-exporter",
+        LogGroupName: "/ecs/test-monitoring-node-exporter",
         RetentionInDays: 7,
       });
     });

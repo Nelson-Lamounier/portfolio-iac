@@ -29,6 +29,22 @@ export class MonitoringConstruct extends Construct {
       topicName: `infrastructure-alerts-${props.envName}`,
     });
 
+    // Enforce SSL/TLS for SNS topic publishers (CDK Nag: AwsSolutions-SNS3)
+    this.alarmTopic.addToResourcePolicy(
+      new cdk.aws_iam.PolicyStatement({
+        sid: "AllowPublishThroughSSLOnly",
+        effect: cdk.aws_iam.Effect.DENY,
+        principals: [new cdk.aws_iam.AnyPrincipal()],
+        actions: ["SNS:Publish"],
+        resources: [this.alarmTopic.topicArn],
+        conditions: {
+          Bool: {
+            "aws:SecureTransport": "false",
+          },
+        },
+      })
+    );
+
     // Add email subscription if provided
     if (props.alertEmail) {
       this.alarmTopic.addSubscription(
