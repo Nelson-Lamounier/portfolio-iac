@@ -32,6 +32,15 @@ help:
 	@echo "  destroy-monitoring-ecs  - Destroy ECS monitoring stack (ENV=development)"
 	@echo "  check-monitoring-ecs    - Check ECS monitoring status (ENV=development)"
 	@echo "  logs-monitoring-ecs     - Show log group names for monitoring (ENV=development)"
+	@echo ""
+	@echo "CDK Nag (Security) targets:"
+	@echo "  nag-help             - Show detailed CDK Nag troubleshooting guide"
+	@echo "  nag-check            - Check all stacks for violations (ENV=development)"
+	@echo "  nag-check-stack      - Check specific stack (STACK=NetworkingStack ENV=development)"
+	@echo "  nag-violations       - Show only blocking violations (ENV=development)"
+	@echo "  nag-suppressions     - Show suppressed rules for audit (ENV=development)"
+	@echo "  nag-rule             - Search for specific rule (RULE=AwsSolutions-IAM5 ENV=development)"
+	@echo "  nag-count            - Count violations by type (ENV=development)"
 
 # Installation
 install:
@@ -192,6 +201,117 @@ logs-monitoring-ecs:
 	@echo "  - /ecs/$(ENV)-node-exporter"
 	@echo ""
 	@echo "Usage: aws logs tail /ecs/$(ENV)-grafana --follow"
+
+
+##############################################################################
+# CDK NAG - Security & Compliance Troubleshooting
+##############################################################################
+# CDK Nag validates infrastructure against AWS best practices and security standards.
+# These commands help identify, troubleshoot, and resolve CDK Nag violations.
+
+.PHONY: nag-help nag-check nag-check-all nag-check-stack nag-violations nag-suppressions
+
+# Show CDK Nag troubleshooting help
+nag-help:
+	@echo ""
+	@echo "=== CDK Nag Troubleshooting Commands ==="
+	@echo ""
+	@echo "Quick Reference:"
+	@echo "  make nag-check ENV=development           - Check all stacks for violations"
+	@echo "  make nag-check-stack STACK=Networking    - Check specific stack"
+	@echo "  make nag-violations ENV=development      - Show only violations (errors)"
+	@echo "  make nag-suppressions ENV=development    - Show suppressed rules"
+	@echo ""
+	@echo "What each command does:"
+	@echo ""
+	@echo "1. nag-check (Check all stacks)"
+	@echo "   - Synthesizes all CDK stacks with CDK Nag enabled"
+	@echo "   - Shows first 20 AwsSolutions violations"
+	@echo "   - Use: Quick overview of security issues"
+	@echo "   - Command: ENVIRONMENT=ENV yarn cdk synth --all 2>&1 | grep 'AwsSolutions' | head -20"
+	@echo ""
+	@echo "2. nag-check-stack (Check specific stack)"
+	@echo "   - Synthesizes single stack to focus on specific violations"
+	@echo "   - Faster than checking all stacks"
+	@echo "   - Use: When fixing issues in one stack"
+	@echo "   - Command: ENVIRONMENT=ENV yarn cdk synth STACK-ENV 2>&1 | grep 'AwsSolutions'"
+	@echo ""
+	@echo "3. nag-violations (Show only errors)"
+	@echo "   - Filters for '[Error at' to show blocking violations"
+	@echo "   - Ignores suppressed rules (Info messages)"
+	@echo "   - Use: Find what's blocking deployment"
+	@echo "   - Command: ENVIRONMENT=ENV yarn cdk synth --all 2>&1 | grep 'Error at'"
+	@echo ""
+	@echo "4. nag-suppressions (Show suppressed rules)"
+	@echo "   - Shows '[Info at' messages for suppressed violations"
+	@echo "   - Useful for audit and documentation"
+	@echo "   - Use: Review what's been suppressed and why"
+	@echo "   - Command: ENVIRONMENT=ENV yarn cdk synth --all 2>&1 | grep 'Info at'"
+	@echo ""
+	@echo "Common CDK Nag Rules:"
+	@echo "  AwsSolutions-IAM4  - AWS managed policies (use custom policies)"
+	@echo "  AwsSolutions-IAM5  - Wildcard permissions (scope down)"
+	@echo "  AwsSolutions-EC23  - Security group allows 0.0.0.0/0 (restrict IPs)"
+	@echo "  AwsSolutions-SNS3  - SNS topic doesn't enforce SSL (add policy)"
+	@echo "  AwsSolutions-S1    - S3 bucket without access logging"
+	@echo "  AwsSolutions-ECS2  - ECS task definition has secrets in env vars"
+	@echo ""
+	@echo "Suppression Guide: infrastructure/docs/cdk-nag/CDK_NAG_SUPPRESSION_GUIDE.md"
+	@echo ""
+
+# Check all stacks for CDK Nag violations
+nag-check:
+	@echo "Checking all stacks for CDK Nag violations (ENV=$(ENV_FULL))..."
+	@echo ""
+	@cd infrastructure && ENVIRONMENT=$(ENV_FULL) yarn cdk synth --all 2>&1 | grep "AwsSolutions" | head -20 || echo "✓ No CDK Nag violations found"
+
+# Check all stacks and show full output
+nag-check-all:
+	@echo "Checking all stacks for CDK Nag violations - FULL OUTPUT (ENV=$(ENV_FULL))..."
+	@echo ""
+	@cd infrastructure && ENVIRONMENT=$(ENV_FULL) yarn cdk synth --all 2>&1 | grep "AwsSolutions" || echo "✓ No CDK Nag violations found"
+
+# Check specific stack for violations
+# Usage: make nag-check-stack STACK=NetworkingStack ENV=development
+nag-check-stack:
+	@if [ -z "$(STACK)" ]; then \
+		echo "Error: STACK parameter required"; \
+		echo "Usage: make nag-check-stack STACK=NetworkingStack ENV=development"; \
+		exit 1; \
+	fi
+	@echo "Checking $(STACK)-$(ENV_FULL) for CDK Nag violations..."
+	@echo ""
+	@cd infrastructure && ENVIRONMENT=$(ENV_FULL) yarn cdk synth $(STACK)-$(ENV_FULL) 2>&1 | grep "AwsSolutions" || echo "✓ No CDK Nag violations found in $(STACK)-$(ENV_FULL)"
+
+# Show only violations (errors that block deployment)
+nag-violations:
+	@echo "Showing CDK Nag VIOLATIONS (errors) for ENV=$(ENV_FULL)..."
+	@echo ""
+	@cd infrastructure && ENVIRONMENT=$(ENV_FULL) yarn cdk synth --all 2>&1 | grep "Error at" || echo "✓ No blocking violations found"
+
+# Show suppressed rules (for audit/review)
+nag-suppressions:
+	@echo "Showing suppressed CDK Nag rules for ENV=$(ENV_FULL)..."
+	@echo ""
+	@cd infrastructure && ENVIRONMENT=$(ENV_FULL) yarn cdk synth --all 2>&1 | grep "Info at" | head -30 || echo "No suppressions found"
+
+# Show specific rule violations across all stacks
+# Usage: make nag-rule RULE=AwsSolutions-IAM5 ENV=development
+nag-rule:
+	@if [ -z "$(RULE)" ]; then \
+		echo "Error: RULE parameter required"; \
+		echo "Usage: make nag-rule RULE=AwsSolutions-IAM5 ENV=development"; \
+		exit 1; \
+	fi
+	@echo "Searching for $(RULE) violations in ENV=$(ENV_FULL)..."
+	@echo ""
+	@cd infrastructure && ENVIRONMENT=$(ENV_FULL) yarn cdk synth --all 2>&1 | grep "$(RULE)" || echo "✓ No $(RULE) violations found"
+
+# Count violations by type
+nag-count:
+	@echo "Counting CDK Nag violations by type for ENV=$(ENV_FULL)..."
+	@echo ""
+	@cd infrastructure && ENVIRONMENT=$(ENV_FULL) yarn cdk synth --all 2>&1 | grep "AwsSolutions" | grep -o "AwsSolutions-[A-Z0-9]*" | sort | uniq -c | sort -rn || echo "No violations found"
 
 
 ##############################################################################
