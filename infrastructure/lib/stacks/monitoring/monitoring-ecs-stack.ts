@@ -246,9 +246,9 @@ export class MonitoringEcsStack extends cdk.Stack {
       "  - name: Prometheus",
       "    type: prometheus",
       "    access: proxy",
-      "    # Use host private IP to reach Prometheus from Grafana (both in BRIDGE mode)",
-      "    # Note: No /prometheus path - that's only for ALB routing",
-      "    url: http://${HOST_IP}:9090",
+      "    # Use host private IP to reach Prometheus from Grafana",
+      "    # Include /prometheus path since Prometheus is configured with --web.route-prefix=/prometheus",
+      "    url: http://${HOST_IP}:9090/prometheus",
       "    isDefault: true",
       "    editable: true",
       "    jsonData:",
@@ -374,6 +374,8 @@ export class MonitoringEcsStack extends cdk.Stack {
       envName: envName,
       dataVolumePath: "/mnt/prometheus-data",
       configVolumePath: "/mnt/prometheus-config",
+      // Use /prometheus prefix for consistent URL structure
+      // Both ALB and Grafana will access at: http://HOST:PORT/prometheus
       webRoutePrefix: "/prometheus",
       webExternalUrl: "/prometheus",
       enableEc2ServiceDiscovery: true,
@@ -538,9 +540,9 @@ export class MonitoringEcsStack extends cdk.Stack {
         port: 9090,
         protocol: elbv2.ApplicationProtocol.HTTP,
         vpc: this.cluster.vpc,
-        targetType: elbv2.TargetType.INSTANCE, // INSTANCE for bridge network mode
+        targetType: elbv2.TargetType.INSTANCE, // INSTANCE for HOST network mode
         healthCheck: {
-          path: "/prometheus/-/healthy",
+          path: "/prometheus/-/healthy", // Prometheus health endpoint with prefix
           healthyHttpCodes: "200",
           interval: cdk.Duration.seconds(30),
           timeout: cdk.Duration.seconds(5),

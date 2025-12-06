@@ -84,7 +84,7 @@ export class PrometheusConstruct extends Construct {
       "TaskDefinition",
       {
         envName: props.envName,
-        networkMode: ecs.NetworkMode.BRIDGE, // BRIDGE mode for dynamic ports
+        networkMode: ecs.NetworkMode.HOST, // HOST mode for static port 9090
         grantEcrReadAccess: false, // Using public registry
 
         // Define volumes for persistent storage
@@ -108,6 +108,7 @@ export class PrometheusConstruct extends Construct {
           {
             name: "prometheus",
             image: ecs.ContainerImage.fromRegistry("prom/prometheus:latest"),
+            // Port 9090 - in HOST mode, this maps to the same port on host
             containerPort: 9090,
             memoryReservationMiB: props.memoryReservationMiB || 256,
             cpu: props.cpu,

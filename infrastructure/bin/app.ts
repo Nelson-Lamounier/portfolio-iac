@@ -379,15 +379,14 @@ if (
   console.log("\n🔗 Setting up cross-account monitoring access");
   console.log(`   Pipeline account: ${config.pipelineAccount}\n`);
 
-  // Import the construct
-  const {
-    CrossAccountMonitoringAccessConstruct,
-  } = require("../lib/constructs");
+  // Import the stack
+  const { CrossAccountMonitoringStack } = require("../lib/stacks");
 
-  new CrossAccountMonitoringAccessConstruct(
+  new CrossAccountMonitoringStack(
     app,
     `CrossAccountMonitoring-${config.envName}`,
     {
+      ...stackProps,
       envName: config.envName,
       pipelineAccountId: config.pipelineAccount,
       enableEventBridge: true,

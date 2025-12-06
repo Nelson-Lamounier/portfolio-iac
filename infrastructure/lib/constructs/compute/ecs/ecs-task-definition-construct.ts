@@ -11,7 +11,7 @@ import { SuppressionManager } from "../../../cdk-nag";
 export interface ContainerConfig {
   name: string;
   image: ecs.ContainerImage;
-  containerPort: number;
+  containerPort?: number; // Optional - not needed for HOST mode without explicit port mapping
   cpu?: number;
   memoryLimitMiB?: number;
   memoryReservationMiB?: number;
@@ -145,18 +145,20 @@ export class EcsTaskDefinitionConstruct extends Construct {
       command: config.command,
     });
 
-    // Add port mapping with dynamic host port for BRIDGE mode
-    // Or use same port for HOST mode
-    const hostPort =
-      this.taskDefinition.networkMode === ecs.NetworkMode.HOST
-        ? config.containerPort
-        : 0; // Dynamic port for BRIDGE mode
+    // Add port mapping only if containerPort is specified
+    // For HOST mode, port mapping is optional as container uses host network directly
+    if (config.containerPort !== undefined) {
+      const hostPort =
+        this.taskDefinition.networkMode === ecs.NetworkMode.HOST
+          ? config.containerPort
+          : 0; // Dynamic port for BRIDGE mode
 
-    container.addPortMappings({
-      containerPort: config.containerPort,
-      hostPort: hostPort,
-      protocol: ecs.Protocol.TCP,
-    });
+      container.addPortMappings({
+        containerPort: config.containerPort,
+        hostPort: hostPort,
+        protocol: ecs.Protocol.TCP,
+      });
+    }
 
     this.containers.set(config.name, container);
   }
