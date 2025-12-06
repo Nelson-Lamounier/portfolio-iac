@@ -10,5 +10,10 @@
     "eu-west-1c"
   ],
   "ssm:account=123456789012:parameterName=/ecr/development/repository-uri:region=eu-west-1": "123456789012.dkr.ecr.eu-west-1.amazonaws.com/portfolio-development",
-  "ssm:account=771826808455:parameterName=/ecr/development/repository-uri:region=eu-west-1": "771826808455.dkr.ecr.eu-west-1.amazonaws.com/app-repo-development"
+  "ssm:account=771826808455:parameterName=/ecr/development/repository-uri:region=eu-west-1": "771826808455.dkr.ecr.eu-west-1.amazonaws.com/app-repo-development",
+  "availability-zones:account=559780231478:region=eu-west-1": [
+    "eu-west-1a",
+    "eu-west-1b",
+    "eu-west-1c"
+  ]
 }

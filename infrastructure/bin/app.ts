@@ -261,42 +261,140 @@ if (ecsSecurityGroup) {
 // 10. Monitoring Stacks (Optional)
 // ========================================
 // Creates CloudWatch alarms, dashboards, and Prometheus/Grafana on EC2
-// Depends on: ComputeStack (ECS cluster and service), LoadBalancerStack (ALB DNS)
+//
+// Two deployment modes:
+// 1. Local monitoring (legacy): Monitoring deployed in same account as application
+// 2. Centralized monitoring: Monitoring deployed in pipeline account for all environments
+//
+// For centralized monitoring, deploy with ENVIRONMENT=pipeline
 if (config.enableMonitoring) {
-  // CloudWatch Monitoring Stack
-  const monitoringStack = new MonitoringStack(
+  // Check if this is the centralized monitoring account
+  if (config.isMonitoringAccount) {
+    console.log("\nDeploying CENTRALIZED monitoring to pipeline account");
+    console.log(
+      `   Monitoring accounts: ${config.monitoredAccounts?.join(", ") || "none"}\n`
+    );
+
+    // For centralized monitoring, we only deploy the monitoring infrastructure
+    // No compute stack needed in pipeline account
+
+    // Create VPC for monitoring infrastructure (if not already created)
+    // Note: networkingStack might not exist in pipeline account, create dedicated one
+    const monitoringVpc =
+      networkingStack ||
+      new NetworkingStack(app, `NetworkingStack-${config.envName}`, {
+        ...stackProps,
+        envName: config.envName,
+        maxAzs: 2,
+        natGateways: 0,
+        enableVpcFlowLogs: true,
+      });
+
+    // CloudWatch Monitoring Stack (receives events from all accounts)
+    const monitoringStack = new MonitoringStack(
+      app,
+      `MonitoringStack-${config.envName}`,
+      {
+        ...stackProps,
+        envName: config.envName,
+        // For centralized monitoring, we'll monitor multiple clusters
+        ecsClusterName: "centralized-monitoring", // Placeholder
+        ecsServiceName: "centralized-monitoring", // Placeholder
+        alertEmail: config.alertEmail,
+        enableDashboard: true, // Always enable dashboard for centralized monitoring
+        enableEventBridge: config.enableEventBridge,
+        pipelineAccountId: config.account, // Pipeline account monitors itself
+      }
+    );
+
+    // ECS Monitoring Stack (Prometheus + Grafana on ECS)
+    const monitoringEcsStack = new MonitoringEcsStack(
+      app,
+      `MonitoringEcsStack-${config.envName}`,
+      {
+        ...stackProps,
+        envName: config.envName,
+        vpc: monitoringVpc.vpc,
+        // No ALB DNS needed for centralized monitoring
+        // Optional: Restrict access to specific IPs
+        // allowedIpRanges: ['YOUR_IP/32'],
+      }
+    );
+
+    if (monitoringVpc !== networkingStack) {
+      monitoringEcsStack.addDependency(monitoringVpc);
+    }
+  } else {
+    // Local monitoring mode (legacy) - monitoring in same account as application
+    console.log("\nDeploying LOCAL monitoring to application account");
+    console.log(`   Environment: ${config.envName}\n`);
+
+    // CloudWatch Monitoring Stack
+    const monitoringStack = new MonitoringStack(
+      app,
+      `MonitoringStack-${config.envName}`,
+      {
+        ...stackProps,
+        envName: config.envName,
+        ecsClusterName: computeStack.cluster.clusterName,
+        ecsServiceName: computeStack.service.serviceName,
+        alertEmail: config.alertEmail,
+        enableDashboard: config.envName === "production",
+        enableEventBridge: config.enableEventBridge,
+        pipelineAccountId: config.pipelineAccount,
+      }
+    );
+
+    monitoringStack.addDependency(computeStack);
+
+    // ECS Monitoring Stack (Prometheus + Grafana on ECS)
+    const monitoringEcsStack = new MonitoringEcsStack(
+      app,
+      `MonitoringEcsStack-${config.envName}`,
+      {
+        ...stackProps,
+        envName: config.envName,
+        vpc: networkingStack.vpc,
+        albDnsName: loadBalancerStack.alb.loadBalancer.loadBalancerDnsName,
+        // Optional: Restrict access to specific IPs
+        // allowedIpRanges: ['YOUR_IP/32'],
+      }
+    );
+
+    monitoringEcsStack.addDependency(networkingStack);
+    monitoringEcsStack.addDependency(loadBalancerStack);
+  }
+}
+
+// ========================================
+// 11. Cross-Account Monitoring Access (for centralized monitoring)
+// ========================================
+// If this is an application account (dev/staging/production) and we have a pipeline account,
+// create IAM roles and EventBridge rules to allow centralized monitoring
+if (
+  !config.isMonitoringAccount &&
+  config.pipelineAccount &&
+  config.enableEventBridge
+) {
+  console.log("\n🔗 Setting up cross-account monitoring access");
+  console.log(`   Pipeline account: ${config.pipelineAccount}\n`);
+
+  // Import the construct
+  const {
+    CrossAccountMonitoringAccessConstruct,
+  } = require("../lib/constructs");
+
+  new CrossAccountMonitoringAccessConstruct(
     app,
-    `MonitoringStack-${config.envName}`,
+    `CrossAccountMonitoring-${config.envName}`,
     {
-      ...stackProps,
       envName: config.envName,
-      ecsClusterName: computeStack.cluster.clusterName,
-      ecsServiceName: computeStack.service.serviceName,
-      alertEmail: config.alertEmail,
-      enableDashboard: config.envName === "production",
-      enableEventBridge: config.enableEventBridge,
       pipelineAccountId: config.pipelineAccount,
+      enableEventBridge: true,
+      enableCloudWatch: true,
+      enableEcsAccess: true,
     }
   );
-
-  monitoringStack.addDependency(computeStack);
-
-  // ECS Monitoring Stack (Prometheus + Grafana on ECS)
-  const monitoringEcsStack = new MonitoringEcsStack(
-    app,
-    `MonitoringEcsStack-${config.envName}`,
-    {
-      ...stackProps,
-      envName: config.envName,
-      vpc: networkingStack.vpc,
-      albDnsName: loadBalancerStack.alb.loadBalancer.loadBalancerDnsName,
-      // Optional: Restrict access to specific IPs
-      // allowedIpRanges: ['YOUR_IP/32'],
-    }
-  );
-
-  monitoringEcsStack.addDependency(networkingStack);
-  monitoringEcsStack.addDependency(loadBalancerStack);
 }
 
 // ========================================

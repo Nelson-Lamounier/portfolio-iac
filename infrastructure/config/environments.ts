@@ -11,6 +11,8 @@ export interface EnvironmentConfig {
   enableMonitoring?: boolean; // Enable CloudWatch monitoring and alarms
   enableEventBridge?: boolean; // Enable cross-account EventBridge monitoring
   alertEmail?: string; // Email address for CloudWatch alarms
+  isMonitoringAccount?: boolean; // True if this account hosts centralized monitoring
+  monitoredAccounts?: string[]; // List of account IDs to monitor (for monitoring account)
 }
 
 // Record type provides type-safe access with autocomplete
@@ -46,5 +48,21 @@ export const environments: Record<string, EnvironmentConfig> = {
     enableMonitoring: true, // Always enabled for production
     enableEventBridge: true, // Cross-account monitoring
     alertEmail: process.env.ALERT_EMAIL,
+  },
+
+  // Pipeline account - hosts centralized monitoring for all environments
+  pipeline: {
+    account: process.env.AWS_PIPELINE_ACCOUNT_ID || "",
+    region: process.env.AWS_REGION || "eu-west-1",
+    envName: "pipeline",
+    enableMonitoring: true, // Centralized monitoring enabled
+    enableEventBridge: true, // Receives events from all accounts
+    alertEmail: process.env.ALERT_EMAIL,
+    isMonitoringAccount: true, // This is the centralized monitoring account
+    monitoredAccounts: [
+      process.env.AWS_ACCOUNT_ID_DEV || "",
+      process.env.AWS_ACCOUNT_ID_STAGING || "",
+      process.env.AWS_ACCOUNT_ID_PROD || "",
+    ].filter(Boolean), // Filter out empty strings
   },
 };

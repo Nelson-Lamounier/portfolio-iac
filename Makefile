@@ -33,6 +33,13 @@ help:
 	@echo "  check-monitoring-ecs    - Check ECS monitoring status (ENV=development)"
 	@echo "  logs-monitoring-ecs     - Show log group names for monitoring (ENV=development)"
 	@echo ""
+	@echo "Centralized Monitoring (Pipeline Account):"
+	@echo "  deploy-monitoring-centralized   - Deploy centralized monitoring to pipeline account"
+	@echo "  setup-cross-account-access      - Setup cross-account access in dev/staging/prod"
+	@echo "  check-monitoring-centralized    - Check centralized monitoring status"
+	@echo "  destroy-monitoring-centralized  - Destroy centralized monitoring"
+	@echo "  logs-monitoring-centralized     - Show log groups for centralized monitoring"
+	@echo ""
 	@echo "CDK Nag (Security) targets:"
 	@echo "  nag-help             - Show detailed CDK Nag troubleshooting guide"
 	@echo "  nag-check            - Check all stacks for violations (ENV=development)"
@@ -201,6 +208,114 @@ logs-monitoring-ecs:
 	@echo "  - /ecs/$(ENV)-node-exporter"
 	@echo ""
 	@echo "Usage: aws logs tail /ecs/$(ENV)-grafana --follow"
+
+##############################################################################
+# CENTRALIZED MONITORING (Pipeline Account)
+##############################################################################
+# Deploy monitoring infrastructure to pipeline account for centralized monitoring
+# of all environments (dev, staging, production)
+
+.PHONY: deploy-monitoring-centralized destroy-monitoring-centralized check-monitoring-centralized setup-cross-account-access
+
+# Deploy centralized monitoring to pipeline account
+deploy-monitoring-centralized:
+	@echo "========================================="
+	@echo "Deploying CENTRALIZED monitoring to pipeline account"
+	@echo "========================================="
+	@echo ""
+	@echo "This will deploy:"
+	@echo "  - NetworkingStack-pipeline (VPC for monitoring)"
+	@echo "  - MonitoringStack-pipeline (CloudWatch, SNS, EventBridge)"
+	@echo "  - MonitoringEcsStack-pipeline (Prometheus, Grafana, Node Exporter)"
+	@echo ""
+	@cd infrastructure && ENVIRONMENT=pipeline yarn cdk deploy \
+		NetworkingStack-pipeline \
+		MonitoringStack-pipeline \
+		MonitoringEcsStack-pipeline \
+		--profile github-actions \
+		--require-approval never
+	@echo ""
+	@echo "✓ Centralized monitoring deployed!"
+	@echo ""
+	@echo "Next steps:"
+	@echo "  1. Run 'make setup-cross-account-access' to configure application accounts"
+	@echo "  2. Get monitoring URLs with 'make check-monitoring-centralized'"
+
+# Deploy only the monitoring stacks (assumes VPC exists)
+deploy-monitoring-centralized-only:
+	@echo "Deploying monitoring stacks to pipeline account..."
+	@cd infrastructure && ENVIRONMENT=pipeline yarn cdk deploy \
+		MonitoringStack-pipeline \
+		MonitoringEcsStack-pipeline \
+		--require-approval never
+
+# Setup cross-account access in application accounts
+setup-cross-account-access:
+	@echo "========================================="
+	@echo "Setting up cross-account monitoring access"
+	@echo "========================================="
+	@echo ""
+	@echo "This will create IAM roles and EventBridge rules in:"
+	@echo "  - Development account"
+	@echo "  - Staging account"
+	@echo "  - Production account"
+	@echo ""
+	@echo "Deploying to development..."
+	@cd infrastructure && ENVIRONMENT=development yarn cdk deploy CrossAccountMonitoring-development --require-approval never
+	@echo ""
+	@echo "Deploying to staging..."
+	@cd infrastructure && ENVIRONMENT=staging yarn cdk deploy CrossAccountMonitoring-staging --require-approval never
+	@echo ""
+	@echo "Deploying to production..."
+	@cd infrastructure && ENVIRONMENT=production yarn cdk deploy CrossAccountMonitoring-production --require-approval never
+	@echo ""
+	@echo "✓ Cross-account access configured!"
+
+# Check centralized monitoring status
+check-monitoring-centralized:
+	@echo "========================================="
+	@echo "Centralized Monitoring Status"
+	@echo "========================================="
+	@echo ""
+	@echo "Checking pipeline account stacks..."
+	@aws cloudformation describe-stacks \
+		--stack-name MonitoringEcsStack-pipeline \
+		--query 'Stacks[0].{Status:StackStatus,Outputs:Outputs}' \
+		--output table || echo "Stack not found"
+	@echo ""
+	@echo "Getting monitoring URLs..."
+	@aws cloudformation describe-stacks \
+		--stack-name MonitoringEcsStack-pipeline \
+		--query 'Stacks[0].Outputs[?OutputKey==`GrafanaUrl` || OutputKey==`PrometheusUrl`].{Service:OutputKey,URL:OutputValue}' \
+		--output table || echo "No outputs found"
+
+# Destroy centralized monitoring
+destroy-monitoring-centralized:
+	@echo "========================================="
+	@echo "WARNING: Destroying centralized monitoring"
+	@echo "========================================="
+	@echo ""
+	@echo "This will destroy all monitoring infrastructure in pipeline account"
+	@read -p "Are you sure? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		cd infrastructure && ENVIRONMENT=pipeline yarn cdk destroy \
+			MonitoringEcsStack-pipeline \
+			MonitoringStack-pipeline \
+			NetworkingStack-pipeline \
+			--force; \
+	fi
+
+# Get centralized monitoring logs
+logs-monitoring-centralized:
+	@echo "Centralized monitoring log groups:"
+	@echo "  - /ecs/pipeline-prometheus"
+	@echo "  - /ecs/pipeline-grafana"
+	@echo "  - /ecs/pipeline-node-exporter"
+	@echo ""
+	@echo "Usage examples:"
+	@echo "  aws logs tail /ecs/pipeline-grafana --follow"
+	@echo "  aws logs tail /ecs/pipeline-prometheus --since 1h"
 
 
 ##############################################################################
