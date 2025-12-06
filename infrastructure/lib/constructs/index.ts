@@ -2,6 +2,9 @@
 
 // Constructs organized by service domain
 
+// IAM constructs (centralized)
+export * from "./iam";
+
 // Networking constructs
 export * from "./networking";
 

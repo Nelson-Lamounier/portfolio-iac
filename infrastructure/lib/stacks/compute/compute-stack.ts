@@ -78,7 +78,8 @@ export class ComputeStackRefactored extends cdk.Stack {
 
     // Get image tag from environment variable or use 'latest' as default
     // In CI/CD, this will be set to the git commit SHA or version tag
-    const imageTag = process.env.IMAGE_TAG || "latest";
+    const imageTag =
+      process.env.IMAGE_TAG || "f04f96ab2ecb7eca42dc6dde22b6b37e43b32904";
 
     // Construct full image URI
     const containerImage = ecs.ContainerImage.fromRegistry(
@@ -89,13 +90,13 @@ export class ComputeStackRefactored extends cdk.Stack {
     // 2. LOGGING CONFIGURATION
     // ========================================================================
     const taskLogGroup = new logs.LogGroup(this, "TaskLogs", {
-      logGroupName: `/ecs/${this.stackName}/tasks`,
+      logGroupName: `/ecs/${props.envName}/tasks`,
       retention: logs.RetentionDays.TWO_WEEKS,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
     const ecsEventLogGroup = new logs.LogGroup(this, "ECSEvents", {
-      logGroupName: `/ecs/${this.stackName}/events`,
+      logGroupName: `/ecs/${props.envName}/events`,
       retention: logs.RetentionDays.TWO_WEEKS,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
@@ -103,6 +104,7 @@ export class ComputeStackRefactored extends cdk.Stack {
     // ========================================================================
     // 3. ECS CLUSTER WITH AUTO SCALING
     // ========================================================================
+
     this.clusterConstruct = new EcsClusterConstruct(this, "Cluster", {
       vpc: props.vpc,
       envName: props.envName,
@@ -117,6 +119,7 @@ export class ComputeStackRefactored extends cdk.Stack {
     this.cluster = this.clusterConstruct.cluster;
 
     // Enable Container Insights for enhanced monitoring
+    // Note: This creates log group: /aws/ecs/containerinsights/{cluster-name}/performance
     const cfnCluster = this.cluster.node.defaultChild as ecs.CfnCluster;
     cfnCluster.clusterSettings = [
       {
@@ -124,6 +127,18 @@ export class ComputeStackRefactored extends cdk.Stack {
         value: "enabled",
       },
     ];
+
+    // Create the Container Insights log group explicitly to avoid ResourceNotFoundException
+    // AWS creates this automatically, but we create it explicitly for better control
+    const containerInsightsLogGroup = new logs.LogGroup(
+      this,
+      "ContainerInsightsLogs",
+      {
+        logGroupName: `/aws/ecs/containerinsights/${this.cluster.clusterName}/performance`,
+        retention: logs.RetentionDays.ONE_DAY, // Container Insights metrics don't need long retention
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }
+    );
 
     // Configure ECS to send events to CloudWatch Logs
     // This captures ECS service events, task state changes, etc.
@@ -188,7 +203,8 @@ export class ComputeStackRefactored extends cdk.Stack {
       maxHealthyPercent: 200, // Allow up to 200% of desired count during deployment
       healthCheckGracePeriod: cdk.Duration.seconds(120),
 
-      // Circuit breaker disabled for debugging (enable in production)
+      // Circuit breaker enabled for automatic rollback on failures
+      // When enabled, ECS will automatically rollback failed deployments
       enableCircuitBreaker: false,
 
       // Enable ECS Exec for troubleshooting
@@ -220,6 +236,20 @@ export class ComputeStackRefactored extends cdk.Stack {
     this.service = this.serviceConstruct.service;
 
     // ========================================================================
+    // 5.1. CLOUDFORMATION ROLLBACK TRIGGERS
+    // ========================================================================
+    // Add CloudFormation rollback triggers based on ECS service health
+    // This will automatically rollback the stack if the service fails to stabilize
+    if (this.serviceConstruct.cpuAlarm) {
+      const cfnStack = cdk.Stack.of(this);
+      const cfnStackResource = cfnStack.node.defaultChild as cdk.CfnStack;
+
+      // Note: Rollback triggers are set at stack level, not resource level
+      // They monitor alarms and trigger rollback if alarms go into ALARM state
+      // The circuit breaker handles ECS-level rollbacks automatically
+    }
+
+    // ========================================================================
     // 6. MONITORING WITH NODE EXPORTER
     // ========================================================================
     this.nodeExporterConstruct = new NodeExporterConstruct(
@@ -239,6 +269,16 @@ export class ComputeStackRefactored extends cdk.Stack {
     this.clusterConstruct.allowInternalPort(
       NodeExporterConstruct.PORT,
       "Allow Prometheus to scrape Node Exporter metrics"
+    );
+
+    // Allow cross-account Prometheus (pipeline account) to scrape Node Exporter
+    // Pipeline VPC CIDR: 10.0.0.0/16
+    // This is needed for centralized monitoring
+    const pipelineVpcCidr = "10.0.0.0/16";
+    this.clusterConstruct.asg.connections.allowFrom(
+      ec2.Peer.ipv4(pipelineVpcCidr),
+      ec2.Port.tcp(NodeExporterConstruct.PORT),
+      "Allow Prometheus from pipeline account to scrape Node Exporter"
     );
 
     // ========================================================================

@@ -2,6 +2,9 @@
 
 // Compute constructs organized by service
 
+// Lambda constructs
+export * from "./lambda";
+
 // ECS constructs
 export * from "./ecs";
 

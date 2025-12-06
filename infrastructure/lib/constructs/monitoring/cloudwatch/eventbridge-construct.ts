@@ -5,8 +5,8 @@ import * as events from "aws-cdk-lib/aws-events";
 import * as targets from "aws-cdk-lib/aws-events-targets";
 import * as sns from "aws-cdk-lib/aws-sns";
 import * as logs from "aws-cdk-lib/aws-logs";
-import * as iam from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
+import { EventBridgeCrossAccountRole } from "../../iam";
 
 export interface EventBridgeConstructProps {
   envName: string;
@@ -229,24 +229,21 @@ export class EventBridgeConstruct extends Construct {
       }:event-bus/default`
     );
 
-    // Create IAM role for EventBridge to send events cross-account
-    const crossAccountRole = new iam.Role(this, "EventBridgeCrossAccountRole", {
-      roleName: `eventbridge-cross-account-${props.envName}`,
-      assumedBy: new iam.ServicePrincipal("events.amazonaws.com"),
-      description: `Allows EventBridge to send events to pipeline account`,
-    });
+    // Create IAM role for EventBridge to send events cross-account using centralized construct
+    const targetEventBusArn = `arn:aws:events:${cdk.Stack.of(this).region}:${
+      props.pipelineAccountId
+    }:event-bus/cross-account-monitoring`;
 
-    crossAccountRole.addToPolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: ["events:PutEvents"],
-        resources: [
-          `arn:aws:events:${cdk.Stack.of(this).region}:${
-            props.pipelineAccountId
-          }:event-bus/cross-account-monitoring`,
-        ],
-      })
+    const crossAccountRoleConstruct = new EventBridgeCrossAccountRole(
+      this,
+      "EventBridgeCrossAccountRole",
+      {
+        envName: props.envName,
+        targetEventBusArn,
+      }
     );
+
+    const crossAccountRole = crossAccountRoleConstruct.role;
 
     // Rule 1: Forward ECS events to pipeline account
     const ecsRule = new events.Rule(this, "ForwardEcsEvents", {

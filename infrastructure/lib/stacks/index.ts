@@ -2,12 +2,14 @@
 
 // Networking stacks
 export * from "./networking/networking-stack";
+export * from "./networking/vpc-peering-stack";
 
 // Storage stacks
 export * from "./storage/storage-stack";
 
 // Compute stacks
 export * from "./compute/compute-stack";
+export * from "./compute/lambda-stack";
 
 // Monitoring stacks
 export * from "./monitoring/monitoring-stack";

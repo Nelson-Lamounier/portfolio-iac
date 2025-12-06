@@ -7,6 +7,7 @@ import { Tags } from "aws-cdk-lib";
 import { Construct } from "constructs";
 import { NagSuppressions } from "cdk-nag";
 import { SuppressionManager } from "../../../cdk-nag";
+import { EcsTaskExecutionRole } from "../../iam";
 
 export interface ContainerConfig {
   name: string;
@@ -49,59 +50,18 @@ export class EcsTaskDefinitionConstruct extends Construct {
     this.containers = new Map();
 
     // Create or use provided execution role
-    // We need to create this explicitly before the task definition if we want to add permissions
     let executionRole = props.executionRole;
     if (!executionRole && props.grantEcrReadAccess !== false) {
-      // Create execution role with custom inline policy instead of AWS managed policy
-      // This addresses CDK Nag AwsSolutions-IAM4
-      executionRole = new iam.Role(this, "ExecutionRole", {
-        assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
-        description:
-          "Execution role for ECS task with least privilege permissions",
-      });
-
-      // Add CloudWatch Logs permissions
-      // Required for ECS to send container logs to CloudWatch
-      executionRole.addToPrincipalPolicy(
-        new iam.PolicyStatement({
-          effect: iam.Effect.ALLOW,
-          actions: ["logs:CreateLogStream", "logs:PutLogEvents"],
-          resources: [
-            `arn:aws:logs:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:log-group:/ecs/${props.envName}*:*`,
-          ],
-        })
+      // Use centralized ECS task execution role construct
+      const executionRoleConstruct = new EcsTaskExecutionRole(
+        this,
+        "ExecutionRole",
+        {
+          envName: props.envName,
+          enablePublicEcr: false, // Only enable if needed
+        }
       );
-
-      // Add ECR permissions
-      // Required for ECS to pull container images from ECR
-      executionRole.addToPrincipalPolicy(
-        new iam.PolicyStatement({
-          effect: iam.Effect.ALLOW,
-          actions: ["ecr:GetAuthorizationToken"],
-          resources: ["*"], // GetAuthorizationToken doesn't support resource-level permissions
-        })
-      );
-
-      executionRole.addToPrincipalPolicy(
-        new iam.PolicyStatement({
-          effect: iam.Effect.ALLOW,
-          actions: [
-            "ecr:BatchCheckLayerAvailability",
-            "ecr:GetDownloadUrlForLayer",
-            "ecr:BatchGetImage",
-          ],
-          resources: [
-            `arn:aws:ecr:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:repository/*`,
-          ],
-        })
-      );
-
-      // Add CDK Nag suppressions for execution role permissions
-      NagSuppressions.addResourceSuppressions(
-        executionRole,
-        SuppressionManager.getExecutionRoleSuppressions(props.envName),
-        true
-      );
+      executionRole = executionRoleConstruct.role;
     }
 
     // Create Task Definition
