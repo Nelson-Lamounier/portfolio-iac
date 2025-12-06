@@ -2,11 +2,10 @@
 
 import * as cdk from "aws-cdk-lib";
 import * as ecs from "aws-cdk-lib/aws-ecs";
-import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
 import { Tags } from "aws-cdk-lib";
 import { Construct } from "constructs";
-import { NagSuppressions } from "cdk-nag";
+import { EcsTaskExecutionRole } from "../../iam";
 
 export interface NodeExporterConstructProps {
   cluster: ecs.ICluster;
@@ -36,66 +35,17 @@ export class NodeExporterConstruct extends Construct {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    // Create execution role with custom inline policies (CDK Nag compliant)
-    const executionRole = new iam.Role(this, "ExecutionRole", {
-      assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
-      description: "Execution role for Node Exporter task with least privilege",
-    });
-
-    // Add CloudWatch Logs permissions
-    executionRole.addToPrincipalPolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: ["logs:CreateLogStream", "logs:PutLogEvents"],
-        resources: [this.logGroup.logGroupArn + ":*"],
-      })
+    // Use centralized ECS task execution role construct
+    const executionRoleConstruct = new EcsTaskExecutionRole(
+      this,
+      "ExecutionRole",
+      {
+        envName: props.envName,
+        enablePublicEcr: true, // Node Exporter uses public Docker Hub image
+        logGroupArn: this.logGroup.logGroupArn,
+      }
     );
-
-    // Add ECR permissions for pulling public images
-    // GetAuthorizationToken is required even for public images
-    executionRole.addToPrincipalPolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: ["ecr:GetAuthorizationToken"],
-        resources: ["*"], // GetAuthorizationToken doesn't support resource-level permissions
-      })
-    );
-
-    // Add permissions to pull from public ECR (Docker Hub in this case)
-    executionRole.addToPrincipalPolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: [
-          "ecr-public:GetAuthorizationToken",
-          "sts:GetServiceBearerToken",
-        ],
-        resources: ["*"], // Required for public registry access
-      })
-    );
-
-    // Apply CDK Nag suppressions for necessary wildcards
-    NagSuppressions.addResourceSuppressions(
-      executionRole,
-      [
-        {
-          id: "AwsSolutions-IAM5",
-          reason:
-            "ECR GetAuthorizationToken and public registry access do not support resource-level permissions. This is an AWS service limitation for container image authentication.",
-          appliesTo: ["Resource::*"],
-        },
-        {
-          id: "AwsSolutions-IAM5",
-          reason:
-            "CloudWatch Logs permissions use wildcard for log streams within the specific log group. This allows ECS to create log streams dynamically.",
-          appliesTo: [
-            {
-              regex: "/^Resource::.*/",
-            },
-          ],
-        },
-      ],
-      true
-    );
+    const executionRole = executionRoleConstruct.role;
 
     // Create task definition with HOST network mode
     this.taskDefinition = new ecs.Ec2TaskDefinition(this, "TaskDef", {
@@ -159,13 +109,23 @@ export class NodeExporterConstruct extends Construct {
       }
     );
 
-    // Create service
+    // Create service with DAEMON scheduling strategy
+    // This ensures exactly ONE Node Exporter per EC2 instance
+    // Prevents port conflicts when using HOST network mode
     this.service = new ecs.Ec2Service(this, "Service", {
       cluster: props.cluster,
       taskDefinition: this.taskDefinition,
       serviceName: props.serviceName || `${props.envName}-node-exporter`,
-      desiredCount: 1,
+
+      // DAEMON strategy: One task per EC2 instance (no desiredCount needed)
+      // This prevents port 9100 conflicts
+      daemon: true,
+
       enableExecuteCommand: props.enableExecuteCommand,
+
+      // Deployment configuration for daemon services
+      minHealthyPercent: 0, // Allow stopping all tasks during deployment
+      maxHealthyPercent: 100, // Only one task per instance
     });
 
     // Tag resources

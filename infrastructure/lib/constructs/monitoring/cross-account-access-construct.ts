@@ -1,9 +1,10 @@
 /** @format */
 
 import * as cdk from "aws-cdk-lib";
-import * as iam from "aws-cdk-lib/aws-iam";
 import * as events from "aws-cdk-lib/aws-events";
+import * as iam from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
+import { CrossAccountMonitoringRole } from "../iam";
 
 export interface CrossAccountMonitoringAccessProps {
   /**
@@ -59,7 +60,7 @@ export interface CrossAccountMonitoringAccessProps {
  * ```
  */
 export class CrossAccountMonitoringAccessConstruct extends Construct {
-  public readonly monitoringRole: iam.Role;
+  public readonly monitoringRole: CrossAccountMonitoringRole;
   public readonly eventForwardingRule?: events.Rule;
 
   constructor(
@@ -80,90 +81,18 @@ export class CrossAccountMonitoringAccessConstruct extends Construct {
     // ========================================================================
     // IAM ROLE FOR CROSS-ACCOUNT ACCESS
     // ========================================================================
-    // This role allows the pipeline account to read monitoring data
-    this.monitoringRole = new iam.Role(this, "MonitoringAccessRole", {
-      roleName: `${envName}-PipelineMonitoringAccess`,
-      assumedBy: new iam.AccountPrincipal(pipelineAccountId),
-      description: `Allow pipeline account to read monitoring data from ${envName} environment`,
-      maxSessionDuration: cdk.Duration.hours(12),
-    });
-
-    // CloudWatch permissions
-    if (enableCloudWatch) {
-      this.monitoringRole.addToPolicy(
-        new iam.PolicyStatement({
-          sid: "CloudWatchMetricsAccess",
-          effect: iam.Effect.ALLOW,
-          actions: [
-            "cloudwatch:GetMetricData",
-            "cloudwatch:GetMetricStatistics",
-            "cloudwatch:ListMetrics",
-            "cloudwatch:DescribeAlarms",
-            "cloudwatch:DescribeAlarmsForMetric",
-          ],
-          resources: ["*"],
-        })
-      );
-
-      this.monitoringRole.addToPolicy(
-        new iam.PolicyStatement({
-          sid: "CloudWatchLogsAccess",
-          effect: iam.Effect.ALLOW,
-          actions: [
-            "logs:FilterLogEvents",
-            "logs:GetLogEvents",
-            "logs:DescribeLogGroups",
-            "logs:DescribeLogStreams",
-          ],
-          resources: [
-            `arn:aws:logs:${cdk.Stack.of(this).region}:${
-              cdk.Stack.of(this).account
-            }:log-group:/ecs/*`,
-            `arn:aws:logs:${cdk.Stack.of(this).region}:${
-              cdk.Stack.of(this).account
-            }:log-group:/aws/ecs/*`,
-          ],
-        })
-      );
-    }
-
-    // ECS permissions for service discovery
-    if (enableEcsAccess) {
-      this.monitoringRole.addToPolicy(
-        new iam.PolicyStatement({
-          sid: "EcsServiceDiscovery",
-          effect: iam.Effect.ALLOW,
-          actions: [
-            "ecs:DescribeClusters",
-            "ecs:DescribeServices",
-            "ecs:DescribeTasks",
-            "ecs:DescribeTaskDefinition",
-            "ecs:DescribeContainerInstances",
-            "ecs:ListClusters",
-            "ecs:ListServices",
-            "ecs:ListTasks",
-            "ecs:ListContainerInstances",
-          ],
-          resources: ["*"],
-        })
-      );
-
-      // EC2 permissions for Prometheus service discovery
-      this.monitoringRole.addToPolicy(
-        new iam.PolicyStatement({
-          sid: "Ec2ServiceDiscovery",
-          effect: iam.Effect.ALLOW,
-          actions: [
-            "ec2:DescribeInstances",
-            "ec2:DescribeInstanceStatus",
-            "ec2:DescribeTags",
-            "ec2:DescribeRegions",
-            "ec2:DescribeAvailabilityZones",
-          ],
-          resources: ["*"],
-        })
-      );
-    }
+    // Use centralized IAM role construct
+    this.monitoringRole = new CrossAccountMonitoringRole(
+      this,
+      "MonitoringRole",
+      {
+        envName,
+        pipelineAccountId,
+        enableCloudWatch,
+        enableEcsAccess,
+        enableEc2ServiceDiscovery: enableEcsAccess, // EC2 discovery needed for ECS
+      }
+    );
 
     // ========================================================================
     // EVENTBRIDGE CROSS-ACCOUNT FORWARDING
