@@ -55,17 +55,44 @@ scrape_configs:
 
   # Your Next.js application (if it exposes metrics)
   # Uncomment and adjust when you add metrics to your app
-  - job_name: 'nextjs-app'
+  - job_name: "nextjs-app"
     metrics_path: /api/metrics
     static_configs:
-      - targets: ['host.docker.internal:3000']
+      - targets: ["host.docker.internal:3000"]
         labels:
-          service: 'nextjs'
-          environment: 'development'
+          service: "nextjs"
+          environment: "development"
 
-  # AWS ECS metrics (when deployed)clao
-  # This will be configured differently in production
-  # - job_name: 'ecs-tasks'
-  #   ec2_sd_configs:
-  #     - region: eu-west-1
-  #       port: 9090
+  # ========================================
+  # Cross-Account Scraping (Pipeline Account)
+  # ========================================
+  # These targets are scraped via VPC peering from the pipeline account
+  # Update the IP addresses after deploying each environment
+
+  # Development Environment - Node Exporter
+  # IP will be updated by scripts/monitoring/setup-cross-account-scraping.sh
+  # - job_name: 'node-exporter-development'
+  #   static_configs:
+  #     - targets: ['10.1.x.x:9100']  # Update with dev instance IP
+  #       labels:
+  #         service: 'node-exporter'
+  #         environment: 'development'
+  #         account: 'development'
+
+  # Staging Environment - Node Exporter (future)
+  # - job_name: 'node-exporter-staging'
+  #   static_configs:
+  #     - targets: ['10.2.x.x:9100']
+  #       labels:
+  #         service: 'node-exporter'
+  #         environment: 'staging'
+  #         account: 'staging'
+
+  # Production Environment - Node Exporter (future)
+  # - job_name: 'node-exporter-production'
+  #   static_configs:
+  #     - targets: ['10.3.x.x:9100']
+  #       labels:
+  #         service: 'node-exporter'
+  #         environment: 'production'
+  #         account: 'production'
