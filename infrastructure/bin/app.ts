@@ -323,6 +323,48 @@ if (config.enableMonitoring) {
       }
     );
 
+    // Build cross-account targets from environment variables
+    // These are the private IPs of Node Exporter instances in other accounts
+    // Set via: DEV_NODE_EXPORTER_IP, STAGING_NODE_EXPORTER_IP, PROD_NODE_EXPORTER_IP
+    const crossAccountTargets: Array<{
+      envName: string;
+      privateIp: string;
+      port?: number;
+    }> = [];
+
+    if (process.env.DEV_NODE_EXPORTER_IP) {
+      crossAccountTargets.push({
+        envName: "development",
+        privateIp: process.env.DEV_NODE_EXPORTER_IP,
+        port: 9100,
+      });
+      console.log(
+        `   Adding development target: ${process.env.DEV_NODE_EXPORTER_IP}:9100`
+      );
+    }
+
+    if (process.env.STAGING_NODE_EXPORTER_IP) {
+      crossAccountTargets.push({
+        envName: "staging",
+        privateIp: process.env.STAGING_NODE_EXPORTER_IP,
+        port: 9100,
+      });
+      console.log(
+        `   Adding staging target: ${process.env.STAGING_NODE_EXPORTER_IP}:9100`
+      );
+    }
+
+    if (process.env.PROD_NODE_EXPORTER_IP) {
+      crossAccountTargets.push({
+        envName: "production",
+        privateIp: process.env.PROD_NODE_EXPORTER_IP,
+        port: 9100,
+      });
+      console.log(
+        `   Adding production target: ${process.env.PROD_NODE_EXPORTER_IP}:9100`
+      );
+    }
+
     // ECS Monitoring Stack (Prometheus + Grafana on ECS)
     const monitoringEcsStack = new MonitoringEcsStack(
       app,
@@ -331,7 +373,9 @@ if (config.enableMonitoring) {
         ...stackProps,
         envName: config.envName,
         vpc: monitoringVpc.vpc,
-        // No ALB DNS needed for centralized monitoring
+        // Cross-account targets for Prometheus to scrape via VPC peering
+        crossAccountTargets:
+          crossAccountTargets.length > 0 ? crossAccountTargets : undefined,
         // Optional: Restrict access to specific IPs
         // allowedIpRanges: ['YOUR_IP/32'],
       }
