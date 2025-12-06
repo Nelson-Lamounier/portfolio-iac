@@ -1,0 +1,3757 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`ComputeStack Test Suite Snapshots Auto Scaling Group matches snapshot 1`] = `
+{
+  "ClusterDefaultAutoScalingGroupASGDD37B8D0": {
+    "Metadata": {
+      "cdk_nag": {
+        "rules_to_suppress": [
+          {
+            "applies_to": [
+              "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+            ],
+            "id": "AwsSolutions-IAM4",
+            "reason": "AWS managed policies are used for Lambda functions created by CDK for custom resources (Auto Scaling lifecycle hooks, VPC default security group restriction, EventBridge targets). These are standard CloudFormation custom resource Lambda functions managed by CDK.",
+          },
+          {
+            "applies_to": [
+              "Resource::*",
+            ],
+            "id": "AwsSolutions-IAM5",
+            "reason": "Wildcard permissions are used by CDK-managed custom resource Lambdas for EventBridge to CloudWatch Logs integration and other CDK framework operations. This is required by the CDK framework to manage resource policies and cannot be scoped further. This is standard CDK behavior.",
+          },
+          {
+            "applies_to": [
+              "Action::ecs:Submit*",
+            ],
+            "id": "AwsSolutions-IAM5",
+            "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices and is created by CDK's Auto Scaling Group construct.",
+          },
+          {
+            "applies_to": [
+              {
+                "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+              },
+            ],
+            "id": "AwsSolutions-IAM5",
+            "reason": "Auto Scaling Group lifecycle hook Lambda (DrainECSHook) requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining. This is a CDK-managed resource.",
+          },
+          {
+            "id": "AwsSolutions-L1",
+            "reason": "Lambda runtime versions are managed by CDK for custom resources. CDK automatically updates these with new releases. Upgrading CDK version will update these runtimes.",
+          },
+          {
+            "applies_to": [
+              "Resource::*",
+            ],
+            "id": "AwsSolutions-IAM5",
+            "reason": "Auto Scaling lifecycle hooks require permissions to describe instances and complete lifecycle actions. These permissions are scoped to the specific Auto Scaling Group and are necessary for proper instance lifecycle management.",
+          },
+          {
+            "id": "AwsSolutions-AS3",
+            "reason": "Auto Scaling Group notifications are optional for development environments. For production, consider enabling SNS notifications for scaling events to improve operational visibility.",
+          },
+          {
+            "id": "AwsSolutions-EC26",
+            "reason": "EBS encryption can be managed at the account level via AWS Config or enabled per-environment. For development environments, unencrypted volumes reduce costs. Production environments should enable EBS encryption.",
+          },
+          {
+            "applies_to": [
+              "Resource::*",
+            ],
+            "id": "AwsSolutions-IAM5",
+            "reason": "ECS service requires permissions to describe and manage tasks within its cluster. The wildcard is scoped to the specific cluster ARN and is necessary for ECS service operations like task placement, health checks, and service discovery.",
+          },
+          {
+            "applies_to": [
+              "Action::ecs:Submit*",
+            ],
+            "id": "AwsSolutions-IAM5",
+            "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices.",
+          },
+          {
+            "applies_to": [
+              {
+                "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+              },
+            ],
+            "id": "AwsSolutions-IAM5",
+            "reason": "Auto Scaling Group lifecycle hook Lambda requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining.",
+          },
+          {
+            "id": "AwsSolutions-SNS3",
+            "reason": "SNS topic is used for internal ECS lifecycle hooks managed by CDK. SSL enforcement is handled by AWS internal services. The lifecycle hook topic is used for draining ECS tasks during instance termination.",
+          },
+        ],
+      },
+    },
+    "Properties": {
+      "DesiredCapacity": "1",
+      "LaunchConfigurationName": {
+        "Ref": "ClusterDefaultAutoScalingGroupLaunchConfigE9088B4C",
+      },
+      "MaxSize": "1",
+      "MinSize": "1",
+      "Tags": [
+        {
+          "Key": "Environment",
+          "PropagateAtLaunch": true,
+          "Value": "test",
+        },
+        {
+          "Key": "ManagedBy",
+          "PropagateAtLaunch": true,
+          "Value": "CDK",
+        },
+        {
+          "Key": "Name",
+          "PropagateAtLaunch": true,
+          "Value": "TestComputeStack/Cluster/Cluster/DefaultAutoScalingGroup",
+        },
+        {
+          "Key": "Stack",
+          "PropagateAtLaunch": true,
+          "Value": "Compute",
+        },
+      ],
+      "VPCZoneIdentifier": [
+        {
+          "Fn::ImportValue": "TestVpcStack:ExportsOutputRefTestVpcPublicSubnet1SubnetA7DB1EDF095592DF",
+        },
+        {
+          "Fn::ImportValue": "TestVpcStack:ExportsOutputRefTestVpcPublicSubnet2Subnet80A14523FD2CDFFC",
+        },
+      ],
+    },
+    "Type": "AWS::AutoScaling::AutoScalingGroup",
+    "UpdatePolicy": {
+      "AutoScalingReplacingUpdate": {
+        "WillReplace": true,
+      },
+      "AutoScalingScheduledAction": {
+        "IgnoreUnmodifiedGroupSizeProperties": true,
+      },
+    },
+  },
+}
+`;
+
+exports[`ComputeStack Test Suite Snapshots ComputeStack matches snapshot 1`] = `
+{
+  "Metadata": {
+    "cdk_nag": {
+      "rules_to_suppress": [
+        {
+          "applies_to": [
+            "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+          ],
+          "id": "AwsSolutions-IAM4",
+          "reason": "AWS managed policies are used for Lambda functions created by CDK for custom resources (Auto Scaling lifecycle hooks, VPC default security group restriction, EventBridge targets). These are standard CloudFormation custom resource Lambda functions managed by CDK.",
+        },
+        {
+          "applies_to": [
+            "Resource::*",
+          ],
+          "id": "AwsSolutions-IAM5",
+          "reason": "Wildcard permissions are used by CDK-managed custom resource Lambdas for EventBridge to CloudWatch Logs integration and other CDK framework operations. This is required by the CDK framework to manage resource policies and cannot be scoped further. This is standard CDK behavior.",
+        },
+        {
+          "applies_to": [
+            "Action::ecs:Submit*",
+          ],
+          "id": "AwsSolutions-IAM5",
+          "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices and is created by CDK's Auto Scaling Group construct.",
+        },
+        {
+          "applies_to": [
+            {
+              "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+            },
+          ],
+          "id": "AwsSolutions-IAM5",
+          "reason": "Auto Scaling Group lifecycle hook Lambda (DrainECSHook) requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining. This is a CDK-managed resource.",
+        },
+        {
+          "id": "AwsSolutions-L1",
+          "reason": "Lambda runtime versions are managed by CDK for custom resources. CDK automatically updates these with new releases. Upgrading CDK version will update these runtimes.",
+        },
+        {
+          "id": "AwsSolutions-ECS2",
+          "reason": "Environment variables like NODE_ENV, PORT, and service configuration are non-sensitive values. Sensitive values (API keys, passwords, tokens) must use AWS Secrets Manager or SSM Parameter Store with SecureString. These basic config values are safe as environment variables.",
+        },
+        {
+          "applies_to": [
+            "Resource::*",
+          ],
+          "id": "AwsSolutions-IAM5",
+          "reason": "ECS service requires permissions to describe and manage tasks within its cluster. The wildcard is scoped to the specific cluster ARN and is necessary for ECS service operations like task placement, health checks, and service discovery.",
+        },
+        {
+          "applies_to": [
+            "Action::ecs:Submit*",
+          ],
+          "id": "AwsSolutions-IAM5",
+          "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices.",
+        },
+        {
+          "applies_to": [
+            {
+              "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+            },
+          ],
+          "id": "AwsSolutions-IAM5",
+          "reason": "Auto Scaling Group lifecycle hook Lambda requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining.",
+        },
+        {
+          "applies_to": [
+            "Resource::*",
+          ],
+          "id": "AwsSolutions-IAM5",
+          "reason": "Auto Scaling lifecycle hooks require permissions to describe instances and complete lifecycle actions. These permissions are scoped to the specific Auto Scaling Group and are necessary for proper instance lifecycle management.",
+        },
+        {
+          "id": "AwsSolutions-AS3",
+          "reason": "Auto Scaling Group notifications are optional for development environments. For production, consider enabling SNS notifications for scaling events to improve operational visibility.",
+        },
+        {
+          "id": "AwsSolutions-EC26",
+          "reason": "EBS encryption can be managed at the account level via AWS Config or enabled per-environment. For development environments, unencrypted volumes reduce costs. Production environments should enable EBS encryption.",
+        },
+        {
+          "applies_to": [
+            {
+              "regex": "/^Resource::arn:aws:logs:.*:.*:log-group:/ecs/test\\*:\\*$/",
+            },
+          ],
+          "id": "AwsSolutions-IAM5",
+          "reason": "CloudWatch Logs permissions use wildcard for log streams within the environment-specific log group. This allows services to create log streams dynamically while restricting access to the specific environment. The wildcard is scoped to /ecs/{envName}* pattern.",
+        },
+      ],
+    },
+  },
+  "Outputs": {
+    "EcrRepositoryUri": {
+      "Description": "ECR Repository URI",
+      "Export": {
+        "Name": "test-ecr-repository-uri",
+      },
+      "Value": "dummy-value-for-/ecr/test/repository-uri",
+    },
+    "EcsClusterArn": {
+      "Description": "ECS Cluster ARN",
+      "Export": {
+        "Name": "test-ecs-cluster-arn",
+      },
+      "Value": {
+        "Fn::GetAtt": [
+          "ClusterC2E21B66",
+          "Arn",
+        ],
+      },
+    },
+    "EcsClusterName": {
+      "Description": "ECS Cluster Name",
+      "Export": {
+        "Name": "test-ecs-cluster-name",
+      },
+      "Value": {
+        "Ref": "ClusterC2E21B66",
+      },
+    },
+    "EcsEventLogGroupName": {
+      "Description": "CloudWatch Log Group for ECS Events",
+      "Export": {
+        "Name": "test-ecs-event-log-group",
+      },
+      "Value": {
+        "Ref": "ECSEventsFB436F25",
+      },
+    },
+    "EcsServiceArn": {
+      "Description": "ECS Service ARN",
+      "Export": {
+        "Name": "test-ecs-service-arn",
+      },
+      "Value": {
+        "Ref": "Service9571FDD8",
+      },
+    },
+    "EcsServiceName": {
+      "Description": "ECS Service Name",
+      "Export": {
+        "Name": "test-ecs-service-name",
+      },
+      "Value": {
+        "Fn::GetAtt": [
+          "Service9571FDD8",
+          "Name",
+        ],
+      },
+    },
+    "FullImageUri": {
+      "Description": "Full Container Image URI",
+      "Value": "dummy-value-for-/ecr/test/repository-uri:latest",
+    },
+    "ImageTag": {
+      "Description": "Container Image Tag",
+      "Export": {
+        "Name": "test-image-tag",
+      },
+      "Value": "latest",
+    },
+    "NodeExporterPort": {
+      "Description": "Node Exporter Port for Prometheus scraping",
+      "Value": "9100",
+    },
+    "TaskDefinitionArn": {
+      "Description": "ECS Task Definition ARN",
+      "Value": {
+        "Ref": "TaskDefinitionTaskDefF9E7411B",
+      },
+    },
+    "TaskLogGroupName": {
+      "Description": "CloudWatch Log Group for ECS Task Logs",
+      "Export": {
+        "Name": "test-task-log-group",
+      },
+      "Value": {
+        "Ref": "TaskLogs5C7CDF8E",
+      },
+    },
+  },
+  "Parameters": {
+    "BootstrapVersion": {
+      "Default": "/cdk-bootstrap/hnb659fds/version",
+      "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+    "SsmParameterValueawsserviceecsoptimizedamiamazonlinux2recommendedimageidC96584B6F00A464EAD1953AFF4B05118Parameter": {
+      "Default": "/aws/service/ecs/optimized-ami/amazon-linux-2/recommended/image_id",
+      "Type": "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>",
+    },
+  },
+  "Resources": {
+    "AWS679f53fac002430cb0da5b7982bd22872D164C4C": {
+      "DependsOn": [
+        "AWS679f53fac002430cb0da5b7982bd2287ServiceRoleC1EA0FF2",
+      ],
+      "Properties": {
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-123456789012-eu-west-1",
+          "S3Key": "bc8ef58951f4c88e641dd23090e9d2e2e61c7530a07960e767522941e959b625.zip",
+        },
+        "Handler": "index.handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "AWS679f53fac002430cb0da5b7982bd2287ServiceRoleC1EA0FF2",
+            "Arn",
+          ],
+        },
+        "Runtime": "nodejs22.x",
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "Compute",
+          },
+        ],
+        "Timeout": 120,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "AWS679f53fac002430cb0da5b7982bd2287ServiceRoleC1EA0FF2": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "Compute",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "ClusterC2E21B66": {
+      "Properties": {
+        "ClusterName": "ecs-cluster-test",
+        "ClusterSettings": [
+          {
+            "Name": "containerInsights",
+            "Value": "enabled",
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "Compute",
+          },
+        ],
+      },
+      "Type": "AWS::ECS::Cluster",
+    },
+    "ClusterDefaultAutoScalingGroupASGDD37B8D0": {
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "applies_to": [
+                "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+              "id": "AwsSolutions-IAM4",
+              "reason": "AWS managed policies are used for Lambda functions created by CDK for custom resources (Auto Scaling lifecycle hooks, VPC default security group restriction, EventBridge targets). These are standard CloudFormation custom resource Lambda functions managed by CDK.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Wildcard permissions are used by CDK-managed custom resource Lambdas for EventBridge to CloudWatch Logs integration and other CDK framework operations. This is required by the CDK framework to manage resource policies and cannot be scoped further. This is standard CDK behavior.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices and is created by CDK's Auto Scaling Group construct.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda (DrainECSHook) requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining. This is a CDK-managed resource.",
+            },
+            {
+              "id": "AwsSolutions-L1",
+              "reason": "Lambda runtime versions are managed by CDK for custom resources. CDK automatically updates these with new releases. Upgrading CDK version will update these runtimes.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling lifecycle hooks require permissions to describe instances and complete lifecycle actions. These permissions are scoped to the specific Auto Scaling Group and are necessary for proper instance lifecycle management.",
+            },
+            {
+              "id": "AwsSolutions-AS3",
+              "reason": "Auto Scaling Group notifications are optional for development environments. For production, consider enabling SNS notifications for scaling events to improve operational visibility.",
+            },
+            {
+              "id": "AwsSolutions-EC26",
+              "reason": "EBS encryption can be managed at the account level via AWS Config or enabled per-environment. For development environments, unencrypted volumes reduce costs. Production environments should enable EBS encryption.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS service requires permissions to describe and manage tasks within its cluster. The wildcard is scoped to the specific cluster ARN and is necessary for ECS service operations like task placement, health checks, and service discovery.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining.",
+            },
+            {
+              "id": "AwsSolutions-SNS3",
+              "reason": "SNS topic is used for internal ECS lifecycle hooks managed by CDK. SSL enforcement is handled by AWS internal services. The lifecycle hook topic is used for draining ECS tasks during instance termination.",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "DesiredCapacity": "1",
+        "LaunchConfigurationName": {
+          "Ref": "ClusterDefaultAutoScalingGroupLaunchConfigE9088B4C",
+        },
+        "MaxSize": "1",
+        "MinSize": "1",
+        "Tags": [
+          {
+            "Key": "Environment",
+            "PropagateAtLaunch": true,
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "PropagateAtLaunch": true,
+            "Value": "CDK",
+          },
+          {
+            "Key": "Name",
+            "PropagateAtLaunch": true,
+            "Value": "TestComputeStack/Cluster/Cluster/DefaultAutoScalingGroup",
+          },
+          {
+            "Key": "Stack",
+            "PropagateAtLaunch": true,
+            "Value": "Compute",
+          },
+        ],
+        "VPCZoneIdentifier": [
+          {
+            "Fn::ImportValue": "TestVpcStack:ExportsOutputRefTestVpcPublicSubnet1SubnetA7DB1EDF095592DF",
+          },
+          {
+            "Fn::ImportValue": "TestVpcStack:ExportsOutputRefTestVpcPublicSubnet2Subnet80A14523FD2CDFFC",
+          },
+        ],
+      },
+      "Type": "AWS::AutoScaling::AutoScalingGroup",
+      "UpdatePolicy": {
+        "AutoScalingReplacingUpdate": {
+          "WillReplace": true,
+        },
+        "AutoScalingScheduledAction": {
+          "IgnoreUnmodifiedGroupSizeProperties": true,
+        },
+      },
+    },
+    "ClusterDefaultAutoScalingGroupDrainECSHookFunction52ABE2CF": {
+      "DependsOn": [
+        "ClusterDefaultAutoScalingGroupDrainECSHookFunctionServiceRoleDefaultPolicy49351947",
+        "ClusterDefaultAutoScalingGroupDrainECSHookFunctionServiceRoleDA44CCCA",
+      ],
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "applies_to": [
+                "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+              "id": "AwsSolutions-IAM4",
+              "reason": "AWS managed policies are used for Lambda functions created by CDK for custom resources (Auto Scaling lifecycle hooks, VPC default security group restriction, EventBridge targets). These are standard CloudFormation custom resource Lambda functions managed by CDK.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Wildcard permissions are used by CDK-managed custom resource Lambdas for EventBridge to CloudWatch Logs integration and other CDK framework operations. This is required by the CDK framework to manage resource policies and cannot be scoped further. This is standard CDK behavior.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices and is created by CDK's Auto Scaling Group construct.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda (DrainECSHook) requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining. This is a CDK-managed resource.",
+            },
+            {
+              "id": "AwsSolutions-L1",
+              "reason": "Lambda runtime versions are managed by CDK for custom resources. CDK automatically updates these with new releases. Upgrading CDK version will update these runtimes.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling lifecycle hooks require permissions to describe instances and complete lifecycle actions. These permissions are scoped to the specific Auto Scaling Group and are necessary for proper instance lifecycle management.",
+            },
+            {
+              "id": "AwsSolutions-AS3",
+              "reason": "Auto Scaling Group notifications are optional for development environments. For production, consider enabling SNS notifications for scaling events to improve operational visibility.",
+            },
+            {
+              "id": "AwsSolutions-EC26",
+              "reason": "EBS encryption can be managed at the account level via AWS Config or enabled per-environment. For development environments, unencrypted volumes reduce costs. Production environments should enable EBS encryption.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS service requires permissions to describe and manage tasks within its cluster. The wildcard is scoped to the specific cluster ARN and is necessary for ECS service operations like task placement, health checks, and service discovery.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining.",
+            },
+            {
+              "id": "AwsSolutions-SNS3",
+              "reason": "SNS topic is used for internal ECS lifecycle hooks managed by CDK. SSL enforcement is handled by AWS internal services. The lifecycle hook topic is used for draining ECS tasks during instance termination.",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "Code": {
+          "ZipFile": "import boto3, json, os, time
+
+ecs = boto3.client('ecs')
+autoscaling = boto3.client('autoscaling')
+
+
+def lambda_handler(event, context):
+  print(json.dumps(dict(event, ResponseURL='...')))
+  cluster = os.environ['CLUSTER']
+  snsTopicArn = event['Records'][0]['Sns']['TopicArn']
+  lifecycle_event = json.loads(event['Records'][0]['Sns']['Message'])
+  instance_id = lifecycle_event.get('EC2InstanceId')
+  if not instance_id:
+    print(f"Got event without EC2InstanceId: { json.dumps(dict(event, ResponseURL='...')) }")
+    return
+
+  instance_arn = container_instance_arn(cluster, instance_id)
+  print('Instance %s has container instance ARN %s' % (lifecycle_event['EC2InstanceId'], instance_arn))
+
+  if not instance_arn:
+    return
+
+  task_arns = container_instance_task_arns(cluster, instance_arn)
+
+  if task_arns:
+    print('Instance ARN %s has task ARNs %s' % (instance_arn, ', '.join(task_arns)))
+
+  while has_tasks(cluster, instance_arn, task_arns):
+    time.sleep(10)
+
+  try:
+    print('Terminating instance %s' % instance_id)
+    autoscaling.complete_lifecycle_action(
+        LifecycleActionResult='CONTINUE',
+        **pick(lifecycle_event, 'LifecycleHookName', 'LifecycleActionToken', 'AutoScalingGroupName'))
+  except Exception as e:
+    # Lifecycle action may have already completed.
+    print(str(e))
+
+
+def container_instance_arn(cluster, instance_id):
+  """Turn an instance ID into a container instance ARN."""
+  arns = ecs.list_container_instances(cluster=cluster, filter='ec2InstanceId==' + instance_id)['containerInstanceArns']
+  if not arns:
+    return None
+  return arns[0]
+
+def container_instance_task_arns(cluster, instance_arn):
+  """Fetch tasks for a container instance ARN."""
+  arns = ecs.list_tasks(cluster=cluster, containerInstance=instance_arn)['taskArns']
+  return arns
+
+def has_tasks(cluster, instance_arn, task_arns):
+  """Return True if the instance is running tasks for the given cluster."""
+  instances = ecs.describe_container_instances(cluster=cluster, containerInstances=[instance_arn])['containerInstances']
+  if not instances:
+    return False
+  instance = instances[0]
+
+  if instance['status'] == 'ACTIVE':
+    # Start draining, then try again later
+    set_container_instance_to_draining(cluster, instance_arn)
+    return True
+
+  task_count = None
+
+  if task_arns:
+    # Fetch details for tasks running on the container instance
+    tasks = ecs.describe_tasks(cluster=cluster, tasks=task_arns)['tasks']
+    if tasks:
+      # Consider any non-stopped tasks as running
+      task_count = sum(task['lastStatus'] != 'STOPPED' for task in tasks) + instance['pendingTasksCount']
+
+  if not task_count:
+    # Fallback to instance task counts if detailed task information is unavailable
+    task_count = instance['runningTasksCount'] + instance['pendingTasksCount']
+
+  print('Instance %s has %s tasks' % (instance_arn, task_count))
+
+  return task_count > 0
+
+def set_container_instance_to_draining(cluster, instance_arn):
+  ecs.update_container_instances_state(
+      cluster=cluster,
+      containerInstances=[instance_arn], status='DRAINING')
+
+
+def pick(dct, *keys):
+  """Pick a subset of a dict."""
+  return {k: v for k, v in dct.items() if k in keys}
+",
+        },
+        "Environment": {
+          "Variables": {
+            "CLUSTER": {
+              "Ref": "ClusterC2E21B66",
+            },
+          },
+        },
+        "Handler": "index.lambda_handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "ClusterDefaultAutoScalingGroupDrainECSHookFunctionServiceRoleDA44CCCA",
+            "Arn",
+          ],
+        },
+        "Runtime": "python3.13",
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Name",
+            "Value": "TestComputeStack/Cluster/Cluster/DefaultAutoScalingGroup",
+          },
+          {
+            "Key": "Stack",
+            "Value": "Compute",
+          },
+        ],
+        "Timeout": 310,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "ClusterDefaultAutoScalingGroupDrainECSHookFunctionAllowInvokeTestComputeStackClusterDefaultAutoScalingGroupLifecycleHookDrainHookTopic92491E43361C346B": {
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "applies_to": [
+                "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+              "id": "AwsSolutions-IAM4",
+              "reason": "AWS managed policies are used for Lambda functions created by CDK for custom resources (Auto Scaling lifecycle hooks, VPC default security group restriction, EventBridge targets). These are standard CloudFormation custom resource Lambda functions managed by CDK.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Wildcard permissions are used by CDK-managed custom resource Lambdas for EventBridge to CloudWatch Logs integration and other CDK framework operations. This is required by the CDK framework to manage resource policies and cannot be scoped further. This is standard CDK behavior.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices and is created by CDK's Auto Scaling Group construct.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda (DrainECSHook) requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining. This is a CDK-managed resource.",
+            },
+            {
+              "id": "AwsSolutions-L1",
+              "reason": "Lambda runtime versions are managed by CDK for custom resources. CDK automatically updates these with new releases. Upgrading CDK version will update these runtimes.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling lifecycle hooks require permissions to describe instances and complete lifecycle actions. These permissions are scoped to the specific Auto Scaling Group and are necessary for proper instance lifecycle management.",
+            },
+            {
+              "id": "AwsSolutions-AS3",
+              "reason": "Auto Scaling Group notifications are optional for development environments. For production, consider enabling SNS notifications for scaling events to improve operational visibility.",
+            },
+            {
+              "id": "AwsSolutions-EC26",
+              "reason": "EBS encryption can be managed at the account level via AWS Config or enabled per-environment. For development environments, unencrypted volumes reduce costs. Production environments should enable EBS encryption.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS service requires permissions to describe and manage tasks within its cluster. The wildcard is scoped to the specific cluster ARN and is necessary for ECS service operations like task placement, health checks, and service discovery.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining.",
+            },
+            {
+              "id": "AwsSolutions-SNS3",
+              "reason": "SNS topic is used for internal ECS lifecycle hooks managed by CDK. SSL enforcement is handled by AWS internal services. The lifecycle hook topic is used for draining ECS tasks during instance termination.",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "ClusterDefaultAutoScalingGroupDrainECSHookFunction52ABE2CF",
+            "Arn",
+          ],
+        },
+        "Principal": "sns.amazonaws.com",
+        "SourceArn": {
+          "Ref": "ClusterDefaultAutoScalingGroupLifecycleHookDrainHookTopic47578BA5",
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "ClusterDefaultAutoScalingGroupDrainECSHookFunctionServiceRoleDA44CCCA": {
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "applies_to": [
+                "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+              "id": "AwsSolutions-IAM4",
+              "reason": "AWS managed policies are used for Lambda functions created by CDK for custom resources (Auto Scaling lifecycle hooks, VPC default security group restriction, EventBridge targets). These are standard CloudFormation custom resource Lambda functions managed by CDK.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Wildcard permissions are used by CDK-managed custom resource Lambdas for EventBridge to CloudWatch Logs integration and other CDK framework operations. This is required by the CDK framework to manage resource policies and cannot be scoped further. This is standard CDK behavior.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices and is created by CDK's Auto Scaling Group construct.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda (DrainECSHook) requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining. This is a CDK-managed resource.",
+            },
+            {
+              "id": "AwsSolutions-L1",
+              "reason": "Lambda runtime versions are managed by CDK for custom resources. CDK automatically updates these with new releases. Upgrading CDK version will update these runtimes.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling lifecycle hooks require permissions to describe instances and complete lifecycle actions. These permissions are scoped to the specific Auto Scaling Group and are necessary for proper instance lifecycle management.",
+            },
+            {
+              "id": "AwsSolutions-AS3",
+              "reason": "Auto Scaling Group notifications are optional for development environments. For production, consider enabling SNS notifications for scaling events to improve operational visibility.",
+            },
+            {
+              "id": "AwsSolutions-EC26",
+              "reason": "EBS encryption can be managed at the account level via AWS Config or enabled per-environment. For development environments, unencrypted volumes reduce costs. Production environments should enable EBS encryption.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS service requires permissions to describe and manage tasks within its cluster. The wildcard is scoped to the specific cluster ARN and is necessary for ECS service operations like task placement, health checks, and service discovery.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining.",
+            },
+            {
+              "id": "AwsSolutions-SNS3",
+              "reason": "SNS topic is used for internal ECS lifecycle hooks managed by CDK. SSL enforcement is handled by AWS internal services. The lifecycle hook topic is used for draining ECS tasks during instance termination.",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Name",
+            "Value": "TestComputeStack/Cluster/Cluster/DefaultAutoScalingGroup",
+          },
+          {
+            "Key": "Stack",
+            "Value": "Compute",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "ClusterDefaultAutoScalingGroupDrainECSHookFunctionServiceRoleDefaultPolicy49351947": {
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "applies_to": [
+                "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+              "id": "AwsSolutions-IAM4",
+              "reason": "AWS managed policies are used for Lambda functions created by CDK for custom resources (Auto Scaling lifecycle hooks, VPC default security group restriction, EventBridge targets). These are standard CloudFormation custom resource Lambda functions managed by CDK.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Wildcard permissions are used by CDK-managed custom resource Lambdas for EventBridge to CloudWatch Logs integration and other CDK framework operations. This is required by the CDK framework to manage resource policies and cannot be scoped further. This is standard CDK behavior.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices and is created by CDK's Auto Scaling Group construct.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda (DrainECSHook) requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining. This is a CDK-managed resource.",
+            },
+            {
+              "id": "AwsSolutions-L1",
+              "reason": "Lambda runtime versions are managed by CDK for custom resources. CDK automatically updates these with new releases. Upgrading CDK version will update these runtimes.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling lifecycle hooks require permissions to describe instances and complete lifecycle actions. These permissions are scoped to the specific Auto Scaling Group and are necessary for proper instance lifecycle management.",
+            },
+            {
+              "id": "AwsSolutions-AS3",
+              "reason": "Auto Scaling Group notifications are optional for development environments. For production, consider enabling SNS notifications for scaling events to improve operational visibility.",
+            },
+            {
+              "id": "AwsSolutions-EC26",
+              "reason": "EBS encryption can be managed at the account level via AWS Config or enabled per-environment. For development environments, unencrypted volumes reduce costs. Production environments should enable EBS encryption.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS service requires permissions to describe and manage tasks within its cluster. The wildcard is scoped to the specific cluster ARN and is necessary for ECS service operations like task placement, health checks, and service discovery.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining.",
+            },
+            {
+              "id": "AwsSolutions-SNS3",
+              "reason": "SNS topic is used for internal ECS lifecycle hooks managed by CDK. SSL enforcement is handled by AWS internal services. The lifecycle hook topic is used for draining ECS tasks during instance termination.",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "ec2:DescribeInstances",
+                "ec2:DescribeInstanceAttribute",
+                "ec2:DescribeInstanceStatus",
+                "ec2:DescribeHosts",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": "autoscaling:CompleteLifecycleAction",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":autoscaling:eu-west-1:123456789012:autoScalingGroup:*:autoScalingGroupName/",
+                    {
+                      "Ref": "ClusterDefaultAutoScalingGroupASGDD37B8D0",
+                    },
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": [
+                "ecs:DescribeContainerInstances",
+                "ecs:DescribeTasks",
+              ],
+              "Condition": {
+                "ArnEquals": {
+                  "ecs:cluster": {
+                    "Fn::GetAtt": [
+                      "ClusterC2E21B66",
+                      "Arn",
+                    ],
+                  },
+                },
+              },
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "ecs:ListContainerInstances",
+                "ecs:SubmitContainerStateChange",
+                "ecs:SubmitTaskStateChange",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "ClusterC2E21B66",
+                  "Arn",
+                ],
+              },
+            },
+            {
+              "Action": [
+                "ecs:UpdateContainerInstancesState",
+                "ecs:ListTasks",
+              ],
+              "Condition": {
+                "ArnEquals": {
+                  "ecs:cluster": {
+                    "Fn::GetAtt": [
+                      "ClusterC2E21B66",
+                      "Arn",
+                    ],
+                  },
+                },
+              },
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "ClusterDefaultAutoScalingGroupDrainECSHookFunctionServiceRoleDefaultPolicy49351947",
+        "Roles": [
+          {
+            "Ref": "ClusterDefaultAutoScalingGroupDrainECSHookFunctionServiceRoleDA44CCCA",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "ClusterDefaultAutoScalingGroupDrainECSHookFunctionTopicDFCF879A": {
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "applies_to": [
+                "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+              "id": "AwsSolutions-IAM4",
+              "reason": "AWS managed policies are used for Lambda functions created by CDK for custom resources (Auto Scaling lifecycle hooks, VPC default security group restriction, EventBridge targets). These are standard CloudFormation custom resource Lambda functions managed by CDK.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Wildcard permissions are used by CDK-managed custom resource Lambdas for EventBridge to CloudWatch Logs integration and other CDK framework operations. This is required by the CDK framework to manage resource policies and cannot be scoped further. This is standard CDK behavior.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices and is created by CDK's Auto Scaling Group construct.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda (DrainECSHook) requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining. This is a CDK-managed resource.",
+            },
+            {
+              "id": "AwsSolutions-L1",
+              "reason": "Lambda runtime versions are managed by CDK for custom resources. CDK automatically updates these with new releases. Upgrading CDK version will update these runtimes.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling lifecycle hooks require permissions to describe instances and complete lifecycle actions. These permissions are scoped to the specific Auto Scaling Group and are necessary for proper instance lifecycle management.",
+            },
+            {
+              "id": "AwsSolutions-AS3",
+              "reason": "Auto Scaling Group notifications are optional for development environments. For production, consider enabling SNS notifications for scaling events to improve operational visibility.",
+            },
+            {
+              "id": "AwsSolutions-EC26",
+              "reason": "EBS encryption can be managed at the account level via AWS Config or enabled per-environment. For development environments, unencrypted volumes reduce costs. Production environments should enable EBS encryption.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS service requires permissions to describe and manage tasks within its cluster. The wildcard is scoped to the specific cluster ARN and is necessary for ECS service operations like task placement, health checks, and service discovery.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining.",
+            },
+            {
+              "id": "AwsSolutions-SNS3",
+              "reason": "SNS topic is used for internal ECS lifecycle hooks managed by CDK. SSL enforcement is handled by AWS internal services. The lifecycle hook topic is used for draining ECS tasks during instance termination.",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "Endpoint": {
+          "Fn::GetAtt": [
+            "ClusterDefaultAutoScalingGroupDrainECSHookFunction52ABE2CF",
+            "Arn",
+          ],
+        },
+        "Protocol": "lambda",
+        "TopicArn": {
+          "Ref": "ClusterDefaultAutoScalingGroupLifecycleHookDrainHookTopic47578BA5",
+        },
+      },
+      "Type": "AWS::SNS::Subscription",
+    },
+    "ClusterDefaultAutoScalingGroupInstanceProfile44723A6D": {
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "applies_to": [
+                "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+              "id": "AwsSolutions-IAM4",
+              "reason": "AWS managed policies are used for Lambda functions created by CDK for custom resources (Auto Scaling lifecycle hooks, VPC default security group restriction, EventBridge targets). These are standard CloudFormation custom resource Lambda functions managed by CDK.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Wildcard permissions are used by CDK-managed custom resource Lambdas for EventBridge to CloudWatch Logs integration and other CDK framework operations. This is required by the CDK framework to manage resource policies and cannot be scoped further. This is standard CDK behavior.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices and is created by CDK's Auto Scaling Group construct.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda (DrainECSHook) requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining. This is a CDK-managed resource.",
+            },
+            {
+              "id": "AwsSolutions-L1",
+              "reason": "Lambda runtime versions are managed by CDK for custom resources. CDK automatically updates these with new releases. Upgrading CDK version will update these runtimes.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling lifecycle hooks require permissions to describe instances and complete lifecycle actions. These permissions are scoped to the specific Auto Scaling Group and are necessary for proper instance lifecycle management.",
+            },
+            {
+              "id": "AwsSolutions-AS3",
+              "reason": "Auto Scaling Group notifications are optional for development environments. For production, consider enabling SNS notifications for scaling events to improve operational visibility.",
+            },
+            {
+              "id": "AwsSolutions-EC26",
+              "reason": "EBS encryption can be managed at the account level via AWS Config or enabled per-environment. For development environments, unencrypted volumes reduce costs. Production environments should enable EBS encryption.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS service requires permissions to describe and manage tasks within its cluster. The wildcard is scoped to the specific cluster ARN and is necessary for ECS service operations like task placement, health checks, and service discovery.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining.",
+            },
+            {
+              "id": "AwsSolutions-SNS3",
+              "reason": "SNS topic is used for internal ECS lifecycle hooks managed by CDK. SSL enforcement is handled by AWS internal services. The lifecycle hook topic is used for draining ECS tasks during instance termination.",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "Roles": [
+          {
+            "Ref": "ClusterDefaultAutoScalingGroupInstanceRole744C857D",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::InstanceProfile",
+    },
+    "ClusterDefaultAutoScalingGroupInstanceRole744C857D": {
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "applies_to": [
+                "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+              "id": "AwsSolutions-IAM4",
+              "reason": "AWS managed policies are used for Lambda functions created by CDK for custom resources (Auto Scaling lifecycle hooks, VPC default security group restriction, EventBridge targets). These are standard CloudFormation custom resource Lambda functions managed by CDK.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Wildcard permissions are used by CDK-managed custom resource Lambdas for EventBridge to CloudWatch Logs integration and other CDK framework operations. This is required by the CDK framework to manage resource policies and cannot be scoped further. This is standard CDK behavior.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices and is created by CDK's Auto Scaling Group construct.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda (DrainECSHook) requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining. This is a CDK-managed resource.",
+            },
+            {
+              "id": "AwsSolutions-L1",
+              "reason": "Lambda runtime versions are managed by CDK for custom resources. CDK automatically updates these with new releases. Upgrading CDK version will update these runtimes.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling lifecycle hooks require permissions to describe instances and complete lifecycle actions. These permissions are scoped to the specific Auto Scaling Group and are necessary for proper instance lifecycle management.",
+            },
+            {
+              "id": "AwsSolutions-AS3",
+              "reason": "Auto Scaling Group notifications are optional for development environments. For production, consider enabling SNS notifications for scaling events to improve operational visibility.",
+            },
+            {
+              "id": "AwsSolutions-EC26",
+              "reason": "EBS encryption can be managed at the account level via AWS Config or enabled per-environment. For development environments, unencrypted volumes reduce costs. Production environments should enable EBS encryption.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS service requires permissions to describe and manage tasks within its cluster. The wildcard is scoped to the specific cluster ARN and is necessary for ECS service operations like task placement, health checks, and service discovery.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining.",
+            },
+            {
+              "id": "AwsSolutions-SNS3",
+              "reason": "SNS topic is used for internal ECS lifecycle hooks managed by CDK. SSL enforcement is handled by AWS internal services. The lifecycle hook topic is used for draining ECS tasks during instance termination.",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ec2.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Name",
+            "Value": "TestComputeStack/Cluster/Cluster/DefaultAutoScalingGroup",
+          },
+          {
+            "Key": "Stack",
+            "Value": "Compute",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "ClusterDefaultAutoScalingGroupInstanceRoleDefaultPolicy314B67E1": {
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "applies_to": [
+                "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+              "id": "AwsSolutions-IAM4",
+              "reason": "AWS managed policies are used for Lambda functions created by CDK for custom resources (Auto Scaling lifecycle hooks, VPC default security group restriction, EventBridge targets). These are standard CloudFormation custom resource Lambda functions managed by CDK.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Wildcard permissions are used by CDK-managed custom resource Lambdas for EventBridge to CloudWatch Logs integration and other CDK framework operations. This is required by the CDK framework to manage resource policies and cannot be scoped further. This is standard CDK behavior.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices and is created by CDK's Auto Scaling Group construct.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda (DrainECSHook) requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining. This is a CDK-managed resource.",
+            },
+            {
+              "id": "AwsSolutions-L1",
+              "reason": "Lambda runtime versions are managed by CDK for custom resources. CDK automatically updates these with new releases. Upgrading CDK version will update these runtimes.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling lifecycle hooks require permissions to describe instances and complete lifecycle actions. These permissions are scoped to the specific Auto Scaling Group and are necessary for proper instance lifecycle management.",
+            },
+            {
+              "id": "AwsSolutions-AS3",
+              "reason": "Auto Scaling Group notifications are optional for development environments. For production, consider enabling SNS notifications for scaling events to improve operational visibility.",
+            },
+            {
+              "id": "AwsSolutions-EC26",
+              "reason": "EBS encryption can be managed at the account level via AWS Config or enabled per-environment. For development environments, unencrypted volumes reduce costs. Production environments should enable EBS encryption.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS service requires permissions to describe and manage tasks within its cluster. The wildcard is scoped to the specific cluster ARN and is necessary for ECS service operations like task placement, health checks, and service discovery.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining.",
+            },
+            {
+              "id": "AwsSolutions-SNS3",
+              "reason": "SNS topic is used for internal ECS lifecycle hooks managed by CDK. SSL enforcement is handled by AWS internal services. The lifecycle hook topic is used for draining ECS tasks during instance termination.",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "ecs:DeregisterContainerInstance",
+                "ecs:RegisterContainerInstance",
+                "ecs:Submit*",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "ClusterC2E21B66",
+                  "Arn",
+                ],
+              },
+            },
+            {
+              "Action": [
+                "ecs:Poll",
+                "ecs:StartTelemetrySession",
+              ],
+              "Condition": {
+                "ArnEquals": {
+                  "ecs:cluster": {
+                    "Fn::GetAtt": [
+                      "ClusterC2E21B66",
+                      "Arn",
+                    ],
+                  },
+                },
+              },
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "ecs:DiscoverPollEndpoint",
+                "ecr:GetAuthorizationToken",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "ClusterDefaultAutoScalingGroupInstanceRoleDefaultPolicy314B67E1",
+        "Roles": [
+          {
+            "Ref": "ClusterDefaultAutoScalingGroupInstanceRole744C857D",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "ClusterDefaultAutoScalingGroupInstanceSecurityGroupF404DD17": {
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "applies_to": [
+                "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+              "id": "AwsSolutions-IAM4",
+              "reason": "AWS managed policies are used for Lambda functions created by CDK for custom resources (Auto Scaling lifecycle hooks, VPC default security group restriction, EventBridge targets). These are standard CloudFormation custom resource Lambda functions managed by CDK.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Wildcard permissions are used by CDK-managed custom resource Lambdas for EventBridge to CloudWatch Logs integration and other CDK framework operations. This is required by the CDK framework to manage resource policies and cannot be scoped further. This is standard CDK behavior.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices and is created by CDK's Auto Scaling Group construct.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda (DrainECSHook) requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining. This is a CDK-managed resource.",
+            },
+            {
+              "id": "AwsSolutions-L1",
+              "reason": "Lambda runtime versions are managed by CDK for custom resources. CDK automatically updates these with new releases. Upgrading CDK version will update these runtimes.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling lifecycle hooks require permissions to describe instances and complete lifecycle actions. These permissions are scoped to the specific Auto Scaling Group and are necessary for proper instance lifecycle management.",
+            },
+            {
+              "id": "AwsSolutions-AS3",
+              "reason": "Auto Scaling Group notifications are optional for development environments. For production, consider enabling SNS notifications for scaling events to improve operational visibility.",
+            },
+            {
+              "id": "AwsSolutions-EC26",
+              "reason": "EBS encryption can be managed at the account level via AWS Config or enabled per-environment. For development environments, unencrypted volumes reduce costs. Production environments should enable EBS encryption.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS service requires permissions to describe and manage tasks within its cluster. The wildcard is scoped to the specific cluster ARN and is necessary for ECS service operations like task placement, health checks, and service discovery.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining.",
+            },
+            {
+              "id": "AwsSolutions-SNS3",
+              "reason": "SNS topic is used for internal ECS lifecycle hooks managed by CDK. SSL enforcement is handled by AWS internal services. The lifecycle hook topic is used for draining ECS tasks during instance termination.",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "GroupDescription": "TestComputeStack/Cluster/Cluster/DefaultAutoScalingGroup/InstanceSecurityGroup",
+        "SecurityGroupEgress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "Description": "Allow all outbound traffic by default",
+            "IpProtocol": "-1",
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Name",
+            "Value": "TestComputeStack/Cluster/Cluster/DefaultAutoScalingGroup",
+          },
+          {
+            "Key": "Stack",
+            "Value": "Compute",
+          },
+        ],
+        "VpcId": {
+          "Fn::ImportValue": "TestVpcStack:ExportsOutputRefTestVpcE77CE67811D13B85",
+        },
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+    },
+    "ClusterDefaultAutoScalingGroupInstanceSecurityGroupfromTestComputeStackClusterDefaultAutoScalingGroupInstanceSecurityGroup9333AB99910083073209": {
+      "Properties": {
+        "Description": "Allow Prometheus to scrape Node Exporter metrics",
+        "FromPort": 9100,
+        "GroupId": {
+          "Fn::GetAtt": [
+            "ClusterDefaultAutoScalingGroupInstanceSecurityGroupF404DD17",
+            "GroupId",
+          ],
+        },
+        "IpProtocol": "tcp",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "ClusterDefaultAutoScalingGroupInstanceSecurityGroupF404DD17",
+            "GroupId",
+          ],
+        },
+        "ToPort": 9100,
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress",
+    },
+    "ClusterDefaultAutoScalingGroupLaunchConfigE9088B4C": {
+      "DependsOn": [
+        "ClusterDefaultAutoScalingGroupInstanceRoleDefaultPolicy314B67E1",
+        "ClusterDefaultAutoScalingGroupInstanceRole744C857D",
+      ],
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "applies_to": [
+                "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+              "id": "AwsSolutions-IAM4",
+              "reason": "AWS managed policies are used for Lambda functions created by CDK for custom resources (Auto Scaling lifecycle hooks, VPC default security group restriction, EventBridge targets). These are standard CloudFormation custom resource Lambda functions managed by CDK.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Wildcard permissions are used by CDK-managed custom resource Lambdas for EventBridge to CloudWatch Logs integration and other CDK framework operations. This is required by the CDK framework to manage resource policies and cannot be scoped further. This is standard CDK behavior.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices and is created by CDK's Auto Scaling Group construct.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda (DrainECSHook) requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining. This is a CDK-managed resource.",
+            },
+            {
+              "id": "AwsSolutions-L1",
+              "reason": "Lambda runtime versions are managed by CDK for custom resources. CDK automatically updates these with new releases. Upgrading CDK version will update these runtimes.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling lifecycle hooks require permissions to describe instances and complete lifecycle actions. These permissions are scoped to the specific Auto Scaling Group and are necessary for proper instance lifecycle management.",
+            },
+            {
+              "id": "AwsSolutions-AS3",
+              "reason": "Auto Scaling Group notifications are optional for development environments. For production, consider enabling SNS notifications for scaling events to improve operational visibility.",
+            },
+            {
+              "id": "AwsSolutions-EC26",
+              "reason": "EBS encryption can be managed at the account level via AWS Config or enabled per-environment. For development environments, unencrypted volumes reduce costs. Production environments should enable EBS encryption.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS service requires permissions to describe and manage tasks within its cluster. The wildcard is scoped to the specific cluster ARN and is necessary for ECS service operations like task placement, health checks, and service discovery.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining.",
+            },
+            {
+              "id": "AwsSolutions-SNS3",
+              "reason": "SNS topic is used for internal ECS lifecycle hooks managed by CDK. SSL enforcement is handled by AWS internal services. The lifecycle hook topic is used for draining ECS tasks during instance termination.",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "AssociatePublicIpAddress": true,
+        "IamInstanceProfile": {
+          "Ref": "ClusterDefaultAutoScalingGroupInstanceProfile44723A6D",
+        },
+        "ImageId": {
+          "Ref": "SsmParameterValueawsserviceecsoptimizedamiamazonlinux2recommendedimageidC96584B6F00A464EAD1953AFF4B05118Parameter",
+        },
+        "InstanceType": "t3.micro",
+        "SecurityGroups": [
+          {
+            "Fn::GetAtt": [
+              "ClusterDefaultAutoScalingGroupInstanceSecurityGroupF404DD17",
+              "GroupId",
+            ],
+          },
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash
+echo ECS_CLUSTER=",
+                {
+                  "Ref": "ClusterC2E21B66",
+                },
+                " >> /etc/ecs/ecs.config
+sudo iptables --insert FORWARD 1 --in-interface docker+ --destination 169.254.169.254/32 --jump DROP
+sudo service iptables save
+echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config",
+              ],
+            ],
+          },
+        },
+      },
+      "Type": "AWS::AutoScaling::LaunchConfiguration",
+    },
+    "ClusterDefaultAutoScalingGroupLifecycleHookDrainHookCE64319B": {
+      "DependsOn": [
+        "ClusterDefaultAutoScalingGroupLifecycleHookDrainHookRoleDefaultPolicy46632807",
+        "ClusterDefaultAutoScalingGroupLifecycleHookDrainHookRole91908574",
+      ],
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "applies_to": [
+                "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+              "id": "AwsSolutions-IAM4",
+              "reason": "AWS managed policies are used for Lambda functions created by CDK for custom resources (Auto Scaling lifecycle hooks, VPC default security group restriction, EventBridge targets). These are standard CloudFormation custom resource Lambda functions managed by CDK.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Wildcard permissions are used by CDK-managed custom resource Lambdas for EventBridge to CloudWatch Logs integration and other CDK framework operations. This is required by the CDK framework to manage resource policies and cannot be scoped further. This is standard CDK behavior.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices and is created by CDK's Auto Scaling Group construct.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda (DrainECSHook) requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining. This is a CDK-managed resource.",
+            },
+            {
+              "id": "AwsSolutions-L1",
+              "reason": "Lambda runtime versions are managed by CDK for custom resources. CDK automatically updates these with new releases. Upgrading CDK version will update these runtimes.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling lifecycle hooks require permissions to describe instances and complete lifecycle actions. These permissions are scoped to the specific Auto Scaling Group and are necessary for proper instance lifecycle management.",
+            },
+            {
+              "id": "AwsSolutions-AS3",
+              "reason": "Auto Scaling Group notifications are optional for development environments. For production, consider enabling SNS notifications for scaling events to improve operational visibility.",
+            },
+            {
+              "id": "AwsSolutions-EC26",
+              "reason": "EBS encryption can be managed at the account level via AWS Config or enabled per-environment. For development environments, unencrypted volumes reduce costs. Production environments should enable EBS encryption.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS service requires permissions to describe and manage tasks within its cluster. The wildcard is scoped to the specific cluster ARN and is necessary for ECS service operations like task placement, health checks, and service discovery.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining.",
+            },
+            {
+              "id": "AwsSolutions-SNS3",
+              "reason": "SNS topic is used for internal ECS lifecycle hooks managed by CDK. SSL enforcement is handled by AWS internal services. The lifecycle hook topic is used for draining ECS tasks during instance termination.",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "AutoScalingGroupName": {
+          "Ref": "ClusterDefaultAutoScalingGroupASGDD37B8D0",
+        },
+        "DefaultResult": "CONTINUE",
+        "HeartbeatTimeout": 300,
+        "LifecycleTransition": "autoscaling:EC2_INSTANCE_TERMINATING",
+        "NotificationTargetARN": {
+          "Ref": "ClusterDefaultAutoScalingGroupLifecycleHookDrainHookTopic47578BA5",
+        },
+        "RoleARN": {
+          "Fn::GetAtt": [
+            "ClusterDefaultAutoScalingGroupLifecycleHookDrainHookRole91908574",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "AWS::AutoScaling::LifecycleHook",
+    },
+    "ClusterDefaultAutoScalingGroupLifecycleHookDrainHookRole91908574": {
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "applies_to": [
+                "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+              "id": "AwsSolutions-IAM4",
+              "reason": "AWS managed policies are used for Lambda functions created by CDK for custom resources (Auto Scaling lifecycle hooks, VPC default security group restriction, EventBridge targets). These are standard CloudFormation custom resource Lambda functions managed by CDK.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Wildcard permissions are used by CDK-managed custom resource Lambdas for EventBridge to CloudWatch Logs integration and other CDK framework operations. This is required by the CDK framework to manage resource policies and cannot be scoped further. This is standard CDK behavior.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices and is created by CDK's Auto Scaling Group construct.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda (DrainECSHook) requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining. This is a CDK-managed resource.",
+            },
+            {
+              "id": "AwsSolutions-L1",
+              "reason": "Lambda runtime versions are managed by CDK for custom resources. CDK automatically updates these with new releases. Upgrading CDK version will update these runtimes.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling lifecycle hooks require permissions to describe instances and complete lifecycle actions. These permissions are scoped to the specific Auto Scaling Group and are necessary for proper instance lifecycle management.",
+            },
+            {
+              "id": "AwsSolutions-AS3",
+              "reason": "Auto Scaling Group notifications are optional for development environments. For production, consider enabling SNS notifications for scaling events to improve operational visibility.",
+            },
+            {
+              "id": "AwsSolutions-EC26",
+              "reason": "EBS encryption can be managed at the account level via AWS Config or enabled per-environment. For development environments, unencrypted volumes reduce costs. Production environments should enable EBS encryption.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS service requires permissions to describe and manage tasks within its cluster. The wildcard is scoped to the specific cluster ARN and is necessary for ECS service operations like task placement, health checks, and service discovery.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining.",
+            },
+            {
+              "id": "AwsSolutions-SNS3",
+              "reason": "SNS topic is used for internal ECS lifecycle hooks managed by CDK. SSL enforcement is handled by AWS internal services. The lifecycle hook topic is used for draining ECS tasks during instance termination.",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "autoscaling.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Name",
+            "Value": "TestComputeStack/Cluster/Cluster/DefaultAutoScalingGroup",
+          },
+          {
+            "Key": "Stack",
+            "Value": "Compute",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "ClusterDefaultAutoScalingGroupLifecycleHookDrainHookRoleDefaultPolicy46632807": {
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "applies_to": [
+                "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+              "id": "AwsSolutions-IAM4",
+              "reason": "AWS managed policies are used for Lambda functions created by CDK for custom resources (Auto Scaling lifecycle hooks, VPC default security group restriction, EventBridge targets). These are standard CloudFormation custom resource Lambda functions managed by CDK.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Wildcard permissions are used by CDK-managed custom resource Lambdas for EventBridge to CloudWatch Logs integration and other CDK framework operations. This is required by the CDK framework to manage resource policies and cannot be scoped further. This is standard CDK behavior.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices and is created by CDK's Auto Scaling Group construct.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda (DrainECSHook) requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining. This is a CDK-managed resource.",
+            },
+            {
+              "id": "AwsSolutions-L1",
+              "reason": "Lambda runtime versions are managed by CDK for custom resources. CDK automatically updates these with new releases. Upgrading CDK version will update these runtimes.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling lifecycle hooks require permissions to describe instances and complete lifecycle actions. These permissions are scoped to the specific Auto Scaling Group and are necessary for proper instance lifecycle management.",
+            },
+            {
+              "id": "AwsSolutions-AS3",
+              "reason": "Auto Scaling Group notifications are optional for development environments. For production, consider enabling SNS notifications for scaling events to improve operational visibility.",
+            },
+            {
+              "id": "AwsSolutions-EC26",
+              "reason": "EBS encryption can be managed at the account level via AWS Config or enabled per-environment. For development environments, unencrypted volumes reduce costs. Production environments should enable EBS encryption.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS service requires permissions to describe and manage tasks within its cluster. The wildcard is scoped to the specific cluster ARN and is necessary for ECS service operations like task placement, health checks, and service discovery.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining.",
+            },
+            {
+              "id": "AwsSolutions-SNS3",
+              "reason": "SNS topic is used for internal ECS lifecycle hooks managed by CDK. SSL enforcement is handled by AWS internal services. The lifecycle hook topic is used for draining ECS tasks during instance termination.",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sns:Publish",
+              "Effect": "Allow",
+              "Resource": {
+                "Ref": "ClusterDefaultAutoScalingGroupLifecycleHookDrainHookTopic47578BA5",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "ClusterDefaultAutoScalingGroupLifecycleHookDrainHookRoleDefaultPolicy46632807",
+        "Roles": [
+          {
+            "Ref": "ClusterDefaultAutoScalingGroupLifecycleHookDrainHookRole91908574",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "ClusterDefaultAutoScalingGroupLifecycleHookDrainHookTopic47578BA5": {
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "applies_to": [
+                "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+              "id": "AwsSolutions-IAM4",
+              "reason": "AWS managed policies are used for Lambda functions created by CDK for custom resources (Auto Scaling lifecycle hooks, VPC default security group restriction, EventBridge targets). These are standard CloudFormation custom resource Lambda functions managed by CDK.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Wildcard permissions are used by CDK-managed custom resource Lambdas for EventBridge to CloudWatch Logs integration and other CDK framework operations. This is required by the CDK framework to manage resource policies and cannot be scoped further. This is standard CDK behavior.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices and is created by CDK's Auto Scaling Group construct.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda (DrainECSHook) requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining. This is a CDK-managed resource.",
+            },
+            {
+              "id": "AwsSolutions-L1",
+              "reason": "Lambda runtime versions are managed by CDK for custom resources. CDK automatically updates these with new releases. Upgrading CDK version will update these runtimes.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling lifecycle hooks require permissions to describe instances and complete lifecycle actions. These permissions are scoped to the specific Auto Scaling Group and are necessary for proper instance lifecycle management.",
+            },
+            {
+              "id": "AwsSolutions-AS3",
+              "reason": "Auto Scaling Group notifications are optional for development environments. For production, consider enabling SNS notifications for scaling events to improve operational visibility.",
+            },
+            {
+              "id": "AwsSolutions-EC26",
+              "reason": "EBS encryption can be managed at the account level via AWS Config or enabled per-environment. For development environments, unencrypted volumes reduce costs. Production environments should enable EBS encryption.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS service requires permissions to describe and manage tasks within its cluster. The wildcard is scoped to the specific cluster ARN and is necessary for ECS service operations like task placement, health checks, and service discovery.",
+            },
+            {
+              "applies_to": [
+                "Action::ecs:Submit*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Auto Scaling Group lifecycle hook Lambda requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining.",
+            },
+            {
+              "id": "AwsSolutions-SNS3",
+              "reason": "SNS topic is used for internal ECS lifecycle hooks managed by CDK. SSL enforcement is handled by AWS internal services. The lifecycle hook topic is used for draining ECS tasks during instance termination.",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Name",
+            "Value": "TestComputeStack/Cluster/Cluster/DefaultAutoScalingGroup",
+          },
+          {
+            "Key": "Stack",
+            "Value": "Compute",
+          },
+        ],
+      },
+      "Type": "AWS::SNS::Topic",
+    },
+    "ECSEventsFB436F25": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "LogGroupName": "/ecs/TestComputeStack/events",
+        "RetentionInDays": 14,
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "Compute",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "EcsClusterArnParameterE98E509C": {
+      "Properties": {
+        "Description": "ECS Cluster ARN for test environment",
+        "Name": "/ecs/test/cluster-arn",
+        "Tags": {
+          "Environment": "test",
+          "ManagedBy": "CDK",
+          "Stack": "Compute",
+        },
+        "Tier": "Standard",
+        "Type": "String",
+        "Value": {
+          "Fn::GetAtt": [
+            "ClusterC2E21B66",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "EcsClusterNameParameter437597E1": {
+      "Properties": {
+        "Description": "ECS Cluster Name for test environment",
+        "Name": "/ecs/test/cluster-name",
+        "Tags": {
+          "Environment": "test",
+          "ManagedBy": "CDK",
+          "Stack": "Compute",
+        },
+        "Tier": "Standard",
+        "Type": "String",
+        "Value": {
+          "Ref": "ClusterC2E21B66",
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "EcsEventRule94337D8C": {
+      "Properties": {
+        "Description": "Capture ECS events for test cluster",
+        "EventPattern": {
+          "detail": {
+            "clusterArn": [
+              {
+                "Fn::GetAtt": [
+                  "ClusterC2E21B66",
+                  "Arn",
+                ],
+              },
+            ],
+          },
+          "detail-type": [
+            "ECS Task State Change",
+            "ECS Container Instance State Change",
+            "ECS Service Action",
+          ],
+          "source": [
+            "aws.ecs",
+          ],
+        },
+        "State": "ENABLED",
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "Compute",
+          },
+        ],
+        "Targets": [
+          {
+            "Arn": {
+              "Fn::Join": [
+                "",
+                [
+                  "arn:",
+                  {
+                    "Ref": "AWS::Partition",
+                  },
+                  ":logs:eu-west-1:123456789012:log-group:",
+                  {
+                    "Ref": "ECSEventsFB436F25",
+                  },
+                ],
+              ],
+            },
+            "Id": "Target0",
+          },
+        ],
+      },
+      "Type": "AWS::Events::Rule",
+    },
+    "EcsServiceNameParameterDDA92DEE": {
+      "Properties": {
+        "Description": "ECS Service Name for test environment",
+        "Name": "/ecs/test/service-name",
+        "Tags": {
+          "Environment": "test",
+          "ManagedBy": "CDK",
+          "Stack": "Compute",
+        },
+        "Tier": "Standard",
+        "Type": "String",
+        "Value": {
+          "Fn::GetAtt": [
+            "Service9571FDD8",
+            "Name",
+          ],
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "EcsTaskDefinitionArnParameter77BB9F9E": {
+      "Properties": {
+        "Description": "ECS Task Definition ARN for test environment",
+        "Name": "/ecs/test/task-definition-arn",
+        "Tags": {
+          "Environment": "test",
+          "ManagedBy": "CDK",
+          "Stack": "Compute",
+        },
+        "Tier": "Standard",
+        "Type": "String",
+        "Value": {
+          "Ref": "TaskDefinitionTaskDefF9E7411B",
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "EventsLogGroupPolicyTestComputeStackEcsEventRule3241EC6D62790078": {
+      "DeletionPolicy": "Delete",
+      "DependsOn": [
+        "EventsLogGroupPolicyTestComputeStackEcsEventRule3241EC6DCustomResourcePolicy0CA35932",
+      ],
+      "Properties": {
+        "Create": {
+          "Fn::Join": [
+            "",
+            [
+              "{"service":"CloudWatchLogs","action":"putResourcePolicy","parameters":{"policyName":"TestComputeStackEventsLogGroupPolicyTestComputeStackEcsEventRule3241EC6D0282440C","policyDocument":"{\\"Statement\\":[{\\"Action\\":[\\"logs:PutLogEvents\\",\\"logs:CreateLogStream\\"],\\"Effect\\":\\"Allow\\",\\"Principal\\":{\\"Service\\":\\"events.amazonaws.com\\"},\\"Resource\\":\\"",
+              {
+                "Fn::GetAtt": [
+                  "ECSEventsFB436F25",
+                  "Arn",
+                ],
+              },
+              "\\"}],\\"Version\\":\\"2012-10-17\\"}"},"physicalResourceId":{"id":"EventsLogGroupPolicyTestComputeStackEcsEventRule3241EC6D"}}",
+            ],
+          ],
+        },
+        "Delete": "{"service":"CloudWatchLogs","action":"deleteResourcePolicy","parameters":{"policyName":"TestComputeStackEventsLogGroupPolicyTestComputeStackEcsEventRule3241EC6D0282440C"},"ignoreErrorCodesMatching":"ResourceNotFoundException"}",
+        "InstallLatestAwsSdk": true,
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "AWS679f53fac002430cb0da5b7982bd22872D164C4C",
+            "Arn",
+          ],
+        },
+        "Update": {
+          "Fn::Join": [
+            "",
+            [
+              "{"service":"CloudWatchLogs","action":"putResourcePolicy","parameters":{"policyName":"TestComputeStackEventsLogGroupPolicyTestComputeStackEcsEventRule3241EC6D0282440C","policyDocument":"{\\"Statement\\":[{\\"Action\\":[\\"logs:PutLogEvents\\",\\"logs:CreateLogStream\\"],\\"Effect\\":\\"Allow\\",\\"Principal\\":{\\"Service\\":\\"events.amazonaws.com\\"},\\"Resource\\":\\"",
+              {
+                "Fn::GetAtt": [
+                  "ECSEventsFB436F25",
+                  "Arn",
+                ],
+              },
+              "\\"}],\\"Version\\":\\"2012-10-17\\"}"},"physicalResourceId":{"id":"EventsLogGroupPolicyTestComputeStackEcsEventRule3241EC6D"}}",
+            ],
+          ],
+        },
+      },
+      "Type": "Custom::CloudwatchLogResourcePolicy",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "EventsLogGroupPolicyTestComputeStackEcsEventRule3241EC6DCustomResourcePolicy0CA35932": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "logs:PutResourcePolicy",
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": "logs:DeleteResourcePolicy",
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "EventsLogGroupPolicyTestComputeStackEcsEventRule3241EC6DCustomResourcePolicy0CA35932",
+        "Roles": [
+          {
+            "Ref": "AWS679f53fac002430cb0da5b7982bd2287ServiceRoleC1EA0FF2",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "NodeExporterExecutionRoleD4F3149C": {
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECR GetAuthorizationToken and public registry access do not support resource-level permissions. This is an AWS service limitation for container image authentication.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::.*/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "CloudWatch Logs permissions use wildcard for log streams within the specific log group. This allows ECS to create log streams dynamically.",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Description": "Execution role for Node Exporter task with least privilege",
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "Compute",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "NodeExporterExecutionRoleDefaultPolicyA936CFE0": {
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECR GetAuthorizationToken and public registry access do not support resource-level permissions. This is an AWS service limitation for container image authentication.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::.*/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "CloudWatch Logs permissions use wildcard for log streams within the specific log group. This allows ECS to create log streams dynamically.",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::GetAtt": [
+                        "NodeExporterLogGroup87EF8E53",
+                        "Arn",
+                      ],
+                    },
+                    ":*",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": "ecr:GetAuthorizationToken",
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "ecr-public:GetAuthorizationToken",
+                "sts:GetServiceBearerToken",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "NodeExporterLogGroup87EF8E53",
+                  "Arn",
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "NodeExporterExecutionRoleDefaultPolicyA936CFE0",
+        "Roles": [
+          {
+            "Ref": "NodeExporterExecutionRoleD4F3149C",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "NodeExporterLogGroup87EF8E53": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "LogGroupName": "/ecs/test-node-exporter",
+        "RetentionInDays": 7,
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "Compute",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "NodeExporterServiceD9597F1F": {
+      "DependsOn": [
+        "NodeExporterTaskDefTaskRoleDefaultPolicy6C0B3E4E",
+        "NodeExporterTaskDefTaskRoleE2BA598D",
+      ],
+      "Properties": {
+        "Cluster": {
+          "Ref": "ClusterC2E21B66",
+        },
+        "DeploymentConfiguration": {
+          "Alarms": {
+            "AlarmNames": [],
+            "Enable": false,
+            "Rollback": false,
+          },
+          "MaximumPercent": 200,
+          "MinimumHealthyPercent": 50,
+        },
+        "DesiredCount": 1,
+        "EnableECSManagedTags": false,
+        "EnableExecuteCommand": true,
+        "LaunchType": "EC2",
+        "SchedulingStrategy": "REPLICA",
+        "ServiceName": "test-node-exporter",
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Service",
+            "Value": "NodeExporter",
+          },
+          {
+            "Key": "Stack",
+            "Value": "Compute",
+          },
+        ],
+        "TaskDefinition": {
+          "Ref": "NodeExporterTaskDefC17ED60B",
+        },
+      },
+      "Type": "AWS::ECS::Service",
+    },
+    "NodeExporterTaskDefC17ED60B": {
+      "Properties": {
+        "ContainerDefinitions": [
+          {
+            "Command": [
+              "--path.procfs=/host/proc",
+              "--path.sysfs=/host/sys",
+              "--path.rootfs=/rootfs",
+              "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($|/)",
+            ],
+            "Essential": true,
+            "Image": "prom/node-exporter:latest",
+            "LogConfiguration": {
+              "LogDriver": "awslogs",
+              "Options": {
+                "awslogs-group": {
+                  "Ref": "NodeExporterLogGroup87EF8E53",
+                },
+                "awslogs-region": "eu-west-1",
+                "awslogs-stream-prefix": "node-exporter",
+              },
+            },
+            "MemoryReservation": 64,
+            "MountPoints": [
+              {
+                "ContainerPath": "/host/proc",
+                "ReadOnly": true,
+                "SourceVolume": "proc",
+              },
+              {
+                "ContainerPath": "/host/sys",
+                "ReadOnly": true,
+                "SourceVolume": "sys",
+              },
+              {
+                "ContainerPath": "/rootfs",
+                "ReadOnly": true,
+                "SourceVolume": "rootfs",
+              },
+            ],
+            "Name": "node-exporter",
+            "PortMappings": [
+              {
+                "ContainerPort": 9100,
+                "HostPort": 9100,
+                "Protocol": "tcp",
+              },
+            ],
+          },
+        ],
+        "ExecutionRoleArn": {
+          "Fn::GetAtt": [
+            "NodeExporterExecutionRoleD4F3149C",
+            "Arn",
+          ],
+        },
+        "Family": "TestComputeStackNodeExporterTaskDef0FCB8AAD",
+        "NetworkMode": "host",
+        "RequiresCompatibilities": [
+          "EC2",
+        ],
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "Compute",
+          },
+        ],
+        "TaskRoleArn": {
+          "Fn::GetAtt": [
+            "NodeExporterTaskDefTaskRoleE2BA598D",
+            "Arn",
+          ],
+        },
+        "Volumes": [
+          {
+            "Host": {
+              "SourcePath": "/proc",
+            },
+            "Name": "proc",
+          },
+          {
+            "Host": {
+              "SourcePath": "/sys",
+            },
+            "Name": "sys",
+          },
+          {
+            "Host": {
+              "SourcePath": "/",
+            },
+            "Name": "rootfs",
+          },
+        ],
+      },
+      "Type": "AWS::ECS::TaskDefinition",
+    },
+    "NodeExporterTaskDefTaskRoleDefaultPolicy6C0B3E4E": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "ssmmessages:CreateControlChannel",
+                "ssmmessages:CreateDataChannel",
+                "ssmmessages:OpenControlChannel",
+                "ssmmessages:OpenDataChannel",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": "logs:DescribeLogGroups",
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:DescribeLogStreams",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "NodeExporterTaskDefTaskRoleDefaultPolicy6C0B3E4E",
+        "Roles": [
+          {
+            "Ref": "NodeExporterTaskDefTaskRoleE2BA598D",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "NodeExporterTaskDefTaskRoleE2BA598D": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "Compute",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "Service9571FDD8": {
+      "DependsOn": [
+        "TaskDefinitionTaskDefTaskRoleDefaultPolicy1F94C8D0",
+        "TaskDefinitionTaskDefTaskRole3A86AC90",
+      ],
+      "Properties": {
+        "Cluster": {
+          "Ref": "ClusterC2E21B66",
+        },
+        "DeploymentConfiguration": {
+          "Alarms": {
+            "AlarmNames": [
+              "test-ECS-CPU-Alarm",
+            ],
+            "Enable": true,
+            "Rollback": false,
+          },
+          "DeploymentCircuitBreaker": {
+            "Enable": false,
+            "Rollback": false,
+          },
+          "MaximumPercent": 200,
+          "MinimumHealthyPercent": 0,
+        },
+        "DeploymentController": {
+          "Type": "ECS",
+        },
+        "DesiredCount": 1,
+        "EnableECSManagedTags": false,
+        "EnableExecuteCommand": true,
+        "HealthCheckGracePeriodSeconds": 120,
+        "LaunchType": "EC2",
+        "PlacementStrategies": [
+          {
+            "Field": "instanceId",
+            "Type": "spread",
+          },
+          {
+            "Field": "CPU",
+            "Type": "binpack",
+          },
+        ],
+        "SchedulingStrategy": "REPLICA",
+        "ServiceName": "ecs-service-test",
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Service",
+            "Value": "ECS",
+          },
+          {
+            "Key": "Stack",
+            "Value": "Compute",
+          },
+        ],
+        "TaskDefinition": {
+          "Ref": "TaskDefinitionTaskDefF9E7411B",
+        },
+      },
+      "Type": "AWS::ECS::Service",
+    },
+    "ServiceCPUAlarmDC02B202": {
+      "Properties": {
+        "AlarmName": "test-ECS-CPU-Alarm",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "Dimensions": [
+          {
+            "Name": "ClusterName",
+            "Value": {
+              "Ref": "ClusterC2E21B66",
+            },
+          },
+          {
+            "Name": "ServiceName",
+            "Value": {
+              "Fn::GetAtt": [
+                "Service9571FDD8",
+                "Name",
+              ],
+            },
+          },
+        ],
+        "EvaluationPeriods": 2,
+        "MetricName": "CPUUtilization",
+        "Namespace": "AWS/ECS",
+        "Period": 300,
+        "Statistic": "Average",
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "Compute",
+          },
+        ],
+        "Threshold": 80,
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "TaskDefinitionExecutionRole8D61C2FB": {
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECR GetAuthorizationToken action does not support resource-level permissions and requires wildcard (*). This is an AWS service limitation documented in AWS IAM documentation.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:ecr:.*:.*:repository/\\*$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECR repository permissions use wildcard to allow pulling from any repository in the account. This is scoped to the account and region, providing reasonable security while allowing flexibility for multiple repositories.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:logs:.*:.*:log-group:/ecs/test\\*:\\*$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "CloudWatch Logs permissions use wildcard for log streams within the environment-specific log group. This allows services to create log streams dynamically while restricting access to the specific environment. The wildcard is scoped to /ecs/{envName}* pattern.",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Description": "Execution role for ECS task with least privilege permissions",
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "Compute",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "TaskDefinitionExecutionRoleDefaultPolicy1F3406F5": {
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECR GetAuthorizationToken action does not support resource-level permissions and requires wildcard (*). This is an AWS service limitation documented in AWS IAM documentation.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:ecr:.*:.*:repository/\\*$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECR repository permissions use wildcard to allow pulling from any repository in the account. This is scoped to the account and region, providing reasonable security while allowing flexibility for multiple repositories.",
+            },
+            {
+              "applies_to": [
+                {
+                  "regex": "/^Resource::arn:aws:logs:.*:.*:log-group:/ecs/test\\*:\\*$/",
+                },
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "CloudWatch Logs permissions use wildcard for log streams within the environment-specific log group. This allows services to create log streams dynamically while restricting access to the specific environment. The wildcard is scoped to /ecs/{envName}* pattern.",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": "arn:aws:logs:eu-west-1:123456789012:log-group:/ecs/test*:*",
+            },
+            {
+              "Action": "ecr:GetAuthorizationToken",
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "ecr:BatchCheckLayerAvailability",
+                "ecr:GetDownloadUrlForLayer",
+                "ecr:BatchGetImage",
+              ],
+              "Effect": "Allow",
+              "Resource": "arn:aws:ecr:eu-west-1:123456789012:repository/*",
+            },
+            {
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "TaskDefinitionTaskDefappLogGroupA118B6DE",
+                  "Arn",
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "TaskDefinitionExecutionRoleDefaultPolicy1F3406F5",
+        "Roles": [
+          {
+            "Ref": "TaskDefinitionExecutionRole8D61C2FB",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "TaskDefinitionTaskDefF9E7411B": {
+      "Properties": {
+        "ContainerDefinitions": [
+          {
+            "Environment": [
+              {
+                "Name": "NODE_ENV",
+                "Value": "production",
+              },
+              {
+                "Name": "PORT",
+                "Value": "3000",
+              },
+            ],
+            "Essential": true,
+            "Image": "dummy-value-for-/ecr/test/repository-uri:latest",
+            "LogConfiguration": {
+              "LogDriver": "awslogs",
+              "Options": {
+                "awslogs-group": {
+                  "Ref": "TaskDefinitionTaskDefappLogGroupA118B6DE",
+                },
+                "awslogs-region": "eu-west-1",
+                "awslogs-stream-prefix": "ecs-test",
+              },
+            },
+            "MemoryReservation": 384,
+            "Name": "app",
+            "PortMappings": [
+              {
+                "ContainerPort": 3000,
+                "HostPort": 0,
+                "Protocol": "tcp",
+              },
+            ],
+          },
+        ],
+        "ExecutionRoleArn": {
+          "Fn::GetAtt": [
+            "TaskDefinitionExecutionRole8D61C2FB",
+            "Arn",
+          ],
+        },
+        "Family": "TestComputeStackTaskDefinitionTaskDefAAD2D8EC",
+        "NetworkMode": "bridge",
+        "RequiresCompatibilities": [
+          "EC2",
+        ],
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "Compute",
+          },
+        ],
+        "TaskRoleArn": {
+          "Fn::GetAtt": [
+            "TaskDefinitionTaskDefTaskRole3A86AC90",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "AWS::ECS::TaskDefinition",
+    },
+    "TaskDefinitionTaskDefTaskRole3A86AC90": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "Compute",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "TaskDefinitionTaskDefTaskRoleDefaultPolicy1F94C8D0": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "ssmmessages:CreateControlChannel",
+                "ssmmessages:CreateDataChannel",
+                "ssmmessages:OpenControlChannel",
+                "ssmmessages:OpenDataChannel",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": "logs:DescribeLogGroups",
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:DescribeLogStreams",
+                "logs:PutLogEvents",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "TaskDefinitionTaskDefTaskRoleDefaultPolicy1F94C8D0",
+        "Roles": [
+          {
+            "Ref": "TaskDefinitionTaskDefTaskRole3A86AC90",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "TaskDefinitionTaskDefappLogGroupA118B6DE": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "Compute",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "TaskLogs5C7CDF8E": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "LogGroupName": "/ecs/TestComputeStack/tasks",
+        "RetentionInDays": 14,
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "Compute",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+  },
+  "Rules": {
+    "CheckBootstrapVersion": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Contains": [
+                  [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                  ],
+                  {
+                    "Ref": "BootstrapVersion",
+                  },
+                ],
+              },
+            ],
+          },
+          "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI.",
+        },
+      ],
+    },
+  },
+}
+`;
+
+exports[`ComputeStack Test Suite Snapshots ECS Cluster matches snapshot 1`] = `
+{
+  "ClusterC2E21B66": {
+    "Properties": {
+      "ClusterName": "ecs-cluster-test",
+      "ClusterSettings": [
+        {
+          "Name": "containerInsights",
+          "Value": "enabled",
+        },
+      ],
+      "Tags": [
+        {
+          "Key": "Environment",
+          "Value": "test",
+        },
+        {
+          "Key": "ManagedBy",
+          "Value": "CDK",
+        },
+        {
+          "Key": "Stack",
+          "Value": "Compute",
+        },
+      ],
+    },
+    "Type": "AWS::ECS::Cluster",
+  },
+}
+`;
+
+exports[`ComputeStack Test Suite Snapshots ECS Services match snapshot 1`] = `
+{
+  "NodeExporterServiceD9597F1F": {
+    "DependsOn": [
+      "NodeExporterTaskDefTaskRoleDefaultPolicy6C0B3E4E",
+      "NodeExporterTaskDefTaskRoleE2BA598D",
+    ],
+    "Properties": {
+      "Cluster": {
+        "Ref": "ClusterC2E21B66",
+      },
+      "DeploymentConfiguration": {
+        "Alarms": {
+          "AlarmNames": [],
+          "Enable": false,
+          "Rollback": false,
+        },
+        "MaximumPercent": 200,
+        "MinimumHealthyPercent": 50,
+      },
+      "DesiredCount": 1,
+      "EnableECSManagedTags": false,
+      "EnableExecuteCommand": true,
+      "LaunchType": "EC2",
+      "SchedulingStrategy": "REPLICA",
+      "ServiceName": "test-node-exporter",
+      "Tags": [
+        {
+          "Key": "Environment",
+          "Value": "test",
+        },
+        {
+          "Key": "ManagedBy",
+          "Value": "CDK",
+        },
+        {
+          "Key": "Service",
+          "Value": "NodeExporter",
+        },
+        {
+          "Key": "Stack",
+          "Value": "Compute",
+        },
+      ],
+      "TaskDefinition": {
+        "Ref": "NodeExporterTaskDefC17ED60B",
+      },
+    },
+    "Type": "AWS::ECS::Service",
+  },
+  "Service9571FDD8": {
+    "DependsOn": [
+      "TaskDefinitionTaskDefTaskRoleDefaultPolicy1F94C8D0",
+      "TaskDefinitionTaskDefTaskRole3A86AC90",
+    ],
+    "Properties": {
+      "Cluster": {
+        "Ref": "ClusterC2E21B66",
+      },
+      "DeploymentConfiguration": {
+        "Alarms": {
+          "AlarmNames": [
+            "test-ECS-CPU-Alarm",
+          ],
+          "Enable": true,
+          "Rollback": false,
+        },
+        "DeploymentCircuitBreaker": {
+          "Enable": false,
+          "Rollback": false,
+        },
+        "MaximumPercent": 200,
+        "MinimumHealthyPercent": 0,
+      },
+      "DeploymentController": {
+        "Type": "ECS",
+      },
+      "DesiredCount": 1,
+      "EnableECSManagedTags": false,
+      "EnableExecuteCommand": true,
+      "HealthCheckGracePeriodSeconds": 120,
+      "LaunchType": "EC2",
+      "PlacementStrategies": [
+        {
+          "Field": "instanceId",
+          "Type": "spread",
+        },
+        {
+          "Field": "CPU",
+          "Type": "binpack",
+        },
+      ],
+      "SchedulingStrategy": "REPLICA",
+      "ServiceName": "ecs-service-test",
+      "Tags": [
+        {
+          "Key": "Environment",
+          "Value": "test",
+        },
+        {
+          "Key": "ManagedBy",
+          "Value": "CDK",
+        },
+        {
+          "Key": "Service",
+          "Value": "ECS",
+        },
+        {
+          "Key": "Stack",
+          "Value": "Compute",
+        },
+      ],
+      "TaskDefinition": {
+        "Ref": "TaskDefinitionTaskDefF9E7411B",
+      },
+    },
+    "Type": "AWS::ECS::Service",
+  },
+}
+`;
+
+exports[`ComputeStack Test Suite Snapshots Task Definitions match snapshot 1`] = `
+{
+  "NodeExporterTaskDefC17ED60B": {
+    "Properties": {
+      "ContainerDefinitions": [
+        {
+          "Command": [
+            "--path.procfs=/host/proc",
+            "--path.sysfs=/host/sys",
+            "--path.rootfs=/rootfs",
+            "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($|/)",
+          ],
+          "Essential": true,
+          "Image": "prom/node-exporter:latest",
+          "LogConfiguration": {
+            "LogDriver": "awslogs",
+            "Options": {
+              "awslogs-group": {
+                "Ref": "NodeExporterLogGroup87EF8E53",
+              },
+              "awslogs-region": "eu-west-1",
+              "awslogs-stream-prefix": "node-exporter",
+            },
+          },
+          "MemoryReservation": 64,
+          "MountPoints": [
+            {
+              "ContainerPath": "/host/proc",
+              "ReadOnly": true,
+              "SourceVolume": "proc",
+            },
+            {
+              "ContainerPath": "/host/sys",
+              "ReadOnly": true,
+              "SourceVolume": "sys",
+            },
+            {
+              "ContainerPath": "/rootfs",
+              "ReadOnly": true,
+              "SourceVolume": "rootfs",
+            },
+          ],
+          "Name": "node-exporter",
+          "PortMappings": [
+            {
+              "ContainerPort": 9100,
+              "HostPort": 9100,
+              "Protocol": "tcp",
+            },
+          ],
+        },
+      ],
+      "ExecutionRoleArn": {
+        "Fn::GetAtt": [
+          "NodeExporterExecutionRoleD4F3149C",
+          "Arn",
+        ],
+      },
+      "Family": "TestComputeStackNodeExporterTaskDef0FCB8AAD",
+      "NetworkMode": "host",
+      "RequiresCompatibilities": [
+        "EC2",
+      ],
+      "Tags": [
+        {
+          "Key": "Environment",
+          "Value": "test",
+        },
+        {
+          "Key": "ManagedBy",
+          "Value": "CDK",
+        },
+        {
+          "Key": "Stack",
+          "Value": "Compute",
+        },
+      ],
+      "TaskRoleArn": {
+        "Fn::GetAtt": [
+          "NodeExporterTaskDefTaskRoleE2BA598D",
+          "Arn",
+        ],
+      },
+      "Volumes": [
+        {
+          "Host": {
+            "SourcePath": "/proc",
+          },
+          "Name": "proc",
+        },
+        {
+          "Host": {
+            "SourcePath": "/sys",
+          },
+          "Name": "sys",
+        },
+        {
+          "Host": {
+            "SourcePath": "/",
+          },
+          "Name": "rootfs",
+        },
+      ],
+    },
+    "Type": "AWS::ECS::TaskDefinition",
+  },
+  "TaskDefinitionTaskDefF9E7411B": {
+    "Properties": {
+      "ContainerDefinitions": [
+        {
+          "Environment": [
+            {
+              "Name": "NODE_ENV",
+              "Value": "production",
+            },
+            {
+              "Name": "PORT",
+              "Value": "3000",
+            },
+          ],
+          "Essential": true,
+          "Image": "dummy-value-for-/ecr/test/repository-uri:latest",
+          "LogConfiguration": {
+            "LogDriver": "awslogs",
+            "Options": {
+              "awslogs-group": {
+                "Ref": "TaskDefinitionTaskDefappLogGroupA118B6DE",
+              },
+              "awslogs-region": "eu-west-1",
+              "awslogs-stream-prefix": "ecs-test",
+            },
+          },
+          "MemoryReservation": 384,
+          "Name": "app",
+          "PortMappings": [
+            {
+              "ContainerPort": 3000,
+              "HostPort": 0,
+              "Protocol": "tcp",
+            },
+          ],
+        },
+      ],
+      "ExecutionRoleArn": {
+        "Fn::GetAtt": [
+          "TaskDefinitionExecutionRole8D61C2FB",
+          "Arn",
+        ],
+      },
+      "Family": "TestComputeStackTaskDefinitionTaskDefAAD2D8EC",
+      "NetworkMode": "bridge",
+      "RequiresCompatibilities": [
+        "EC2",
+      ],
+      "Tags": [
+        {
+          "Key": "Environment",
+          "Value": "test",
+        },
+        {
+          "Key": "ManagedBy",
+          "Value": "CDK",
+        },
+        {
+          "Key": "Stack",
+          "Value": "Compute",
+        },
+      ],
+      "TaskRoleArn": {
+        "Fn::GetAtt": [
+          "TaskDefinitionTaskDefTaskRole3A86AC90",
+          "Arn",
+        ],
+      },
+    },
+    "Type": "AWS::ECS::TaskDefinition",
+  },
+}
+`;

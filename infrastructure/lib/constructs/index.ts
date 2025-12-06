@@ -1,19 +1,18 @@
 /** @format */
 
-// Networking constructs
-export * from "./networking/vpc-construct";
+// Constructs organized by service domain
 
-// Storage constructs
-export * from "./storage/ecr-construct";
+// Networking constructs
+export * from "./networking";
 
 // Compute constructs
-export * from "./compute/ecs-construct";
-export * from "./compute/container-image-construct";
+export * from "./compute";
 
 // Monitoring constructs
-export * from "./monitoring/monitoring-construct";
-export * from "./monitoring/eventbridge-construct";
+export * from "./monitoring";
+
+// Storage constructs
+export * from "./storage";
 
 // Configuration constructs
-export * from "./config/ssm-parameters-construct";
-export * from "./config/stack-outputs-construct";
+export * from "./config";

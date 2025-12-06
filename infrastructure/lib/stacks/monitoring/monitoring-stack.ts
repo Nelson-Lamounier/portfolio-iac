@@ -4,8 +4,8 @@ import * as cdk from "aws-cdk-lib";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as sns from "aws-cdk-lib/aws-sns";
 import { Construct } from "constructs";
-import { MonitoringConstruct } from "../../constructs/monitoring/monitoring-construct";
-import { EventBridgeConstruct } from "../../constructs/monitoring/eventbridge-construct";
+import { MonitoringConstruct } from "../../constructs/monitoring/cloudwatch/monitoring-construct";
+import { EventBridgeConstruct } from "../../constructs/monitoring/cloudwatch/eventbridge-construct";
 
 export interface MonitoringStackProps extends cdk.StackProps {
   envName: string;

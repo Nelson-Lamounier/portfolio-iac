@@ -11,8 +11,7 @@ export * from "./compute/compute-stack";
 
 // Monitoring stacks
 export * from "./monitoring/monitoring-stack";
-export * from "./monitoring/monitoring-ec2-stack";
 export * from "./monitoring/monitoring-ecs-stack";
 
 // Load Balancer stacks
-export * from "./networking/load-balancer-stack";
+export * from "./load-balancer/load-balancer-stack";
