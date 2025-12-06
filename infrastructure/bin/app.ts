@@ -15,7 +15,9 @@ import {
   MonitoringStack,
   MonitoringEcsStack,
   LoadBalancerStack,
+  VpcPeeringStack,
 } from "../lib/stacks";
+import { VpcPeeringAcceptorRole } from "../lib/constructs/iam/vpc-peering-acceptor-role";
 import { environments } from "../config/environments";
 
 const app = new cdk.App();
@@ -411,6 +413,77 @@ if (
 }
 
 // ========================================
+// 12. VPC Peering (for cross-account connectivity)
+// ========================================
+// VPC peering enables Prometheus in pipeline account to scrape metrics from dev/staging/prod
+//
+// Two components:
+// 1. VpcPeeringAcceptorRole: Deployed in peer accounts (dev/staging/prod)
+//    - Allows pipeline account to accept peering and update routes
+// 2. VpcPeeringStack: Deployed in pipeline account
+//    - Creates peering connections to all peer accounts
+
+// In application accounts (dev/staging/prod): Create the acceptor role
+if (!config.isMonitoringAccount && config.pipelineAccount) {
+  console.log("\n🔗 Creating VPC Peering Acceptor Role");
+  console.log(
+    `   Allowing pipeline account ${config.pipelineAccount} to peer\n`
+  );
+
+  new VpcPeeringAcceptorRole(networkingStack, "VpcPeeringAcceptorRole", {
+    requesterAccountId: config.pipelineAccount,
+    envName: config.envName,
+  });
+}
+
+// In pipeline account: Create peering connections to application accounts
+// Note: This requires the acceptor roles to exist in peer accounts first
+// Deploy with: ENVIRONMENT=pipeline yarn cdk deploy VpcPeeringStack-pipeline
+if (
+  config.isMonitoringAccount &&
+  config.monitoredAccounts &&
+  config.monitoredAccounts.length > 0
+) {
+  // Get peer VPC info from environment variables or SSM
+  // These should be set after deploying NetworkingStack in each peer account
+  const peerAccounts: Array<{
+    envName: string;
+    accountId: string;
+    vpcId: string;
+    vpcCidr: string;
+    roleArn: string;
+  }> = [];
+
+  // Check for development account peering config
+  if (process.env.DEV_VPC_ID && process.env.AWS_ACCOUNT_ID_DEV) {
+    peerAccounts.push({
+      envName: "development",
+      accountId: process.env.AWS_ACCOUNT_ID_DEV,
+      vpcId: process.env.DEV_VPC_ID,
+      vpcCidr: vpcCidrMap["development"] || "10.1.0.0/16",
+      roleArn: `arn:aws:iam::${process.env.AWS_ACCOUNT_ID_DEV}:role/development-VpcPeeringAcceptorRole`,
+    });
+  }
+
+  if (peerAccounts.length > 0) {
+    console.log("\n🔗 Creating VPC Peering Stack");
+    console.log(
+      `   Peering to: ${peerAccounts.map((p) => p.envName).join(", ")}\n`
+    );
+
+    new VpcPeeringStack(app, `VpcPeeringStack-${config.envName}`, {
+      ...stackProps,
+      vpc: networkingStack.vpc,
+      envName: config.envName,
+      peerAccounts: peerAccounts,
+    });
+  } else {
+    console.log("\n VPC Peering: No peer accounts configured");
+    console.log("   Set DEV_VPC_ID and AWS_ACCOUNT_ID_DEV to enable peering\n");
+  }
+}
+
+// ========================================
 // CDK Nag Integration
 // ========================================
 // Apply AWS Solutions security checks based on environment
@@ -420,7 +493,7 @@ if (process.env.ENABLE_CDK_NAG !== "false") {
   const isProduction = ["production", "staging"].includes(envName);
 
   console.log(
-    `\n🔒 CDK Nag: ${isProduction ? "STRICT" : "LENIENT"} mode for ${envName}`
+    `\n CDK Nag: ${isProduction ? "STRICT" : "LENIENT"} mode for ${envName}`
   );
 
   Aspects.of(app).add(
