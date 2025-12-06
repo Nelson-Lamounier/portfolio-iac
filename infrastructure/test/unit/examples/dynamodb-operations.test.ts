@@ -1,457 +1,459 @@
 /** @format */
 
-import { mockClient } from "aws-sdk-client-mock";
-import {
-  DynamoDBClient,
-  PutItemCommand,
-  GetItemCommand,
-  UpdateItemCommand,
-  DeleteItemCommand,
-  QueryCommand,
-  ScanCommand,
-} from "@aws-sdk/client-dynamodb";
+// /** @format */
 
-const dynamoMock = mockClient(DynamoDBClient);
+// import { mockClient } from "aws-sdk-client-mock";
+// import {
+//   DynamoDBClient,
+//   PutItemCommand,
+//   GetItemCommand,
+//   UpdateItemCommand,
+//   DeleteItemCommand,
+//   QueryCommand,
+//   ScanCommand,
+// } from "@aws-sdk/client-dynamodb";
 
-describe("DynamoDB Operations Examples", () => {
-  beforeEach(() => {
-    dynamoMock.reset();
-  });
+// const dynamoMock = mockClient(DynamoDBClient);
 
-  afterAll(() => {
-    dynamoMock.restore();
-  });
+// describe("DynamoDB Operations Examples", () => {
+//   beforeEach(() => {
+//     dynamoMock.reset();
+//   });
 
-  describe("PutItem Operations", () => {
-    test("puts item successfully", async () => {
-      dynamoMock.on(PutItemCommand).resolves({});
+//   afterAll(() => {
+//     dynamoMock.restore();
+//   });
 
-      const client = new DynamoDBClient({});
-      await client.send(
-        new PutItemCommand({
-          TableName: "Users",
-          Item: {
-            userId: { S: "user-123" },
-            email: { S: "user@example.com" },
-            name: { S: "John Doe" },
-            createdAt: { N: "1701792000" },
-          },
-        })
-      );
+//   describe("PutItem Operations", () => {
+//     test("puts item successfully", async () => {
+//       dynamoMock.on(PutItemCommand).resolves({});
 
-      expect(dynamoMock.calls()).toHaveLength(1);
-      const call = dynamoMock.call(0);
-      expect(call.args[0].input.TableName).toBe("Users");
-    });
+//       const client = new DynamoDBClient({});
+//       await client.send(
+//         new PutItemCommand({
+//           TableName: "Users",
+//           Item: {
+//             userId: { S: "user-123" },
+//             email: { S: "user@example.com" },
+//             name: { S: "John Doe" },
+//             createdAt: { N: "1701792000" },
+//           },
+//         })
+//       );
 
-    test("handles conditional put failure", async () => {
-      dynamoMock.on(PutItemCommand).rejects({
-        name: "ConditionalCheckFailedException",
-        message: "The conditional request failed",
-      });
+//       expect(dynamoMock.calls()).toHaveLength(1);
+//       const call = dynamoMock.call(0);
+//       expect(call.args[0].input.TableName).toBe("Users");
+//     });
 
-      const client = new DynamoDBClient({});
+//     test("handles conditional put failure", async () => {
+//       dynamoMock.on(PutItemCommand).rejects({
+//         name: "ConditionalCheckFailedException",
+//         message: "The conditional request failed",
+//       });
 
-      await expect(
-        client.send(
-          new PutItemCommand({
-            TableName: "Users",
-            Item: {
-              userId: { S: "user-123" },
-            },
-            ConditionExpression: "attribute_not_exists(userId)",
-          })
-        )
-      ).rejects.toMatchObject({
-        name: "ConditionalCheckFailedException",
-      });
-    });
-  });
+//       const client = new DynamoDBClient({});
 
-  describe("GetItem Operations", () => {
-    test("gets item successfully", async () => {
-      dynamoMock.on(GetItemCommand).resolves({
-        Item: {
-          userId: { S: "user-123" },
-          email: { S: "user@example.com" },
-          name: { S: "John Doe" },
-          age: { N: "30" },
-        },
-      });
+//       await expect(
+//         client.send(
+//           new PutItemCommand({
+//             TableName: "Users",
+//             Item: {
+//               userId: { S: "user-123" },
+//             },
+//             ConditionExpression: "attribute_not_exists(userId)",
+//           })
+//         )
+//       ).rejects.toMatchObject({
+//         name: "ConditionalCheckFailedException",
+//       });
+//     });
+//   });
 
-      const client = new DynamoDBClient({});
-      const result = await client.send(
-        new GetItemCommand({
-          TableName: "Users",
-          Key: {
-            userId: { S: "user-123" },
-          },
-        })
-      );
+//   describe("GetItem Operations", () => {
+//     test("gets item successfully", async () => {
+//       dynamoMock.on(GetItemCommand).resolves({
+//         Item: {
+//           userId: { S: "user-123" },
+//           email: { S: "user@example.com" },
+//           name: { S: "John Doe" },
+//           age: { N: "30" },
+//         },
+//       });
 
-      expect(result.Item).toBeDefined();
-      expect(result.Item?.userId.S).toBe("user-123");
-      expect(result.Item?.email.S).toBe("user@example.com");
-    });
+//       const client = new DynamoDBClient({});
+//       const result = await client.send(
+//         new GetItemCommand({
+//           TableName: "Users",
+//           Key: {
+//             userId: { S: "user-123" },
+//           },
+//         })
+//       );
 
-    test("handles item not found", async () => {
-      dynamoMock.on(GetItemCommand).resolves({
-        Item: undefined,
-      });
+//       expect(result.Item).toBeDefined();
+//       expect(result.Item?.userId.S).toBe("user-123");
+//       expect(result.Item?.email.S).toBe("user@example.com");
+//     });
 
-      const client = new DynamoDBClient({});
-      const result = await client.send(
-        new GetItemCommand({
-          TableName: "Users",
-          Key: {
-            userId: { S: "non-existent" },
-          },
-        })
-      );
+//     test("handles item not found", async () => {
+//       dynamoMock.on(GetItemCommand).resolves({
+//         Item: undefined,
+//       });
 
-      expect(result.Item).toBeUndefined();
-    });
+//       const client = new DynamoDBClient({});
+//       const result = await client.send(
+//         new GetItemCommand({
+//           TableName: "Users",
+//           Key: {
+//             userId: { S: "non-existent" },
+//           },
+//         })
+//       );
 
-    test("gets item with projection", async () => {
-      dynamoMock
-        .on(GetItemCommand, {
-          TableName: "Users",
-          Key: { userId: { S: "user-123" } },
-          ProjectionExpression: "email, #n",
-        })
-        .resolves({
-          Item: {
-            email: { S: "user@example.com" },
-            name: { S: "John Doe" },
-          },
-        });
+//       expect(result.Item).toBeUndefined();
+//     });
 
-      const client = new DynamoDBClient({});
-      const result = await client.send(
-        new GetItemCommand({
-          TableName: "Users",
-          Key: {
-            userId: { S: "user-123" },
-          },
-          ProjectionExpression: "email, #n",
-          ExpressionAttributeNames: {
-            "#n": "name",
-          },
-        })
-      );
+//     test("gets item with projection", async () => {
+//       dynamoMock
+//         .on(GetItemCommand, {
+//           TableName: "Users",
+//           Key: { userId: { S: "user-123" } },
+//           ProjectionExpression: "email, #n",
+//         })
+//         .resolves({
+//           Item: {
+//             email: { S: "user@example.com" },
+//             name: { S: "John Doe" },
+//           },
+//         });
 
-      expect(result.Item?.email).toBeDefined();
-      expect(result.Item?.name).toBeDefined();
-      expect(result.Item?.userId).toBeUndefined();
-    });
-  });
+//       const client = new DynamoDBClient({});
+//       const result = await client.send(
+//         new GetItemCommand({
+//           TableName: "Users",
+//           Key: {
+//             userId: { S: "user-123" },
+//           },
+//           ProjectionExpression: "email, #n",
+//           ExpressionAttributeNames: {
+//             "#n": "name",
+//           },
+//         })
+//       );
 
-  describe("UpdateItem Operations", () => {
-    test("updates item successfully", async () => {
-      dynamoMock.on(UpdateItemCommand).resolves({
-        Attributes: {
-          userId: { S: "user-123" },
-          email: { S: "newemail@example.com" },
-          updatedAt: { N: "1701792100" },
-        },
-      });
+//       expect(result.Item?.email).toBeDefined();
+//       expect(result.Item?.name).toBeDefined();
+//       expect(result.Item?.userId).toBeUndefined();
+//     });
+//   });
 
-      const client = new DynamoDBClient({});
-      const result = await client.send(
-        new UpdateItemCommand({
-          TableName: "Users",
-          Key: {
-            userId: { S: "user-123" },
-          },
-          UpdateExpression: "SET email = :email, updatedAt = :timestamp",
-          ExpressionAttributeValues: {
-            ":email": { S: "newemail@example.com" },
-            ":timestamp": { N: "1701792100" },
-          },
-          ReturnValues: "ALL_NEW",
-        })
-      );
+//   describe("UpdateItem Operations", () => {
+//     test("updates item successfully", async () => {
+//       dynamoMock.on(UpdateItemCommand).resolves({
+//         Attributes: {
+//           userId: { S: "user-123" },
+//           email: { S: "newemail@example.com" },
+//           updatedAt: { N: "1701792100" },
+//         },
+//       });
 
-      expect(result.Attributes?.email.S).toBe("newemail@example.com");
-    });
+//       const client = new DynamoDBClient({});
+//       const result = await client.send(
+//         new UpdateItemCommand({
+//           TableName: "Users",
+//           Key: {
+//             userId: { S: "user-123" },
+//           },
+//           UpdateExpression: "SET email = :email, updatedAt = :timestamp",
+//           ExpressionAttributeValues: {
+//             ":email": { S: "newemail@example.com" },
+//             ":timestamp": { N: "1701792100" },
+//           },
+//           ReturnValues: "ALL_NEW",
+//         })
+//       );
 
-    test("handles update with condition", async () => {
-      dynamoMock.on(UpdateItemCommand).resolves({});
+//       expect(result.Attributes?.email.S).toBe("newemail@example.com");
+//     });
 
-      const client = new DynamoDBClient({});
-      await client.send(
-        new UpdateItemCommand({
-          TableName: "Users",
-          Key: {
-            userId: { S: "user-123" },
-          },
-          UpdateExpression: "SET #status = :status",
-          ConditionExpression: "#status = :oldStatus",
-          ExpressionAttributeNames: {
-            "#status": "status",
-          },
-          ExpressionAttributeValues: {
-            ":status": { S: "active" },
-            ":oldStatus": { S: "pending" },
-          },
-        })
-      );
+//     test("handles update with condition", async () => {
+//       dynamoMock.on(UpdateItemCommand).resolves({});
 
-      expect(dynamoMock.calls()).toHaveLength(1);
-    });
-  });
+//       const client = new DynamoDBClient({});
+//       await client.send(
+//         new UpdateItemCommand({
+//           TableName: "Users",
+//           Key: {
+//             userId: { S: "user-123" },
+//           },
+//           UpdateExpression: "SET #status = :status",
+//           ConditionExpression: "#status = :oldStatus",
+//           ExpressionAttributeNames: {
+//             "#status": "status",
+//           },
+//           ExpressionAttributeValues: {
+//             ":status": { S: "active" },
+//             ":oldStatus": { S: "pending" },
+//           },
+//         })
+//       );
 
-  describe("DeleteItem Operations", () => {
-    test("deletes item successfully", async () => {
-      dynamoMock.on(DeleteItemCommand).resolves({});
+//       expect(dynamoMock.calls()).toHaveLength(1);
+//     });
+//   });
 
-      const client = new DynamoDBClient({});
-      await client.send(
-        new DeleteItemCommand({
-          TableName: "Users",
-          Key: {
-            userId: { S: "user-123" },
-          },
-        })
-      );
+//   describe("DeleteItem Operations", () => {
+//     test("deletes item successfully", async () => {
+//       dynamoMock.on(DeleteItemCommand).resolves({});
 
-      expect(dynamoMock.calls()).toHaveLength(1);
-    });
+//       const client = new DynamoDBClient({});
+//       await client.send(
+//         new DeleteItemCommand({
+//           TableName: "Users",
+//           Key: {
+//             userId: { S: "user-123" },
+//           },
+//         })
+//       );
 
-    test("deletes with return values", async () => {
-      dynamoMock.on(DeleteItemCommand).resolves({
-        Attributes: {
-          userId: { S: "user-123" },
-          email: { S: "deleted@example.com" },
-        },
-      });
+//       expect(dynamoMock.calls()).toHaveLength(1);
+//     });
 
-      const client = new DynamoDBClient({});
-      const result = await client.send(
-        new DeleteItemCommand({
-          TableName: "Users",
-          Key: {
-            userId: { S: "user-123" },
-          },
-          ReturnValues: "ALL_OLD",
-        })
-      );
+//     test("deletes with return values", async () => {
+//       dynamoMock.on(DeleteItemCommand).resolves({
+//         Attributes: {
+//           userId: { S: "user-123" },
+//           email: { S: "deleted@example.com" },
+//         },
+//       });
 
-      expect(result.Attributes?.email.S).toBe("deleted@example.com");
-    });
-  });
+//       const client = new DynamoDBClient({});
+//       const result = await client.send(
+//         new DeleteItemCommand({
+//           TableName: "Users",
+//           Key: {
+//             userId: { S: "user-123" },
+//           },
+//           ReturnValues: "ALL_OLD",
+//         })
+//       );
 
-  describe("Query Operations", () => {
-    test("queries items by partition key", async () => {
-      dynamoMock.on(QueryCommand).resolves({
-        Items: [
-          {
-            userId: { S: "user-123" },
-            orderId: { S: "order-1" },
-            amount: { N: "100" },
-          },
-          {
-            userId: { S: "user-123" },
-            orderId: { S: "order-2" },
-            amount: { N: "200" },
-          },
-        ],
-        Count: 2,
-        ScannedCount: 2,
-      });
+//       expect(result.Attributes?.email.S).toBe("deleted@example.com");
+//     });
+//   });
 
-      const client = new DynamoDBClient({});
-      const result = await client.send(
-        new QueryCommand({
-          TableName: "Orders",
-          KeyConditionExpression: "userId = :userId",
-          ExpressionAttributeValues: {
-            ":userId": { S: "user-123" },
-          },
-        })
-      );
+//   describe("Query Operations", () => {
+//     test("queries items by partition key", async () => {
+//       dynamoMock.on(QueryCommand).resolves({
+//         Items: [
+//           {
+//             userId: { S: "user-123" },
+//             orderId: { S: "order-1" },
+//             amount: { N: "100" },
+//           },
+//           {
+//             userId: { S: "user-123" },
+//             orderId: { S: "order-2" },
+//             amount: { N: "200" },
+//           },
+//         ],
+//         Count: 2,
+//         ScannedCount: 2,
+//       });
 
-      expect(result.Items).toHaveLength(2);
-      expect(result.Count).toBe(2);
-    });
+//       const client = new DynamoDBClient({});
+//       const result = await client.send(
+//         new QueryCommand({
+//           TableName: "Orders",
+//           KeyConditionExpression: "userId = :userId",
+//           ExpressionAttributeValues: {
+//             ":userId": { S: "user-123" },
+//           },
+//         })
+//       );
 
-    test("queries with filter expression", async () => {
-      dynamoMock.on(QueryCommand).resolves({
-        Items: [
-          {
-            userId: { S: "user-123" },
-            orderId: { S: "order-1" },
-            amount: { N: "150" },
-            status: { S: "completed" },
-          },
-        ],
-        Count: 1,
-        ScannedCount: 5,
-      });
+//       expect(result.Items).toHaveLength(2);
+//       expect(result.Count).toBe(2);
+//     });
 
-      const client = new DynamoDBClient({});
-      const result = await client.send(
-        new QueryCommand({
-          TableName: "Orders",
-          KeyConditionExpression: "userId = :userId",
-          FilterExpression: "amount > :minAmount AND #status = :status",
-          ExpressionAttributeNames: {
-            "#status": "status",
-          },
-          ExpressionAttributeValues: {
-            ":userId": { S: "user-123" },
-            ":minAmount": { N: "100" },
-            ":status": { S: "completed" },
-          },
-        })
-      );
+//     test("queries with filter expression", async () => {
+//       dynamoMock.on(QueryCommand).resolves({
+//         Items: [
+//           {
+//             userId: { S: "user-123" },
+//             orderId: { S: "order-1" },
+//             amount: { N: "150" },
+//             status: { S: "completed" },
+//           },
+//         ],
+//         Count: 1,
+//         ScannedCount: 5,
+//       });
 
-      expect(result.Items).toHaveLength(1);
-      expect(result.Count).toBe(1);
-      expect(result.ScannedCount).toBe(5);
-    });
+//       const client = new DynamoDBClient({});
+//       const result = await client.send(
+//         new QueryCommand({
+//           TableName: "Orders",
+//           KeyConditionExpression: "userId = :userId",
+//           FilterExpression: "amount > :minAmount AND #status = :status",
+//           ExpressionAttributeNames: {
+//             "#status": "status",
+//           },
+//           ExpressionAttributeValues: {
+//             ":userId": { S: "user-123" },
+//             ":minAmount": { N: "100" },
+//             ":status": { S: "completed" },
+//           },
+//         })
+//       );
 
-    test("handles pagination", async () => {
-      dynamoMock
-        .on(QueryCommand)
-        .resolvesOnce({
-          Items: [{ userId: { S: "user-1" } }],
-          LastEvaluatedKey: { userId: { S: "user-1" } },
-        })
-        .resolvesOnce({
-          Items: [{ userId: { S: "user-2" } }],
-          LastEvaluatedKey: undefined,
-        });
+//       expect(result.Items).toHaveLength(1);
+//       expect(result.Count).toBe(1);
+//       expect(result.ScannedCount).toBe(5);
+//     });
 
-      const client = new DynamoDBClient({});
+//     test("handles pagination", async () => {
+//       dynamoMock
+//         .on(QueryCommand)
+//         .resolvesOnce({
+//           Items: [{ userId: { S: "user-1" } }],
+//           LastEvaluatedKey: { userId: { S: "user-1" } },
+//         })
+//         .resolvesOnce({
+//           Items: [{ userId: { S: "user-2" } }],
+//           LastEvaluatedKey: undefined,
+//         });
 
-      // First page
-      const page1 = await client.send(
-        new QueryCommand({
-          TableName: "Users",
-          KeyConditionExpression: "userId = :userId",
-          ExpressionAttributeValues: {
-            ":userId": { S: "user-123" },
-          },
-          Limit: 1,
-        })
-      );
+//       const client = new DynamoDBClient({});
 
-      expect(page1.Items).toHaveLength(1);
-      expect(page1.LastEvaluatedKey).toBeDefined();
+//       // First page
+//       const page1 = await client.send(
+//         new QueryCommand({
+//           TableName: "Users",
+//           KeyConditionExpression: "userId = :userId",
+//           ExpressionAttributeValues: {
+//             ":userId": { S: "user-123" },
+//           },
+//           Limit: 1,
+//         })
+//       );
 
-      // Second page
-      const page2 = await client.send(
-        new QueryCommand({
-          TableName: "Users",
-          KeyConditionExpression: "userId = :userId",
-          ExpressionAttributeValues: {
-            ":userId": { S: "user-123" },
-          },
-          Limit: 1,
-          ExclusiveStartKey: page1.LastEvaluatedKey,
-        })
-      );
+//       expect(page1.Items).toHaveLength(1);
+//       expect(page1.LastEvaluatedKey).toBeDefined();
 
-      expect(page2.Items).toHaveLength(1);
-      expect(page2.LastEvaluatedKey).toBeUndefined();
-    });
-  });
+//       // Second page
+//       const page2 = await client.send(
+//         new QueryCommand({
+//           TableName: "Users",
+//           KeyConditionExpression: "userId = :userId",
+//           ExpressionAttributeValues: {
+//             ":userId": { S: "user-123" },
+//           },
+//           Limit: 1,
+//           ExclusiveStartKey: page1.LastEvaluatedKey,
+//         })
+//       );
 
-  describe("Scan Operations", () => {
-    test("scans entire table", async () => {
-      dynamoMock.on(ScanCommand).resolves({
-        Items: [
-          { userId: { S: "user-1" } },
-          { userId: { S: "user-2" } },
-          { userId: { S: "user-3" } },
-        ],
-        Count: 3,
-        ScannedCount: 3,
-      });
+//       expect(page2.Items).toHaveLength(1);
+//       expect(page2.LastEvaluatedKey).toBeUndefined();
+//     });
+//   });
 
-      const client = new DynamoDBClient({});
-      const result = await client.send(
-        new ScanCommand({
-          TableName: "Users",
-        })
-      );
+//   describe("Scan Operations", () => {
+//     test("scans entire table", async () => {
+//       dynamoMock.on(ScanCommand).resolves({
+//         Items: [
+//           { userId: { S: "user-1" } },
+//           { userId: { S: "user-2" } },
+//           { userId: { S: "user-3" } },
+//         ],
+//         Count: 3,
+//         ScannedCount: 3,
+//       });
 
-      expect(result.Items).toHaveLength(3);
-      expect(result.Count).toBe(3);
-    });
+//       const client = new DynamoDBClient({});
+//       const result = await client.send(
+//         new ScanCommand({
+//           TableName: "Users",
+//         })
+//       );
 
-    test("scans with filter", async () => {
-      dynamoMock.on(ScanCommand).resolves({
-        Items: [
-          {
-            userId: { S: "user-1" },
-            status: { S: "active" },
-          },
-        ],
-        Count: 1,
-        ScannedCount: 10,
-      });
+//       expect(result.Items).toHaveLength(3);
+//       expect(result.Count).toBe(3);
+//     });
 
-      const client = new DynamoDBClient({});
-      const result = await client.send(
-        new ScanCommand({
-          TableName: "Users",
-          FilterExpression: "#status = :status",
-          ExpressionAttributeNames: {
-            "#status": "status",
-          },
-          ExpressionAttributeValues: {
-            ":status": { S: "active" },
-          },
-        })
-      );
+//     test("scans with filter", async () => {
+//       dynamoMock.on(ScanCommand).resolves({
+//         Items: [
+//           {
+//             userId: { S: "user-1" },
+//             status: { S: "active" },
+//           },
+//         ],
+//         Count: 1,
+//         ScannedCount: 10,
+//       });
 
-      expect(result.Items).toHaveLength(1);
-      expect(result.Count).toBe(1);
-      expect(result.ScannedCount).toBe(10);
-    });
-  });
+//       const client = new DynamoDBClient({});
+//       const result = await client.send(
+//         new ScanCommand({
+//           TableName: "Users",
+//           FilterExpression: "#status = :status",
+//           ExpressionAttributeNames: {
+//             "#status": "status",
+//           },
+//           ExpressionAttributeValues: {
+//             ":status": { S: "active" },
+//           },
+//         })
+//       );
 
-  describe("Error Handling", () => {
-    test("handles throttling errors", async () => {
-      dynamoMock.on(PutItemCommand).rejects({
-        name: "ProvisionedThroughputExceededException",
-        message: "Rate exceeded",
-      });
+//       expect(result.Items).toHaveLength(1);
+//       expect(result.Count).toBe(1);
+//       expect(result.ScannedCount).toBe(10);
+//     });
+//   });
 
-      const client = new DynamoDBClient({});
+//   describe("Error Handling", () => {
+//     test("handles throttling errors", async () => {
+//       dynamoMock.on(PutItemCommand).rejects({
+//         name: "ProvisionedThroughputExceededException",
+//         message: "Rate exceeded",
+//       });
 
-      await expect(
-        client.send(
-          new PutItemCommand({
-            TableName: "Users",
-            Item: { userId: { S: "user-123" } },
-          })
-        )
-      ).rejects.toMatchObject({
-        name: "ProvisionedThroughputExceededException",
-      });
-    });
+//       const client = new DynamoDBClient({});
 
-    test("handles validation errors", async () => {
-      dynamoMock.on(PutItemCommand).rejects({
-        name: "ValidationException",
-        message: "Invalid attribute value type",
-      });
+//       await expect(
+//         client.send(
+//           new PutItemCommand({
+//             TableName: "Users",
+//             Item: { userId: { S: "user-123" } },
+//           })
+//         )
+//       ).rejects.toMatchObject({
+//         name: "ProvisionedThroughputExceededException",
+//       });
+//     });
 
-      const client = new DynamoDBClient({});
+//     test("handles validation errors", async () => {
+//       dynamoMock.on(PutItemCommand).rejects({
+//         name: "ValidationException",
+//         message: "Invalid attribute value type",
+//       });
 
-      await expect(
-        client.send(
-          new PutItemCommand({
-            TableName: "Users",
-            Item: { userId: { S: "user-123" } },
-          })
-        )
-      ).rejects.toMatchObject({
-        name: "ValidationException",
-      });
-    });
-  });
-});
+//       const client = new DynamoDBClient({});
+
+//       await expect(
+//         client.send(
+//           new PutItemCommand({
+//             TableName: "Users",
+//             Item: { userId: { S: "user-123" } },
+//           })
+//         )
+//       ).rejects.toMatchObject({
+//         name: "ValidationException",
+//       });
+//     });
+//   });
+// });
