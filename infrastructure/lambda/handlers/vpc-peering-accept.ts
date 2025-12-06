@@ -42,18 +42,32 @@ export const handler = async (
 
   if (RequestType === "Create" || RequestType === "Update") {
     try {
+      console.log(`Attempting to assume role: ${PeerRoleArn}`);
+      console.log(`Region: ${Region}`);
+      console.log(`VpcPeeringConnectionId: ${VpcPeeringConnectionId}`);
+
       // Assume role in peer account
       const stsClient = new STSClient({ region: Region });
-      const assumeRoleResponse = await stsClient.send(
-        new AssumeRoleCommand({
-          RoleArn: PeerRoleArn,
-          RoleSessionName: "VpcPeeringAccept",
-        })
-      );
+
+      let assumeRoleResponse;
+      try {
+        assumeRoleResponse = await stsClient.send(
+          new AssumeRoleCommand({
+            RoleArn: PeerRoleArn,
+            RoleSessionName: "VpcPeeringAccept",
+          })
+        );
+        console.log("Successfully assumed role");
+      } catch (assumeError) {
+        console.error("Failed to assume role:", assumeError);
+        throw new Error(`Failed to assume role ${PeerRoleArn}: ${assumeError}`);
+      }
 
       if (!assumeRoleResponse.Credentials) {
         throw new Error("Failed to assume role - no credentials returned");
       }
+
+      console.log("Creating EC2 client with assumed credentials");
 
       // Create EC2 client with assumed credentials
       const ec2Client = new EC2Client({
@@ -64,6 +78,8 @@ export const handler = async (
           sessionToken: assumeRoleResponse.Credentials.SessionToken!,
         },
       });
+
+      console.log(`Accepting peering connection: ${VpcPeeringConnectionId}`);
 
       // Accept peering connection
       const acceptResponse = await ec2Client.send(

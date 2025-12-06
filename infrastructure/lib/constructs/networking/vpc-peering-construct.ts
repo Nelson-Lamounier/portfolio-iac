@@ -6,6 +6,7 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as cr from "aws-cdk-lib/custom-resources";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import { Construct } from "constructs";
+import { NagSuppressions } from "cdk-nag";
 import { LambdaFunctionConstruct } from "../compute/lambda";
 
 export interface VpcPeeringConstructProps {
@@ -55,30 +56,18 @@ export interface VpcPeeringConstructProps {
 /**
  * VPC Peering Construct with Cross-Account Support
  *
- * Creates a VPC peering connection between two VPCs, potentially in different accounts.
+ * Creates a VPC peering connection between two VPCs in different accounts.
+ * Uses a custom Lambda to handle the cross-account acceptance.
+ *
  * Handles:
- * - Creating the peering connection
- * - Accepting the peering connection (cross-account via custom resource)
+ * - Creating the peering connection request
+ * - Accepting the peering connection (cross-account via Lambda)
  * - Updating route tables in both VPCs
  *
  * For cross-account peering, the peer account must have an IAM role that allows
  * this account to accept peering connections.
- *
- * Usage:
- * ```typescript
- * new VpcPeeringConstruct(this, 'PeeringToDev', {
- *   vpc: pipelineVpc,
- *   peerVpcId: 'vpc-xxxxx',
- *   peerAccountId: '123456789012',
- *   peerVpcCidr: '10.1.0.0/16',
- *   envName: 'development',
- *   peeringName: 'pipeline-to-dev',
- *   peerRoleArn: 'arn:aws:iam::123456789012:role/VpcPeeringAcceptRole',
- * });
- * ```
  */
 export class VpcPeeringConstruct extends Construct {
-  public readonly peeringConnection: ec2.CfnVPCPeeringConnection;
   public readonly peeringConnectionId: string;
   public readonly ssmParameter: ssm.StringParameter;
 
@@ -88,34 +77,31 @@ export class VpcPeeringConstruct extends Construct {
     const region = props.peerRegion || cdk.Stack.of(this).region;
 
     // ========================================================================
-    // 1. CREATE VPC PEERING CONNECTION
+    // 1. CREATE AND ACCEPT VPC PEERING (via Custom Resource)
     // ========================================================================
-    this.peeringConnection = new ec2.CfnVPCPeeringConnection(
-      this,
-      "PeeringConnection",
-      {
-        vpcId: props.vpc.vpcId,
-        peerVpcId: props.peerVpcId,
-        peerOwnerId: props.peerAccountId,
-        peerRegion: region,
-        tags: [
-          {
-            key: "Name",
-            value: props.peeringName,
-          },
-          {
-            key: "Environment",
-            value: props.envName,
-          },
-          {
-            key: "ManagedBy",
-            value: "CDK",
-          },
-        ],
-      }
+    // Use a single custom resource that creates AND accepts the peering
+    // This avoids CloudFormation trying to verify the peering state
+    const peeringProvider = this.createPeeringProvider(
+      props.peerRoleArn,
+      region
     );
 
-    this.peeringConnectionId = this.peeringConnection.ref;
+    const peeringResource = new cdk.CustomResource(this, "PeeringConnection", {
+      serviceToken: peeringProvider.serviceToken,
+      properties: {
+        VpcId: props.vpc.vpcId,
+        PeerVpcId: props.peerVpcId,
+        PeerOwnerId: props.peerAccountId,
+        PeerRegion: region,
+        PeerRoleArn: props.peerRoleArn,
+        PeeringName: props.peeringName,
+        EnvName: props.envName,
+      },
+    });
+
+    this.peeringConnectionId = peeringResource.getAttString(
+      "PeeringConnectionId"
+    );
 
     // ========================================================================
     // 2. STORE PEERING CONNECTION ID IN SSM PARAMETER STORE
@@ -128,29 +114,8 @@ export class VpcPeeringConstruct extends Construct {
     });
 
     // ========================================================================
-    // 3. ACCEPT PEERING CONNECTION (CROSS-ACCOUNT)
-    // ========================================================================
-    // Use custom resource to accept peering in peer account
-    const acceptPeeringProvider = this.createAcceptPeeringProvider(
-      props.peerRoleArn,
-      region
-    );
-
-    const acceptPeering = new cdk.CustomResource(this, "AcceptPeering", {
-      serviceToken: acceptPeeringProvider.serviceToken,
-      properties: {
-        VpcPeeringConnectionId: this.peeringConnectionId,
-        PeerRoleArn: props.peerRoleArn,
-        Region: region,
-      },
-    });
-
-    acceptPeering.node.addDependency(this.peeringConnection);
-
-    // ========================================================================
     // 3. UPDATE ROUTE TABLES IN REQUESTER VPC
     // ========================================================================
-    // Add routes to peer VPC CIDR in all route tables
     const routeTables = props.vpc.privateSubnets
       .concat(props.vpc.publicSubnets)
       .map((subnet) => subnet.routeTable);
@@ -167,14 +132,12 @@ export class VpcPeeringConstruct extends Construct {
         vpcPeeringConnectionId: this.peeringConnectionId,
       });
 
-      route.addDependency(this.peeringConnection);
-      route.node.addDependency(acceptPeering);
+      route.node.addDependency(peeringResource);
     });
 
     // ========================================================================
     // 4. UPDATE ROUTE TABLES IN PEER VPC (CROSS-ACCOUNT)
     // ========================================================================
-    // Use custom resource to add routes in peer account
     const updateRoutesProvider = this.createUpdateRoutesProvider(
       props.peerRoleArn,
       region
@@ -191,7 +154,7 @@ export class VpcPeeringConstruct extends Construct {
       },
     });
 
-    updateRoutes.node.addDependency(acceptPeering);
+    updateRoutes.node.addDependency(peeringResource);
 
     // ========================================================================
     // OUTPUTS
@@ -209,34 +172,85 @@ export class VpcPeeringConstruct extends Construct {
   }
 
   /**
-   * Create custom resource provider for accepting peering connection
+   * Create custom resource provider for creating and accepting peering connection
    */
-  private createAcceptPeeringProvider(
+  private createPeeringProvider(
     peerRoleArn: string,
     region: string
   ): cr.Provider {
-    // Create Lambda function using TypeScript construct
     const lambdaFunction = new LambdaFunctionConstruct(
       this,
-      "AcceptPeeringLambda",
+      "CreateAcceptPeeringLambda",
       {
         envName: "vpc-peering",
-        functionName: "accept-peering",
-        entry: "lambda/handlers/vpc-peering-accept.ts",
+        functionName: "create-accept-peering",
+        entry: "lambda/handlers/vpc-peering-create-accept.ts",
         timeout: cdk.Duration.minutes(5),
         initialPolicy: [
+          // Permission to assume role in peer account
           new iam.PolicyStatement({
             effect: iam.Effect.ALLOW,
             actions: ["sts:AssumeRole"],
             resources: [peerRoleArn],
           }),
+          // Permission to create/delete peering connections
+          new iam.PolicyStatement({
+            effect: iam.Effect.ALLOW,
+            actions: [
+              "ec2:CreateVpcPeeringConnection",
+              "ec2:DeleteVpcPeeringConnection",
+              "ec2:DescribeVpcPeeringConnections",
+              "ec2:CreateTags",
+            ],
+            resources: ["*"],
+          }),
         ],
       }
     );
 
-    return new cr.Provider(this, "AcceptPeeringProvider", {
+    // Add CDK Nag suppression for wildcard EC2 permissions
+    NagSuppressions.addResourceSuppressions(
+      lambdaFunction.function,
+      [
+        {
+          id: "AwsSolutions-IAM5",
+          reason:
+            "VPC peering Lambda requires ec2:* permissions on all resources because peering connection IDs are not known at deploy time",
+        },
+      ],
+      true
+    );
+
+    const provider = new cr.Provider(this, "PeeringProvider", {
       onEventHandler: lambdaFunction.function,
     });
+
+    NagSuppressions.addResourceSuppressions(
+      provider,
+      [
+        {
+          id: "AwsSolutions-IAM4",
+          reason:
+            "Custom Resource Provider framework uses AWSLambdaBasicExecutionRole for CloudWatch Logs access",
+          appliesTo: [
+            "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+          ],
+        },
+        {
+          id: "AwsSolutions-IAM5",
+          reason:
+            "Custom Resource Provider requires invoke permissions on handler Lambda with all versions",
+        },
+        {
+          id: "AwsSolutions-L1",
+          reason:
+            "Custom Resource Provider framework Lambda runtime is managed by CDK",
+        },
+      ],
+      true
+    );
+
+    return provider;
   }
 
   /**
@@ -246,7 +260,6 @@ export class VpcPeeringConstruct extends Construct {
     peerRoleArn: string,
     region: string
   ): cr.Provider {
-    // Create Lambda function using TypeScript construct
     const lambdaFunction = new LambdaFunctionConstruct(
       this,
       "UpdateRoutesLambda",
@@ -265,8 +278,35 @@ export class VpcPeeringConstruct extends Construct {
       }
     );
 
-    return new cr.Provider(this, "UpdateRoutesProvider", {
+    const provider = new cr.Provider(this, "UpdateRoutesProvider", {
       onEventHandler: lambdaFunction.function,
     });
+
+    NagSuppressions.addResourceSuppressions(
+      provider,
+      [
+        {
+          id: "AwsSolutions-IAM4",
+          reason:
+            "Custom Resource Provider framework uses AWSLambdaBasicExecutionRole for CloudWatch Logs access",
+          appliesTo: [
+            "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+          ],
+        },
+        {
+          id: "AwsSolutions-IAM5",
+          reason:
+            "Custom Resource Provider requires invoke permissions on handler Lambda with all versions",
+        },
+        {
+          id: "AwsSolutions-L1",
+          reason:
+            "Custom Resource Provider framework Lambda runtime is managed by CDK",
+        },
+      ],
+      true
+    );
+
+    return provider;
   }
 }

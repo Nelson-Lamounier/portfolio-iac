@@ -6,6 +6,7 @@ import * as logs from "aws-cdk-lib/aws-logs";
 import * as iam from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
+import { NagSuppressions } from "cdk-nag";
 
 export interface LambdaFunctionConstructProps {
   /**
@@ -145,6 +146,29 @@ export class LambdaFunctionConstruct extends Construct {
     });
 
     this.role = this.function.role as iam.Role;
+
+    // ========================================================================
+    // CDK NAG SUPPRESSIONS
+    // ========================================================================
+    NagSuppressions.addResourceSuppressions(
+      this.function,
+      [
+        {
+          id: "AwsSolutions-IAM4",
+          reason:
+            "Lambda function uses AWSLambdaBasicExecutionRole for CloudWatch Logs access - this is the standard pattern for Lambda functions",
+          appliesTo: [
+            "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+          ],
+        },
+        {
+          id: "AwsSolutions-L1",
+          reason:
+            "Lambda function uses Node.js 20.x which is the latest LTS runtime as of 2024",
+        },
+      ],
+      true
+    );
 
     // ========================================================================
     // OUTPUTS
