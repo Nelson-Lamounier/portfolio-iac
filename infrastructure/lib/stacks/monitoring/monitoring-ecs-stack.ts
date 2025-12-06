@@ -6,7 +6,6 @@ import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as logs from "aws-cdk-lib/aws-logs";
-import * as events_targets from "aws-cdk-lib/aws-events-targets";
 import { Construct } from "constructs";
 import {
   GrafanaConstruct,
@@ -15,11 +14,22 @@ import {
 } from "../../constructs";
 import { SuppressionManager } from "../../cdk-nag";
 
+export interface CrossAccountTarget {
+  /** Environment name (e.g., 'development', 'staging', 'production') */
+  envName: string;
+  /** Private IP address of the target instance */
+  privateIp: string;
+  /** Port to scrape (default: 9100 for node-exporter) */
+  port?: number;
+}
+
 export interface MonitoringEcsStackProps extends cdk.StackProps {
   vpc: ec2.IVpc;
   envName: string;
   albDnsName?: string;
   allowedIpRanges?: string[];
+  /** Cross-account targets to scrape via VPC peering */
+  crossAccountTargets?: CrossAccountTarget[];
 }
 
 export class MonitoringEcsStack extends cdk.Stack {
@@ -35,10 +45,15 @@ export class MonitoringEcsStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: MonitoringEcsStackProps) {
     super(scope, id, props);
 
-    const { vpc, envName, albDnsName, allowedIpRanges } = props;
+    const { vpc, envName, albDnsName, allowedIpRanges, crossAccountTargets } =
+      props;
 
     // Create ECS Cluster for monitoring (with EBS volume)
-    const { cluster, autoScalingGroup } = this.createEcsCluster(vpc, envName);
+    const { cluster, autoScalingGroup } = this.createEcsCluster(
+      vpc,
+      envName,
+      crossAccountTargets
+    );
     this.cluster = cluster;
     this.autoScalingGroup = autoScalingGroup;
 
@@ -130,7 +145,8 @@ export class MonitoringEcsStack extends cdk.Stack {
 
   private createEcsCluster(
     vpc: ec2.IVpc,
-    envName: string
+    envName: string,
+    crossAccountTargets?: CrossAccountTarget[]
   ): { cluster: ecs.Cluster; autoScalingGroup: autoscaling.AutoScalingGroup } {
     const cluster = new ecs.Cluster(this, "MonitoringCluster", {
       vpc,
@@ -233,6 +249,11 @@ export class MonitoringEcsStack extends cdk.Stack {
       "      # Use instance name tag as instance label",
       "      - source_labels: [__meta_ec2_tag_Name]",
       "        target_label: instance",
+      "",
+      // Add cross-account targets if configured
+      ...(crossAccountTargets && crossAccountTargets.length > 0
+        ? this.generateCrossAccountScrapeConfig(crossAccountTargets)
+        : []),
       "EOF",
       "",
       "# Get host private IP for Grafana to reach Prometheus",
@@ -245,6 +266,7 @@ export class MonitoringEcsStack extends cdk.Stack {
       "datasources:",
       "  - name: Prometheus",
       "    type: prometheus",
+      "    uid: prometheus",
       "    access: proxy",
       "    # Use host private IP to reach Prometheus from Grafana",
       "    # Include /prometheus path since Prometheus is configured with --web.route-prefix=/prometheus",
@@ -642,5 +664,49 @@ export class MonitoringEcsStack extends cdk.Stack {
       description: "CloudWatch Log Group for Monitoring ECS Events",
       exportName: `${this.stackName}-event-log-group`,
     });
+  }
+
+  /**
+   * Generate Prometheus scrape config for cross-account targets
+   * These are static targets that are scraped via VPC peering
+   */
+  private generateCrossAccountScrapeConfig(
+    targets: CrossAccountTarget[]
+  ): string[] {
+    const lines: string[] = [];
+
+    // Group targets by environment
+    const targetsByEnv = targets.reduce(
+      (acc, target) => {
+        if (!acc[target.envName]) {
+          acc[target.envName] = [];
+        }
+        acc[target.envName].push(target);
+        return acc;
+      },
+      {} as Record<string, CrossAccountTarget[]>
+    );
+
+    // Generate scrape config for each environment
+    for (const [env, envTargets] of Object.entries(targetsByEnv)) {
+      lines.push("");
+      lines.push(`  # Cross-Account: ${env} Environment (via VPC Peering)`);
+      lines.push(`  - job_name: 'node-exporter-${env}'`);
+      lines.push("    static_configs:");
+      lines.push("      - targets:");
+
+      for (const target of envTargets) {
+        const port = target.port || 9100;
+        lines.push(`          - '${target.privateIp}:${port}'`);
+      }
+
+      lines.push("        labels:");
+      lines.push(`          environment: '${env}'`);
+      lines.push("          service: 'node-exporter'");
+      lines.push(`          account: '${env}'`);
+      lines.push("          source: 'cross-account'");
+    }
+
+    return lines;
   }
 }
