@@ -96,12 +96,6 @@ echo "Configuration update command sent. Waiting for completion..."
 sleep 10
 
 echo "✓ Prometheus configuration updated successfully!"
-echo ""
-echo "Access your monitoring:"
-echo "  Grafana: http://$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --query 'Reservations[0].Instances[0].PublicIpAddress' --output text --region $REGION):3000"
-echo "  Prometheus: http://$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --query 'Reservations[0].Instances[0].PublicIpAddress' --output text --region $REGION):9090"
-echo ""
-echo "Default Grafana credentials: admin/admin"
 
 # Clean up
 rm /tmp/prometheus.yml
