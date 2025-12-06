@@ -1,0 +1,267 @@
+# @format
+
+name: Deploy Frontend
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - "frontend/**"
+      - ".github/workflows/deploy-frontend.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to deploy"
+        required: true
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+
+env:
+  NODE_VERSION: "22"
+  AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  # ============================================================================
+  # DETERMINE ENVIRONMENT
+  # ============================================================================
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.env.outputs.environment }}
+    steps:
+      - name: Determine environment
+        id: env
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "environment=production" >> $GITHUB_OUTPUT
+          else
+            echo "environment=development" >> $GITHUB_OUTPUT
+          fi
+
+  # ============================================================================
+  # BUILD AND TEST
+  # ============================================================================
+  build-and-test:
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - run: corepack enable
+
+      - name: Install dependencies
+        run: make install
+
+      - name: Run tests
+        run: make test-frontend
+
+      - name: Build frontend
+        run: make build-frontend
+
+  # ============================================================================
+  # BUILD AND PUSH DOCKER IMAGE
+  # ============================================================================
+  build-docker:
+    runs-on: ubuntu-latest
+    needs: [setup, build-and-test]
+    environment: ${{ needs.setup.outputs.environment }}
+    outputs:
+      image-tag: ${{ steps.build.outputs.image-tag }}
+      image-uri: ${{ steps.build.outputs.image-uri }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - run: corepack enable
+      - run: make install
+
+      # Authenticate to pipeline account
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Assume role in target account
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.DEPLOYMENT_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-chaining: true
+
+      # Check ECR exists
+      - name: Check ECR repository
+        id: ecr-check
+        run: |
+          if aws ssm get-parameter --name "/ecr/${{ needs.setup.outputs.environment }}/repository-uri" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "::warning::ECR repository not found. Run: ./scripts/setup-ecr.sh"
+          fi
+
+      # Get ECR URI
+      - name: Get ECR URI
+        if: steps.ecr-check.outputs.exists == 'true'
+        id: ecr-uri
+        run: |
+          ECR_URI=$(aws ssm get-parameter \
+            --name "/ecr/${{ needs.setup.outputs.environment }}/repository-uri" \
+            --query 'Parameter.Value' --output text)
+          echo "uri=$ECR_URI" >> $GITHUB_OUTPUT
+
+      # Login to ECR
+      - uses: aws-actions/amazon-ecr-login@v2
+        if: steps.ecr-check.outputs.exists == 'true'
+
+      # Setup Docker Buildx
+      - uses: docker/setup-buildx-action@v3
+        if: steps.ecr-check.outputs.exists == 'true'
+
+      # Build and push
+      - name: Build and push Docker image
+        if: steps.ecr-check.outputs.exists == 'true'
+        id: build
+        run: |
+          ECR_URI="${{ steps.ecr-uri.outputs.uri }}"
+          IMAGE_TAG="${{ github.sha }}"
+
+          docker build \
+            -t ${ECR_URI}:${IMAGE_TAG} \
+            -t ${ECR_URI}:latest \
+            -f frontend/Dockerfile \
+            .
+
+          docker push ${ECR_URI}:${IMAGE_TAG}
+          docker push ${ECR_URI}:latest
+
+          echo "image-tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "image-uri=${ECR_URI}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
+
+          echo "✓ Image pushed: ${ECR_URI}:${IMAGE_TAG}"
+
+  # ============================================================================
+  # UPDATE ECS SERVICE
+  # ============================================================================
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [setup, build-docker]
+    if: needs.build-docker.outputs.image-tag != ''
+    environment: ${{ needs.setup.outputs.environment }}
+    concurrency:
+      group: deploy-frontend-${{ needs.setup.outputs.environment }}
+      cancel-in-progress: false
+
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.DEPLOYMENT_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-chaining: true
+
+      - name: Update ECS service
+        run: |
+          ENV="${{ needs.setup.outputs.environment }}"
+
+          echo "Forcing new deployment with image: ${{ needs.build-docker.outputs.image-uri }}"
+
+          aws ecs update-service \
+            --cluster ecs-cluster-${ENV} \
+            --service ecs-service-${ENV} \
+            --force-new-deployment
+
+          echo "✓ ECS service update initiated"
+
+      - name: Wait for deployment
+        run: |
+          ENV="${{ needs.setup.outputs.environment }}"
+
+          echo "Waiting for ECS service to stabilize..."
+          aws ecs wait services-stable \
+            --cluster ecs-cluster-${ENV} \
+            --services ecs-service-${ENV} \
+            --timeout 300 || echo "::warning::Service did not stabilize within timeout"
+
+  # ============================================================================
+  # VERIFY DEPLOYMENT
+  # ============================================================================
+  verify:
+    runs-on: ubuntu-latest
+    needs: [setup, deploy]
+    if: success()
+    environment: ${{ needs.setup.outputs.environment }}
+
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.DEPLOYMENT_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-chaining: true
+
+      - name: Check ECS service health
+        run: |
+          ENV="${{ needs.setup.outputs.environment }}"
+
+          aws ecs describe-services \
+            --cluster ecs-cluster-${ENV} \
+            --services ecs-service-${ENV} \
+            --query 'services[0].{Status:status,Running:runningCount,Desired:desiredCount,Deployments:deployments[0].rolloutState}' \
+            --output table
+
+      - name: Test health endpoint
+        run: |
+          ENV="${{ needs.setup.outputs.environment }}"
+
+          ALB_DNS=$(aws elbv2 describe-load-balancers \
+            --names "${ENV}-alb" \
+            --query "LoadBalancers[0].DNSName" --output text)
+
+          echo "Testing: http://${ALB_DNS}/api/health"
+
+          # Retry up to 5 times
+          for i in {1..5}; do
+            if curl -sf "http://${ALB_DNS}/api/health" --connect-timeout 10; then
+              echo ""
+              echo "✓ Health check passed"
+              exit 0
+            fi
+            echo "Attempt $i failed, retrying in 10s..."
+            sleep 10
+          done
+
+          echo "::warning::Health check did not pass after 5 attempts"
+
+      - name: Deployment summary
+        run: |
+          echo "=== Deployment Summary ==="
+          echo "Environment: ${{ needs.setup.outputs.environment }}"
+          echo "Image: ${{ needs.build-docker.outputs.image-uri }}"
+          echo "Status: Deployed"

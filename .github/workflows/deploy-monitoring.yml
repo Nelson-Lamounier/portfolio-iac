@@ -1,0 +1,297 @@
+# @format
+
+name: Deploy Monitoring
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Deployment target"
+        required: true
+        type: choice
+        options:
+          - centralized # Deploy to pipeline account
+          - development # Deploy local monitoring to dev
+          - cross-account # Setup cross-account access
+          - vpc-peering # Setup VPC peering
+      include_vpc_peering:
+        description: "Also setup VPC peering (for centralized)"
+        required: false
+        type: boolean
+        default: false
+
+env:
+  NODE_VERSION: "22"
+  AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  # ============================================================================
+  # DEPLOY CENTRALIZED MONITORING (Pipeline Account)
+  # ============================================================================
+  deploy-centralized:
+    if: github.event.inputs.target == 'centralized'
+    runs-on: ubuntu-latest
+    environment: pipeline
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - run: corepack enable
+      - run: make install
+      - run: make build-infrastructure
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy centralized monitoring
+        run: |
+          cd infrastructure
+          ENVIRONMENT=pipeline yarn cdk deploy \
+            NetworkingStack-pipeline \
+            MonitoringStack-pipeline \
+            MonitoringEcsStack-pipeline \
+            --require-approval never
+
+      - name: Get monitoring URLs
+        run: |
+          echo "=== Monitoring URLs ==="
+          aws cloudformation describe-stacks \
+            --stack-name MonitoringEcsStack-pipeline \
+            --query 'Stacks[0].Outputs[?contains(OutputKey, `Url`)].{Key:OutputKey,Value:OutputValue}' \
+            --output table
+
+  # ============================================================================
+  # DEPLOY LOCAL MONITORING (Development Account)
+  # ============================================================================
+  deploy-development:
+    if: github.event.inputs.target == 'development'
+    runs-on: ubuntu-latest
+    environment: development
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - run: corepack enable
+      - run: make install
+      - run: make build-infrastructure
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.DEPLOYMENT_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-chaining: true
+
+      - name: Deploy monitoring to development
+        run: |
+          cd infrastructure
+          ENVIRONMENT=development yarn cdk deploy \
+            MonitoringStack-development \
+            MonitoringEcsStack-development \
+            --require-approval never
+
+  # ============================================================================
+  # SETUP CROSS-ACCOUNT ACCESS
+  # ============================================================================
+  setup-cross-account:
+    if: github.event.inputs.target == 'cross-account'
+    runs-on: ubuntu-latest
+    environment: development
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - run: corepack enable
+      - run: make install
+      - run: make build-infrastructure
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.DEPLOYMENT_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-chaining: true
+
+      - name: Deploy cross-account monitoring access
+        run: |
+          cd infrastructure
+          ENVIRONMENT=development yarn cdk deploy \
+            CrossAccountMonitoring-development \
+            --require-approval never
+
+      - name: Verify IAM role created
+        run: |
+          aws iam get-role --role-name development-PipelineMonitoringAccess \
+            --query 'Role.{Name:RoleName,Arn:Arn}' --output table
+
+  # ============================================================================
+  # SETUP VPC PEERING
+  # ============================================================================
+  setup-vpc-peering:
+    if: github.event.inputs.target == 'vpc-peering'
+    runs-on: ubuntu-latest
+    environment: pipeline
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - run: corepack enable
+      - run: make install
+      - run: make build-infrastructure
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get VPC IDs
+        id: vpcs
+        run: |
+          # Get pipeline VPC ID
+          PIPELINE_VPC=$(aws ec2 describe-vpcs \
+            --filters "Name=tag:Environment,Values=pipeline" \
+            --query 'Vpcs[0].VpcId' --output text)
+          echo "pipeline_vpc=$PIPELINE_VPC" >> $GITHUB_OUTPUT
+          echo "Pipeline VPC: $PIPELINE_VPC"
+
+          # Get pipeline VPC CIDR
+          PIPELINE_CIDR=$(aws ec2 describe-vpcs \
+            --vpc-ids $PIPELINE_VPC \
+            --query 'Vpcs[0].CidrBlock' --output text)
+          echo "pipeline_cidr=$PIPELINE_CIDR" >> $GITHUB_OUTPUT
+          echo "Pipeline CIDR: $PIPELINE_CIDR"
+
+      - name: Assume role in development account
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.DEPLOYMENT_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-chaining: true
+
+      - name: Get development VPC info
+        id: dev-vpc
+        run: |
+          DEV_VPC=$(aws ec2 describe-vpcs \
+            --filters "Name=tag:Environment,Values=development" \
+            --query 'Vpcs[0].VpcId' --output text)
+          echo "dev_vpc=$DEV_VPC" >> $GITHUB_OUTPUT
+          echo "Development VPC: $DEV_VPC"
+
+          DEV_CIDR=$(aws ec2 describe-vpcs \
+            --vpc-ids $DEV_VPC \
+            --query 'Vpcs[0].CidrBlock' --output text)
+          echo "dev_cidr=$DEV_CIDR" >> $GITHUB_OUTPUT
+          echo "Development CIDR: $DEV_CIDR"
+
+      - name: Validate CIDR blocks
+        run: |
+          PIPELINE_CIDR="${{ steps.vpcs.outputs.pipeline_cidr }}"
+          DEV_CIDR="${{ steps.dev-vpc.outputs.dev_cidr }}"
+
+          if [ "$PIPELINE_CIDR" = "$DEV_CIDR" ]; then
+            echo "::error::VPC CIDR blocks overlap! Pipeline: $PIPELINE_CIDR, Development: $DEV_CIDR"
+            echo "::error::VPC peering requires non-overlapping CIDR blocks."
+            echo "::error::Update development VPC to use 10.1.0.0/16"
+            exit 1
+          fi
+
+          echo "✓ CIDR blocks are compatible"
+          echo "  Pipeline: $PIPELINE_CIDR"
+          echo "  Development: $DEV_CIDR"
+
+      - name: Deploy VPC peering (via CDK)
+        run: |
+          cd infrastructure
+
+          # Export VPC info for CDK
+          export DEV_VPC_ID="${{ steps.dev-vpc.outputs.dev_vpc }}"
+          export DEV_VPC_CIDR="${{ steps.dev-vpc.outputs.dev_cidr }}"
+
+          ENVIRONMENT=pipeline yarn cdk deploy \
+            VpcPeeringStack-pipeline \
+            --require-approval never
+        env:
+          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+
+      - name: Verify peering connection
+        run: |
+          aws ec2 describe-vpc-peering-connections \
+            --filters "Name=status-code,Values=active,pending-acceptance" \
+            --query 'VpcPeeringConnections[*].{ID:VpcPeeringConnectionId,Status:Status.Code,Requester:RequesterVpcInfo.CidrBlock,Accepter:AccepterVpcInfo.CidrBlock}' \
+            --output table
+
+  # ============================================================================
+  # POST-DEPLOYMENT: Update Prometheus Config
+  # ============================================================================
+  update-prometheus:
+    needs: [deploy-centralized, setup-vpc-peering]
+    if: always() && (needs.deploy-centralized.result == 'success' || needs.setup-vpc-peering.result == 'success')
+    runs-on: ubuntu-latest
+    environment: pipeline
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get development EC2 IPs for Prometheus
+        id: targets
+        run: |
+          # Assume role in dev account to get EC2 IPs
+          DEV_ROLE="arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/development-PipelineMonitoringAccess"
+
+          CREDS=$(aws sts assume-role --role-arn $DEV_ROLE --role-session-name prometheus-config)
+
+          export AWS_ACCESS_KEY_ID=$(echo $CREDS | jq -r '.Credentials.AccessKeyId')
+          export AWS_SECRET_ACCESS_KEY=$(echo $CREDS | jq -r '.Credentials.SecretAccessKey')
+          export AWS_SESSION_TOKEN=$(echo $CREDS | jq -r '.Credentials.SessionToken')
+
+          # Get Node Exporter targets (EC2 private IPs)
+          TARGETS=$(aws ec2 describe-instances \
+            --filters "Name=tag:Environment,Values=development" "Name=instance-state-name,Values=running" \
+            --query 'Reservations[*].Instances[*].PrivateIpAddress' \
+            --output text | tr '\t' '\n' | sed 's/$/:9100/' | tr '\n' ',' | sed 's/,$//')
+
+          echo "targets=$TARGETS" >> $GITHUB_OUTPUT
+          echo "Development Node Exporter targets: $TARGETS"
+
+      - name: Summary
+        run: |
+          echo "=== Monitoring Deployment Complete ==="
+          echo ""
+          echo "Prometheus targets to add:"
+          echo "  ${{ steps.targets.outputs.targets }}"
+          echo ""
+          echo "Next steps:"
+          echo "  1. SSH to monitoring EC2 or use ECS Exec"
+          echo "  2. Update /mnt/prometheus-config/prometheus.yml"
+          echo "  3. Add static targets for cross-account scraping"
+          echo "  4. Reload Prometheus: curl -X POST http://localhost:9090/-/reload"

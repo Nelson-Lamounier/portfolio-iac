@@ -1,5 +1,20 @@
 # @format
 
+# =============================================================================
+# UNIFIED DEPLOYMENT WORKFLOW
+# =============================================================================
+# This workflow coordinates deployments across frontend and infrastructure.
+# For more granular control, use the specific workflows:
+#   - deploy-frontend.yml      - Frontend Docker build and ECS update
+#   - deploy-infrastructure.yml - CDK infrastructure deployment
+#   - deploy-monitoring.yml    - Monitoring and cross-account setup
+#
+# VPC CIDR Allocation:
+#   - Pipeline:    10.0.0.0/16
+#   - Development: 10.1.0.0/16
+#   - Staging:     10.2.0.0/16
+#   - Production:  10.3.0.0/16
+
 name: Deploy
 
 on:
@@ -17,6 +32,15 @@ on:
           - development
           - staging
           - production
+      deploy_type:
+        description: "What to deploy"
+        required: true
+        type: choice
+        options:
+          - all
+          - frontend-only
+          - infrastructure-only
+        default: all
 
 env:
   NODE_VERSION: "22"
@@ -28,13 +52,20 @@ permissions:
   contents: read
 
 jobs:
+  # ============================================================================
+  # DETECT CHANGES
+  # ============================================================================
   detect-changes:
     runs-on: ubuntu-latest
     outputs:
       frontend: ${{ steps.filter.outputs.frontend }}
       infrastructure: ${{ steps.filter.outputs.infrastructure }}
+      monitoring: ${{ steps.filter.outputs.monitoring }}
+      deploy_frontend: ${{ steps.decide.outputs.frontend }}
+      deploy_infrastructure: ${{ steps.decide.outputs.infrastructure }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -43,6 +74,25 @@ jobs:
               - 'frontend/**'
             infrastructure:
               - 'infrastructure/**'
+            monitoring:
+              - 'monitoring/**'
+
+      - name: Decide what to deploy
+        id: decide
+        run: |
+          DEPLOY_TYPE="${{ github.event.inputs.deploy_type || 'all' }}"
+
+          if [ "$DEPLOY_TYPE" = "frontend-only" ]; then
+            echo "frontend=true" >> $GITHUB_OUTPUT
+            echo "infrastructure=false" >> $GITHUB_OUTPUT
+          elif [ "$DEPLOY_TYPE" = "infrastructure-only" ]; then
+            echo "frontend=false" >> $GITHUB_OUTPUT
+            echo "infrastructure=true" >> $GITHUB_OUTPUT
+          else
+            # Auto-detect based on changes
+            echo "frontend=${{ steps.filter.outputs.frontend }}" >> $GITHUB_OUTPUT
+            echo "infrastructure=${{ steps.filter.outputs.infrastructure }}" >> $GITHUB_OUTPUT
+          fi
 
   build-frontend:
     runs-on: ubuntu-latest
