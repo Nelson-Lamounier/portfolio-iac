@@ -75,39 +75,41 @@ jobs:
   # ============================================================================
   # DEPLOY LOCAL MONITORING (Development Account)
   # ============================================================================
-  deploy-development:
-    if: github.event.inputs.target == 'development'
-    runs-on: ubuntu-latest
-    environment: development
-    steps:
-      - uses: actions/checkout@v4
+  # NOTE: Disabled - Using centralised monitoring in pipeline account instead
+  # To enable local monitoring per environment, uncomment this job
+  # deploy-development:
+  #   if: github.event.inputs.target == 'development'
+  #   runs-on: ubuntu-latest
+  #   environment: development
+  #   steps:
+  #     - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: ${{ env.NODE_VERSION }}
 
-      - run: corepack enable
-      - run: make install
-      - run: make build-infrastructure
+  #     - run: corepack enable
+  #     - run: make install
+  #     - run: make build-infrastructure
 
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
+  #     - uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+  #         aws-region: ${{ env.AWS_REGION }}
 
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.DEPLOYMENT_ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
-          role-chaining: true
+  #     - uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         role-to-assume: ${{ secrets.DEPLOYMENT_ROLE }}
+  #         aws-region: ${{ env.AWS_REGION }}
+  #         role-chaining: true
 
-      - name: Deploy monitoring to development
-        run: |
-          cd infrastructure
-          ENVIRONMENT=development yarn cdk deploy \
-            MonitoringStack-development \
-            MonitoringEcsStack-development \
-            --require-approval never
+  #     - name: Deploy monitoring to development
+  #       run: |
+  #         cd infrastructure
+  #         ENVIRONMENT=development yarn cdk deploy \
+  #           MonitoringStack-development \
+  #           MonitoringEcsStack-development \
+  #           --require-approval never
 
   # ============================================================================
   # SETUP CROSS-ACCOUNT ACCESS
