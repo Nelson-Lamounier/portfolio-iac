@@ -148,7 +148,7 @@ describe("MonitoringEcsStack Test Suite", () => {
     test("creates Node Exporter service with monitoring suffix", () => {
       template.hasResourceProperties("AWS::ECS::Service", {
         ServiceName: "test-monitoring-node-exporter",
-        DesiredCount: 1,
+        SchedulingStrategy: "DAEMON", // DAEMON services don't have DesiredCount
         EnableExecuteCommand: true,
       });
     });

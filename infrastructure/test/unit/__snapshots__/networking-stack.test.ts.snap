@@ -413,6 +413,26 @@ exports[`NetworkingStack Test Suite Snapshots NetworkingStack matches snapshot 1
       },
       "Type": "AWS::EC2::VPC",
     },
+    "VpcCidrParameter2A5FAF63": {
+      "Properties": {
+        "Description": "VPC CIDR for test environment",
+        "Name": "/networking/test/vpc-cidr",
+        "Tags": {
+          "Environment": "test",
+          "ManagedBy": "CDK",
+          "Stack": "Networking",
+        },
+        "Tier": "Standard",
+        "Type": "String",
+        "Value": {
+          "Fn::GetAtt": [
+            "VpcC3027511",
+            "CidrBlock",
+          ],
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
     "VpcDynamoDbEndpointDE074E93": {
       "Properties": {
         "RouteTableIds": [
@@ -488,6 +508,23 @@ exports[`NetworkingStack Test Suite Snapshots NetworkingStack matches snapshot 1
         ],
       },
       "Type": "AWS::EC2::InternetGateway",
+    },
+    "VpcIdParameter44761537": {
+      "Properties": {
+        "Description": "VPC ID for test environment",
+        "Name": "/networking/test/vpc-id",
+        "Tags": {
+          "Environment": "test",
+          "ManagedBy": "CDK",
+          "Stack": "Networking",
+        },
+        "Tier": "Standard",
+        "Type": "String",
+        "Value": {
+          "Ref": "VpcC3027511",
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
     },
     "VpcPrivateSubnet1RouteTable901BAEEE": {
       "Properties": {

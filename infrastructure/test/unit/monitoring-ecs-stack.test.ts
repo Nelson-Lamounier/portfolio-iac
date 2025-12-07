@@ -175,7 +175,7 @@ describe("MonitoringEcsStack", () => {
       const template = Template.fromStack(stack);
       template.hasResourceProperties("AWS::ECS::Service", {
         ServiceName: "test-monitoring-node-exporter",
-        DesiredCount: 1,
+        SchedulingStrategy: "DAEMON", // Node Exporter uses DAEMON, not REPLICA
         EnableExecuteCommand: true,
       });
     });

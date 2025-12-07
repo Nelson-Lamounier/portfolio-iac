@@ -290,14 +290,14 @@ exports[`ComputeStack Test Suite Snapshots ComputeStack matches snapshot 1`] = `
     },
     "FullImageUri": {
       "Description": "Full Container Image URI",
-      "Value": "dummy-value-for-/ecr/test/repository-uri:latest",
+      "Value": "dummy-value-for-/ecr/test/repository-uri:f04f96ab2ecb7eca42dc6dde22b6b37e43b32904",
     },
     "ImageTag": {
       "Description": "Container Image Tag",
       "Export": {
         "Name": "test-image-tag",
       },
-      "Value": "latest",
+      "Value": "f04f96ab2ecb7eca42dc6dde22b6b37e43b32904",
     },
     "NodeExporterPort": {
       "Description": "Node Exporter Port for Prometheus scraping",
@@ -1730,6 +1730,22 @@ def pick(dct, *keys):
             "IpProtocol": "-1",
           },
         ],
+        "SecurityGroupIngress": [
+          {
+            "CidrIp": "10.0.0.0/16",
+            "Description": "Allow Prometheus from pipeline account to scrape Node Exporter",
+            "FromPort": 9100,
+            "IpProtocol": "tcp",
+            "ToPort": 9100,
+          },
+          {
+            "CidrIp": "10.0.0.0/16",
+            "Description": "Allow Prometheus from pipeline account to scrape Next.js app metrics",
+            "FromPort": 3000,
+            "IpProtocol": "tcp",
+            "ToPort": 3000,
+          },
+        ],
         "Tags": [
           {
             "Key": "Environment",
@@ -2333,10 +2349,44 @@ echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config",
       },
       "Type": "AWS::SNS::Topic",
     },
+    "ContainerInsightsLogsDD96C1D6": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Join": [
+            "",
+            [
+              "/aws/ecs/containerinsights/",
+              {
+                "Ref": "ClusterC2E21B66",
+              },
+              "/performance",
+            ],
+          ],
+        },
+        "RetentionInDays": 1,
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Stack",
+            "Value": "Compute",
+          },
+        ],
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
     "ECSEventsFB436F25": {
       "DeletionPolicy": "Delete",
       "Properties": {
-        "LogGroupName": "/ecs/TestComputeStack/events",
+        "LogGroupName": "/ecs/test/events",
         "RetentionInDays": 14,
         "Tags": [
           {
@@ -2565,7 +2615,7 @@ echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config",
       },
       "Type": "AWS::IAM::Policy",
     },
-    "NodeExporterExecutionRoleD4F3149C": {
+    "NodeExporterExecutionRoleB6175089": {
       "Metadata": {
         "cdk_nag": {
           "rules_to_suppress": [
@@ -2574,12 +2624,26 @@ echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config",
                 "Resource::*",
               ],
               "id": "AwsSolutions-IAM5",
-              "reason": "ECR GetAuthorizationToken and public registry access do not support resource-level permissions. This is an AWS service limitation for container image authentication.",
+              "reason": "ECR GetAuthorizationToken does not support resource-level permissions. This is an AWS service limitation.",
+            },
+            {
+              "applies_to": [
+                "Resource::arn:aws:ecr:eu-west-1:123456789012:repository/*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECR repository wildcard allows ECS to pull images from any repository in the account. This is standard practice for ECS task execution roles.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Public ECR and STS GetServiceBearerToken do not support resource-level permissions. Required for pulling public container images.",
             },
             {
               "applies_to": [
                 {
-                  "regex": "/^Resource::.*/",
+                  "regex": "/^Resource::<.*LogGroup.*\\.Arn>:\\*$/g",
                 },
               ],
               "id": "AwsSolutions-IAM5",
@@ -2601,7 +2665,7 @@ echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config",
           ],
           "Version": "2012-10-17",
         },
-        "Description": "Execution role for Node Exporter task with least privilege",
+        "Description": "ECS task execution role for test with least privilege permissions",
         "Tags": [
           {
             "Key": "Environment",
@@ -2612,6 +2676,10 @@ echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config",
             "Value": "CDK",
           },
           {
+            "Key": "Purpose",
+            "Value": "EcsTaskExecution",
+          },
+          {
             "Key": "Stack",
             "Value": "Compute",
           },
@@ -2619,7 +2687,7 @@ echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config",
       },
       "Type": "AWS::IAM::Role",
     },
-    "NodeExporterExecutionRoleDefaultPolicyA936CFE0": {
+    "NodeExporterExecutionRoleDefaultPolicy43876083": {
       "Metadata": {
         "cdk_nag": {
           "rules_to_suppress": [
@@ -2628,12 +2696,26 @@ echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config",
                 "Resource::*",
               ],
               "id": "AwsSolutions-IAM5",
-              "reason": "ECR GetAuthorizationToken and public registry access do not support resource-level permissions. This is an AWS service limitation for container image authentication.",
+              "reason": "ECR GetAuthorizationToken does not support resource-level permissions. This is an AWS service limitation.",
+            },
+            {
+              "applies_to": [
+                "Resource::arn:aws:ecr:eu-west-1:123456789012:repository/*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECR repository wildcard allows ECS to pull images from any repository in the account. This is standard practice for ECS task execution roles.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Public ECR and STS GetServiceBearerToken do not support resource-level permissions. Required for pulling public container images.",
             },
             {
               "applies_to": [
                 {
-                  "regex": "/^Resource::.*/",
+                  "regex": "/^Resource::<.*LogGroup.*\\.Arn>:\\*$/g",
                 },
               ],
               "id": "AwsSolutions-IAM5",
@@ -2665,11 +2747,23 @@ echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config",
                   ],
                 ],
               },
+              "Sid": "CloudWatchLogsAccess",
             },
             {
               "Action": "ecr:GetAuthorizationToken",
               "Effect": "Allow",
               "Resource": "*",
+              "Sid": "EcrAuthorizationToken",
+            },
+            {
+              "Action": [
+                "ecr:BatchCheckLayerAvailability",
+                "ecr:GetDownloadUrlForLayer",
+                "ecr:BatchGetImage",
+              ],
+              "Effect": "Allow",
+              "Resource": "arn:aws:ecr:eu-west-1:123456789012:repository/*",
+              "Sid": "EcrImageAccess",
             },
             {
               "Action": [
@@ -2678,6 +2772,7 @@ echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config",
               ],
               "Effect": "Allow",
               "Resource": "*",
+              "Sid": "PublicEcrAccess",
             },
             {
               "Action": [
@@ -2695,10 +2790,10 @@ echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config",
           ],
           "Version": "2012-10-17",
         },
-        "PolicyName": "NodeExporterExecutionRoleDefaultPolicyA936CFE0",
+        "PolicyName": "NodeExporterExecutionRoleDefaultPolicy43876083",
         "Roles": [
           {
-            "Ref": "NodeExporterExecutionRoleD4F3149C",
+            "Ref": "NodeExporterExecutionRoleB6175089",
           },
         ],
       },
@@ -2742,14 +2837,13 @@ echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config",
             "Enable": false,
             "Rollback": false,
           },
-          "MaximumPercent": 200,
-          "MinimumHealthyPercent": 50,
+          "MaximumPercent": 100,
+          "MinimumHealthyPercent": 0,
         },
-        "DesiredCount": 1,
         "EnableECSManagedTags": false,
         "EnableExecuteCommand": true,
         "LaunchType": "EC2",
-        "SchedulingStrategy": "REPLICA",
+        "SchedulingStrategy": "DAEMON",
         "ServiceName": "test-node-exporter",
         "Tags": [
           {
@@ -2827,7 +2921,7 @@ echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config",
         ],
         "ExecutionRoleArn": {
           "Fn::GetAtt": [
-            "NodeExporterExecutionRoleD4F3149C",
+            "NodeExporterExecutionRoleB6175089",
             "Arn",
           ],
         },
@@ -3062,7 +3156,7 @@ echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config",
       },
       "Type": "AWS::CloudWatch::Alarm",
     },
-    "TaskDefinitionExecutionRole8D61C2FB": {
+    "TaskDefinitionExecutionRoleDefaultPolicy95DC1CDD": {
       "Metadata": {
         "cdk_nag": {
           "rules_to_suppress": [
@@ -3071,88 +3165,21 @@ echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config",
                 "Resource::*",
               ],
               "id": "AwsSolutions-IAM5",
-              "reason": "ECR GetAuthorizationToken action does not support resource-level permissions and requires wildcard (*). This is an AWS service limitation documented in AWS IAM documentation.",
+              "reason": "ECR GetAuthorizationToken does not support resource-level permissions. This is an AWS service limitation.",
             },
             {
               "applies_to": [
-                {
-                  "regex": "/^Resource::arn:aws:ecr:.*:.*:repository/\\*$/",
-                },
+                "Resource::arn:aws:ecr:eu-west-1:123456789012:repository/*",
               ],
               "id": "AwsSolutions-IAM5",
-              "reason": "ECR repository permissions use wildcard to allow pulling from any repository in the account. This is scoped to the account and region, providing reasonable security while allowing flexibility for multiple repositories.",
+              "reason": "ECR repository wildcard allows ECS to pull images from any repository in the account. This is standard practice for ECS task execution roles.",
             },
             {
               "applies_to": [
-                {
-                  "regex": "/^Resource::arn:aws:logs:.*:.*:log-group:/ecs/test\\*:\\*$/",
-                },
+                "Resource::arn:aws:logs:eu-west-1:123456789012:log-group:/ecs/test*:*",
               ],
               "id": "AwsSolutions-IAM5",
-              "reason": "CloudWatch Logs permissions use wildcard for log streams within the environment-specific log group. This allows services to create log streams dynamically while restricting access to the specific environment. The wildcard is scoped to /ecs/{envName}* pattern.",
-            },
-          ],
-        },
-      },
-      "Properties": {
-        "AssumeRolePolicyDocument": {
-          "Statement": [
-            {
-              "Action": "sts:AssumeRole",
-              "Effect": "Allow",
-              "Principal": {
-                "Service": "ecs-tasks.amazonaws.com",
-              },
-            },
-          ],
-          "Version": "2012-10-17",
-        },
-        "Description": "Execution role for ECS task with least privilege permissions",
-        "Tags": [
-          {
-            "Key": "Environment",
-            "Value": "test",
-          },
-          {
-            "Key": "ManagedBy",
-            "Value": "CDK",
-          },
-          {
-            "Key": "Stack",
-            "Value": "Compute",
-          },
-        ],
-      },
-      "Type": "AWS::IAM::Role",
-    },
-    "TaskDefinitionExecutionRoleDefaultPolicy1F3406F5": {
-      "Metadata": {
-        "cdk_nag": {
-          "rules_to_suppress": [
-            {
-              "applies_to": [
-                "Resource::*",
-              ],
-              "id": "AwsSolutions-IAM5",
-              "reason": "ECR GetAuthorizationToken action does not support resource-level permissions and requires wildcard (*). This is an AWS service limitation documented in AWS IAM documentation.",
-            },
-            {
-              "applies_to": [
-                {
-                  "regex": "/^Resource::arn:aws:ecr:.*:.*:repository/\\*$/",
-                },
-              ],
-              "id": "AwsSolutions-IAM5",
-              "reason": "ECR repository permissions use wildcard to allow pulling from any repository in the account. This is scoped to the account and region, providing reasonable security while allowing flexibility for multiple repositories.",
-            },
-            {
-              "applies_to": [
-                {
-                  "regex": "/^Resource::arn:aws:logs:.*:.*:log-group:/ecs/test\\*:\\*$/",
-                },
-              ],
-              "id": "AwsSolutions-IAM5",
-              "reason": "CloudWatch Logs permissions use wildcard for log streams within the environment-specific log group. This allows services to create log streams dynamically while restricting access to the specific environment. The wildcard is scoped to /ecs/{envName}* pattern.",
+              "reason": "CloudWatch Logs permissions use wildcard for log streams within /ecs/* log groups. This allows ECS to create log streams dynamically for all ECS services.",
             },
           ],
         },
@@ -3167,11 +3194,13 @@ echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config",
               ],
               "Effect": "Allow",
               "Resource": "arn:aws:logs:eu-west-1:123456789012:log-group:/ecs/test*:*",
+              "Sid": "CloudWatchLogsAccess",
             },
             {
               "Action": "ecr:GetAuthorizationToken",
               "Effect": "Allow",
               "Resource": "*",
+              "Sid": "EcrAuthorizationToken",
             },
             {
               "Action": [
@@ -3181,6 +3210,7 @@ echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config",
               ],
               "Effect": "Allow",
               "Resource": "arn:aws:ecr:eu-west-1:123456789012:repository/*",
+              "Sid": "EcrImageAccess",
             },
             {
               "Action": [
@@ -3198,14 +3228,77 @@ echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config",
           ],
           "Version": "2012-10-17",
         },
-        "PolicyName": "TaskDefinitionExecutionRoleDefaultPolicy1F3406F5",
+        "PolicyName": "TaskDefinitionExecutionRoleDefaultPolicy95DC1CDD",
         "Roles": [
           {
-            "Ref": "TaskDefinitionExecutionRole8D61C2FB",
+            "Ref": "TaskDefinitionExecutionRoleF766FA26",
           },
         ],
       },
       "Type": "AWS::IAM::Policy",
+    },
+    "TaskDefinitionExecutionRoleF766FA26": {
+      "Metadata": {
+        "cdk_nag": {
+          "rules_to_suppress": [
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECR GetAuthorizationToken does not support resource-level permissions. This is an AWS service limitation.",
+            },
+            {
+              "applies_to": [
+                "Resource::arn:aws:ecr:eu-west-1:123456789012:repository/*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECR repository wildcard allows ECS to pull images from any repository in the account. This is standard practice for ECS task execution roles.",
+            },
+            {
+              "applies_to": [
+                "Resource::arn:aws:logs:eu-west-1:123456789012:log-group:/ecs/test*:*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "CloudWatch Logs permissions use wildcard for log streams within /ecs/* log groups. This allows ECS to create log streams dynamically for all ECS services.",
+            },
+          ],
+        },
+      },
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Description": "ECS task execution role for test with least privilege permissions",
+        "Tags": [
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Purpose",
+            "Value": "EcsTaskExecution",
+          },
+          {
+            "Key": "Stack",
+            "Value": "Compute",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
     },
     "TaskDefinitionTaskDefF9E7411B": {
       "Properties": {
@@ -3222,7 +3315,7 @@ echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config",
               },
             ],
             "Essential": true,
-            "Image": "dummy-value-for-/ecr/test/repository-uri:latest",
+            "Image": "dummy-value-for-/ecr/test/repository-uri:f04f96ab2ecb7eca42dc6dde22b6b37e43b32904",
             "LogConfiguration": {
               "LogDriver": "awslogs",
               "Options": {
@@ -3238,7 +3331,7 @@ echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config",
             "PortMappings": [
               {
                 "ContainerPort": 3000,
-                "HostPort": 0,
+                "HostPort": 3000,
                 "Protocol": "tcp",
               },
             ],
@@ -3246,7 +3339,7 @@ echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config",
         ],
         "ExecutionRoleArn": {
           "Fn::GetAtt": [
-            "TaskDefinitionExecutionRole8D61C2FB",
+            "TaskDefinitionExecutionRoleF766FA26",
             "Arn",
           ],
         },
@@ -3373,7 +3466,7 @@ echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config",
     "TaskLogs5C7CDF8E": {
       "DeletionPolicy": "Delete",
       "Properties": {
-        "LogGroupName": "/ecs/TestComputeStack/tasks",
+        "LogGroupName": "/ecs/test/tasks",
         "RetentionInDays": 14,
         "Tags": [
           {
@@ -3472,14 +3565,13 @@ exports[`ComputeStack Test Suite Snapshots ECS Services match snapshot 1`] = `
           "Enable": false,
           "Rollback": false,
         },
-        "MaximumPercent": 200,
-        "MinimumHealthyPercent": 50,
+        "MaximumPercent": 100,
+        "MinimumHealthyPercent": 0,
       },
-      "DesiredCount": 1,
       "EnableECSManagedTags": false,
       "EnableExecuteCommand": true,
       "LaunchType": "EC2",
-      "SchedulingStrategy": "REPLICA",
+      "SchedulingStrategy": "DAEMON",
       "ServiceName": "test-node-exporter",
       "Tags": [
         {
@@ -3630,7 +3722,7 @@ exports[`ComputeStack Test Suite Snapshots Task Definitions match snapshot 1`] =
       ],
       "ExecutionRoleArn": {
         "Fn::GetAtt": [
-          "NodeExporterExecutionRoleD4F3149C",
+          "NodeExporterExecutionRoleB6175089",
           "Arn",
         ],
       },
@@ -3697,7 +3789,7 @@ exports[`ComputeStack Test Suite Snapshots Task Definitions match snapshot 1`] =
             },
           ],
           "Essential": true,
-          "Image": "dummy-value-for-/ecr/test/repository-uri:latest",
+          "Image": "dummy-value-for-/ecr/test/repository-uri:f04f96ab2ecb7eca42dc6dde22b6b37e43b32904",
           "LogConfiguration": {
             "LogDriver": "awslogs",
             "Options": {
@@ -3713,7 +3805,7 @@ exports[`ComputeStack Test Suite Snapshots Task Definitions match snapshot 1`] =
           "PortMappings": [
             {
               "ContainerPort": 3000,
-              "HostPort": 0,
+              "HostPort": 3000,
               "Protocol": "tcp",
             },
           ],
@@ -3721,7 +3813,7 @@ exports[`ComputeStack Test Suite Snapshots Task Definitions match snapshot 1`] =
       ],
       "ExecutionRoleArn": {
         "Fn::GetAtt": [
-          "TaskDefinitionExecutionRole8D61C2FB",
+          "TaskDefinitionExecutionRoleF766FA26",
           "Arn",
         ],
       },

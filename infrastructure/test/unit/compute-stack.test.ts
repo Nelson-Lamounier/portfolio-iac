@@ -201,7 +201,7 @@ describe("ComputeStack Test Suite", () => {
     test("creates Node Exporter service", () => {
       template.hasResourceProperties("AWS::ECS::Service", {
         ServiceName: "test-node-exporter",
-        DesiredCount: 1,
+        SchedulingStrategy: "DAEMON", // DAEMON services don't have DesiredCount
       });
     });
 
@@ -219,14 +219,14 @@ describe("ComputeStack Test Suite", () => {
   describe("CloudWatch Log Groups", () => {
     test("creates log group for task logs", () => {
       template.hasResourceProperties("AWS::Logs::LogGroup", {
-        LogGroupName: "/ecs/TestComputeStack/tasks",
+        LogGroupName: "/ecs/test/tasks", // Uses envName, not stack name
         RetentionInDays: 14,
       });
     });
 
     test("creates log group for ECS events", () => {
       template.hasResourceProperties("AWS::Logs::LogGroup", {
-        LogGroupName: "/ecs/TestComputeStack/events",
+        LogGroupName: "/ecs/test/events", // Uses envName, not stack name
         RetentionInDays: 14,
       });
     });
@@ -234,7 +234,7 @@ describe("ComputeStack Test Suite", () => {
     test("creates log group for application container", () => {
       // Application logs are part of task logs, not a separate log group
       template.hasResourceProperties("AWS::Logs::LogGroup", {
-        LogGroupName: "/ecs/TestComputeStack/tasks",
+        LogGroupName: "/ecs/test/tasks", // Uses envName, not stack name
         RetentionInDays: 14,
       });
     });

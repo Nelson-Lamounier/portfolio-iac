@@ -185,14 +185,13 @@ exports[`MonitoringEcsStack Test Suite Snapshots ECS Services match snapshot 1`]
           "Enable": false,
           "Rollback": false,
         },
-        "MaximumPercent": 200,
-        "MinimumHealthyPercent": 50,
+        "MaximumPercent": 100,
+        "MinimumHealthyPercent": 0,
       },
-      "DesiredCount": 1,
       "EnableECSManagedTags": false,
       "EnableExecuteCommand": true,
       "LaunchType": "EC2",
-      "SchedulingStrategy": "REPLICA",
+      "SchedulingStrategy": "DAEMON",
       "ServiceName": "test-monitoring-node-exporter",
       "Tags": [
         {
@@ -2150,7 +2149,7 @@ echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config
 #!/bin/bash
 set -e
 
-# Create data directories
+# Create data directories (local storage - not persistent)
 mkdir -p /mnt/prometheus-data
 mkdir -p /mnt/grafana-data
 mkdir -p /mnt/prometheus-config
@@ -2211,6 +2210,7 @@ scrape_configs:
       # Use instance name tag as instance label
       - source_labels: [__meta_ec2_tag_Name]
         target_label: instance
+
 EOF
 
 # Get host private IP for Grafana to reach Prometheus
@@ -2223,10 +2223,11 @@ apiVersion: 1
 datasources:
   - name: Prometheus
     type: prometheus
+    uid: prometheus
     access: proxy
-    # Use host private IP to reach Prometheus from Grafana (both in BRIDGE mode)
-    # Note: No /prometheus path - that's only for ALB routing
-    url: http://\${HOST_IP}:9090
+    # Use host private IP to reach Prometheus from Grafana
+    # Include /prometheus path since Prometheus is configured with --web.route-prefix=/prometheus
+    url: http://\${HOST_IP}:9090/prometheus
     isDefault: true
     editable: true
     jsonData:
@@ -2248,9 +2249,6 @@ providers:
     options:
       path: /var/lib/grafana/dashboards
 EOF
-
-# Copy dashboard to Grafana dashboards directory
-cp /mnt/grafana-dashboards/infrastructure-overview.json /mnt/grafana-dashboards/ 2>/dev/null || echo 'Dashboard will be added manually'
 
 # Set permissions
 chown -R 65534:65534 /mnt/prometheus-data /mnt/prometheus-config
@@ -2484,7 +2482,7 @@ chmod -R 755 /mnt/grafana-data /mnt/grafana-provisioning /mnt/grafana-dashboards
       "Type": "AWS::Logs::LogGroup",
       "UpdateReplacePolicy": "Delete",
     },
-    "NodeExporterExecutionRoleD4F3149C": {
+    "NodeExporterExecutionRoleB6175089": {
       "Metadata": {
         "cdk_nag": {
           "rules_to_suppress": [
@@ -2493,12 +2491,26 @@ chmod -R 755 /mnt/grafana-data /mnt/grafana-provisioning /mnt/grafana-dashboards
                 "Resource::*",
               ],
               "id": "AwsSolutions-IAM5",
-              "reason": "ECR GetAuthorizationToken and public registry access do not support resource-level permissions. This is an AWS service limitation for container image authentication.",
+              "reason": "ECR GetAuthorizationToken does not support resource-level permissions. This is an AWS service limitation.",
+            },
+            {
+              "applies_to": [
+                "Resource::arn:aws:ecr:eu-west-1:123456789012:repository/*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECR repository wildcard allows ECS to pull images from any repository in the account. This is standard practice for ECS task execution roles.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Public ECR and STS GetServiceBearerToken do not support resource-level permissions. Required for pulling public container images.",
             },
             {
               "applies_to": [
                 {
-                  "regex": "/^Resource::.*/",
+                  "regex": "/^Resource::<.*LogGroup.*\\.Arn>:\\*$/g",
                 },
               ],
               "id": "AwsSolutions-IAM5",
@@ -2520,15 +2532,19 @@ chmod -R 755 /mnt/grafana-data /mnt/grafana-provisioning /mnt/grafana-dashboards
           ],
           "Version": "2012-10-17",
         },
-        "Description": "Execution role for Node Exporter task with least privilege",
+        "Description": "ECS task execution role for test-monitoring with least privilege permissions",
         "Tags": [
           {
             "Key": "Environment",
-            "Value": "test",
+            "Value": "test-monitoring",
           },
           {
             "Key": "ManagedBy",
             "Value": "CDK",
+          },
+          {
+            "Key": "Purpose",
+            "Value": "EcsTaskExecution",
           },
           {
             "Key": "Stack",
@@ -2538,7 +2554,7 @@ chmod -R 755 /mnt/grafana-data /mnt/grafana-provisioning /mnt/grafana-dashboards
       },
       "Type": "AWS::IAM::Role",
     },
-    "NodeExporterExecutionRoleDefaultPolicyA936CFE0": {
+    "NodeExporterExecutionRoleDefaultPolicy43876083": {
       "Metadata": {
         "cdk_nag": {
           "rules_to_suppress": [
@@ -2547,12 +2563,26 @@ chmod -R 755 /mnt/grafana-data /mnt/grafana-provisioning /mnt/grafana-dashboards
                 "Resource::*",
               ],
               "id": "AwsSolutions-IAM5",
-              "reason": "ECR GetAuthorizationToken and public registry access do not support resource-level permissions. This is an AWS service limitation for container image authentication.",
+              "reason": "ECR GetAuthorizationToken does not support resource-level permissions. This is an AWS service limitation.",
+            },
+            {
+              "applies_to": [
+                "Resource::arn:aws:ecr:eu-west-1:123456789012:repository/*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "ECR repository wildcard allows ECS to pull images from any repository in the account. This is standard practice for ECS task execution roles.",
+            },
+            {
+              "applies_to": [
+                "Resource::*",
+              ],
+              "id": "AwsSolutions-IAM5",
+              "reason": "Public ECR and STS GetServiceBearerToken do not support resource-level permissions. Required for pulling public container images.",
             },
             {
               "applies_to": [
                 {
-                  "regex": "/^Resource::.*/",
+                  "regex": "/^Resource::<.*LogGroup.*\\.Arn>:\\*$/g",
                 },
               ],
               "id": "AwsSolutions-IAM5",
@@ -2584,11 +2614,23 @@ chmod -R 755 /mnt/grafana-data /mnt/grafana-provisioning /mnt/grafana-dashboards
                   ],
                 ],
               },
+              "Sid": "CloudWatchLogsAccess",
             },
             {
               "Action": "ecr:GetAuthorizationToken",
               "Effect": "Allow",
               "Resource": "*",
+              "Sid": "EcrAuthorizationToken",
+            },
+            {
+              "Action": [
+                "ecr:BatchCheckLayerAvailability",
+                "ecr:GetDownloadUrlForLayer",
+                "ecr:BatchGetImage",
+              ],
+              "Effect": "Allow",
+              "Resource": "arn:aws:ecr:eu-west-1:123456789012:repository/*",
+              "Sid": "EcrImageAccess",
             },
             {
               "Action": [
@@ -2597,6 +2639,7 @@ chmod -R 755 /mnt/grafana-data /mnt/grafana-provisioning /mnt/grafana-dashboards
               ],
               "Effect": "Allow",
               "Resource": "*",
+              "Sid": "PublicEcrAccess",
             },
             {
               "Action": [
@@ -2614,10 +2657,10 @@ chmod -R 755 /mnt/grafana-data /mnt/grafana-provisioning /mnt/grafana-dashboards
           ],
           "Version": "2012-10-17",
         },
-        "PolicyName": "NodeExporterExecutionRoleDefaultPolicyA936CFE0",
+        "PolicyName": "NodeExporterExecutionRoleDefaultPolicy43876083",
         "Roles": [
           {
-            "Ref": "NodeExporterExecutionRoleD4F3149C",
+            "Ref": "NodeExporterExecutionRoleB6175089",
           },
         ],
       },
@@ -2661,14 +2704,13 @@ chmod -R 755 /mnt/grafana-data /mnt/grafana-provisioning /mnt/grafana-dashboards
             "Enable": false,
             "Rollback": false,
           },
-          "MaximumPercent": 200,
-          "MinimumHealthyPercent": 50,
+          "MaximumPercent": 100,
+          "MinimumHealthyPercent": 0,
         },
-        "DesiredCount": 1,
         "EnableECSManagedTags": false,
         "EnableExecuteCommand": true,
         "LaunchType": "EC2",
-        "SchedulingStrategy": "REPLICA",
+        "SchedulingStrategy": "DAEMON",
         "ServiceName": "test-monitoring-node-exporter",
         "Tags": [
           {
@@ -2746,7 +2788,7 @@ chmod -R 755 /mnt/grafana-data /mnt/grafana-provisioning /mnt/grafana-dashboards
         ],
         "ExecutionRoleArn": {
           "Fn::GetAtt": [
-            "NodeExporterExecutionRoleD4F3149C",
+            "NodeExporterExecutionRoleB6175089",
             "Arn",
           ],
         },
@@ -3060,7 +3102,7 @@ chmod -R 755 /mnt/grafana-data /mnt/grafana-provisioning /mnt/grafana-dashboards
             "PortMappings": [
               {
                 "ContainerPort": 9090,
-                "HostPort": 0,
+                "HostPort": 9090,
                 "Protocol": "tcp",
               },
             ],
@@ -3073,7 +3115,7 @@ chmod -R 755 /mnt/grafana-data /mnt/grafana-provisioning /mnt/grafana-dashboards
           ],
         },
         "Family": "TestMonitoringEcsStackPrometheusTaskDefinitionTaskDefBDDCB65E",
-        "NetworkMode": "bridge",
+        "NetworkMode": "host",
         "RequiresCompatibilities": [
           "EC2",
         ],
