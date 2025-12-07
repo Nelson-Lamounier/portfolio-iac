@@ -285,6 +285,8 @@ export class SuppressionManager {
     stackType:
       | "ComputeStack"
       | "MonitoringStack"
+      | "MonitoringInfraStack"
+      | "MonitoringServiceStack"
       | "NetworkingStack"
       | "LoadBalancerStack"
       | "CertificateStack",
@@ -309,11 +311,21 @@ export class SuppressionManager {
         break;
 
       case "MonitoringStack":
+      case "MonitoringInfraStack":
         suppressions.push(...this.getMonitoringSuppressions());
         suppressions.push(...this.getEcsEnvironmentVariableSuppressions());
         suppressions.push(...this.getAutoScalingSuppressions());
         suppressions.push(...this.getPublicAccessSuppressions());
         suppressions.push(...this.getLoadBalancerSuppressions());
+        if (envName) {
+          suppressions.push(...this.getCloudWatchLogsSuppressions(envName));
+        }
+        break;
+
+      case "MonitoringServiceStack":
+        suppressions.push(...this.getMonitoringSuppressions());
+        suppressions.push(...this.getEcsEnvironmentVariableSuppressions());
+        suppressions.push(...this.getEcsServiceSuppressions());
         if (envName) {
           suppressions.push(...this.getCloudWatchLogsSuppressions(envName));
         }

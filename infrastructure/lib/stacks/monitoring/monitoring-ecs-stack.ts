@@ -4,6 +4,7 @@ import * as cdk from "aws-cdk-lib";
 import * as autoscaling from "aws-cdk-lib/aws-autoscaling";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecs from "aws-cdk-lib/aws-ecs";
+import * as efs from "aws-cdk-lib/aws-efs";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as logs from "aws-cdk-lib/aws-logs";
 import { Construct } from "constructs";
@@ -34,6 +35,8 @@ export interface MonitoringEcsStackProps extends cdk.StackProps {
   allowedIpRanges?: string[];
   /** Cross-account targets to scrape via VPC peering */
   crossAccountTargets?: CrossAccountTarget[];
+  /** Enable EFS for persistent storage (survives instance replacement) */
+  enablePersistence?: boolean;
 }
 
 export class MonitoringEcsStack extends cdk.Stack {
@@ -49,14 +52,27 @@ export class MonitoringEcsStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: MonitoringEcsStackProps) {
     super(scope, id, props);
 
-    const { vpc, envName, albDnsName, allowedIpRanges, crossAccountTargets } =
-      props;
+    const {
+      vpc,
+      envName,
+      albDnsName,
+      allowedIpRanges,
+      crossAccountTargets,
+      enablePersistence,
+    } = props;
 
-    // Create ECS Cluster for monitoring (with EBS volume)
+    // Create EFS for persistent storage (optional but recommended)
+    let fileSystem: efs.FileSystem | undefined;
+    if (enablePersistence) {
+      fileSystem = this.createEfsFileSystem(vpc, envName);
+    }
+
+    // Create ECS Cluster for monitoring
     const { cluster, autoScalingGroup } = this.createEcsCluster(
       vpc,
       envName,
-      crossAccountTargets
+      crossAccountTargets,
+      fileSystem
     );
     this.cluster = cluster;
     this.autoScalingGroup = autoScalingGroup;
@@ -147,10 +163,66 @@ export class MonitoringEcsStack extends cdk.Stack {
     cdk.Tags.of(this).add("ManagedBy", "CDK");
   }
 
+  /**
+   * Create EFS file system for persistent monitoring data
+   * Uses One Zone storage class for cost optimization (~47% cheaper than Standard)
+   * Lifecycle policy moves infrequently accessed data to IA storage after 30 days
+   */
+  private createEfsFileSystem(vpc: ec2.IVpc, envName: string): efs.FileSystem {
+    // Get the first public subnet for One Zone EFS placement
+    const publicSubnets = vpc.selectSubnets({
+      subnetType: ec2.SubnetType.PUBLIC,
+    });
+    const availabilityZone = publicSubnets.availabilityZones[0];
+
+    const fileSystem = new efs.FileSystem(this, "MonitoringEfs", {
+      vpc,
+      // Lifecycle management - move to Infrequent Access after 30 days
+      lifecyclePolicy: efs.LifecyclePolicy.AFTER_30_DAYS,
+      // Move back to Standard when accessed (cost optimization)
+      outOfInfrequentAccessPolicy:
+        efs.OutOfInfrequentAccessPolicy.AFTER_1_ACCESS,
+      performanceMode: efs.PerformanceMode.GENERAL_PURPOSE,
+      throughputMode: efs.ThroughputMode.BURSTING,
+      encrypted: true,
+      removalPolicy: cdk.RemovalPolicy.RETAIN, // Keep data on stack deletion
+      // Place mount targets only in the first AZ for One Zone behavior
+      vpcSubnets: {
+        subnetType: ec2.SubnetType.PUBLIC,
+        availabilityZones: [availabilityZone],
+      },
+    });
+
+    // Use escape hatch to set One Zone storage class via L1 construct
+    // This provides ~47% cost savings compared to Standard multi-AZ
+    const cfnFileSystem = fileSystem.node.defaultChild as efs.CfnFileSystem;
+    cfnFileSystem.availabilityZoneName = availabilityZone;
+
+    cdk.Tags.of(fileSystem).add("Name", `${envName}-monitoring-efs`);
+    cdk.Tags.of(fileSystem).add("Environment", envName);
+    cdk.Tags.of(fileSystem).add("StorageClass", "One-Zone-IA");
+
+    // Output the EFS ID for reference
+    new cdk.CfnOutput(this, "EfsFileSystemId", {
+      value: fileSystem.fileSystemId,
+      description: "EFS File System ID for monitoring data persistence",
+      exportName: `${this.stackName}-efs-id`,
+    });
+
+    new cdk.CfnOutput(this, "EfsAvailabilityZone", {
+      value: availabilityZone,
+      description: "Availability Zone for One Zone EFS",
+      exportName: `${this.stackName}-efs-az`,
+    });
+
+    return fileSystem;
+  }
+
   private createEcsCluster(
     vpc: ec2.IVpc,
     envName: string,
-    crossAccountTargets?: CrossAccountTarget[]
+    crossAccountTargets?: CrossAccountTarget[],
+    fileSystem?: efs.FileSystem
   ): { cluster: ecs.Cluster; autoScalingGroup: autoscaling.AutoScalingGroup } {
     const cluster = new ecs.Cluster(this, "MonitoringCluster", {
       vpc,
@@ -187,18 +259,54 @@ export class MonitoringEcsStack extends cdk.Stack {
       ],
     });
 
+    // Allow EFS access from EC2 instances (if EFS is enabled)
+    if (fileSystem) {
+      fileSystem.connections.allowDefaultPortFrom(
+        autoScalingGroup,
+        "Allow ECS instances to mount EFS"
+      );
+    }
+
     // Create directories and config files for monitoring services on instance startup
+    // If EFS is enabled, mount it for persistent storage
+    const efsCommands = fileSystem
+      ? [
+          "# Install EFS utilities",
+          "yum install -y amazon-efs-utils",
+          "",
+          "# Create mount point and mount EFS",
+          "mkdir -p /mnt/efs",
+          `mount -t efs -o tls ${fileSystem.fileSystemId}:/ /mnt/efs`,
+          "",
+          "# Create persistent directories on EFS",
+          "mkdir -p /mnt/efs/prometheus-data",
+          "mkdir -p /mnt/efs/grafana-data",
+          "",
+          "# Symlink to EFS for persistence",
+          "ln -sf /mnt/efs/prometheus-data /mnt/prometheus-data",
+          "ln -sf /mnt/efs/grafana-data /mnt/grafana-data",
+          "",
+          "# Create config directories (local, not on EFS)",
+          "mkdir -p /mnt/prometheus-config",
+          "mkdir -p /mnt/grafana-provisioning/datasources",
+          "mkdir -p /mnt/grafana-provisioning/dashboards",
+          "mkdir -p /mnt/grafana-dashboards",
+        ]
+      : [
+          "# Create data directories (local storage - not persistent)",
+          "mkdir -p /mnt/prometheus-data",
+          "mkdir -p /mnt/grafana-data",
+          "mkdir -p /mnt/prometheus-config",
+          "mkdir -p /mnt/grafana-provisioning/datasources",
+          "mkdir -p /mnt/grafana-provisioning/dashboards",
+          "mkdir -p /mnt/grafana-dashboards",
+        ];
+
     autoScalingGroup.addUserData(
       "#!/bin/bash",
       "set -e",
       "",
-      "# Create data directories",
-      "mkdir -p /mnt/prometheus-data",
-      "mkdir -p /mnt/grafana-data",
-      "mkdir -p /mnt/prometheus-config",
-      "mkdir -p /mnt/grafana-provisioning/datasources",
-      "mkdir -p /mnt/grafana-provisioning/dashboards",
-      "mkdir -p /mnt/grafana-dashboards",
+      ...efsCommands,
       "",
       "# Create Prometheus configuration",
       "cat > /mnt/prometheus-config/prometheus.yml << 'EOF'",
@@ -441,90 +549,6 @@ export class MonitoringEcsStack extends cdk.Stack {
     });
 
     return nodeExporter.service;
-  }
-
-  // OLD IMPLEMENTATION - REPLACED WITH NodeExporterConstruct
-  private _oldCreateNodeExporterService_UNUSED(
-    cluster: ecs.Cluster,
-    envName: string
-  ): ecs.Ec2Service {
-    // Task definition
-    const taskDefinition = new ecs.Ec2TaskDefinition(
-      this,
-      "NodeExporterTaskDef",
-      {
-        networkMode: ecs.NetworkMode.HOST,
-      }
-    );
-
-    // Container definition
-    const container = taskDefinition.addContainer("node-exporter", {
-      image: ecs.ContainerImage.fromRegistry("prom/node-exporter:latest"),
-      memoryReservationMiB: 64,
-      logging: ecs.LogDrivers.awsLogs({
-        streamPrefix: "node-exporter",
-        logGroup: new logs.LogGroup(this, "NodeExporterLogGroup", {
-          logGroupName: `/ecs/${envName}-node-exporter`,
-          retention: logs.RetentionDays.ONE_WEEK,
-          removalPolicy: cdk.RemovalPolicy.DESTROY,
-        }),
-      }),
-      command: [
-        "--path.procfs=/host/proc",
-        "--path.sysfs=/host/sys",
-        "--path.rootfs=/rootfs",
-        "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)",
-      ],
-    });
-
-    container.addPortMappings({
-      containerPort: 9100,
-      hostPort: 9100,
-      protocol: ecs.Protocol.TCP,
-    });
-
-    // Mount host paths
-    taskDefinition.addVolume({
-      name: "proc",
-      host: { sourcePath: "/proc" },
-    });
-    taskDefinition.addVolume({
-      name: "sys",
-      host: { sourcePath: "/sys" },
-    });
-    taskDefinition.addVolume({
-      name: "rootfs",
-      host: { sourcePath: "/" },
-    });
-
-    container.addMountPoints(
-      {
-        sourceVolume: "proc",
-        containerPath: "/host/proc",
-        readOnly: true,
-      },
-      {
-        sourceVolume: "sys",
-        containerPath: "/host/sys",
-        readOnly: true,
-      },
-      {
-        sourceVolume: "rootfs",
-        containerPath: "/rootfs",
-        readOnly: true,
-      }
-    );
-
-    // Create service
-    const service = new ecs.Ec2Service(this, "NodeExporterService", {
-      cluster,
-      taskDefinition,
-      serviceName: `${envName}-node-exporter`,
-      desiredCount: 1,
-      enableExecuteCommand: true,
-    });
-
-    return service;
   }
 
   private configureLoadBalancerRouting(): void {
