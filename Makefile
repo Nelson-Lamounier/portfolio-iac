@@ -155,7 +155,7 @@ fetch-vpc-info:
 
 fetch-monitoring-info:
 	@echo "Fetching monitoring info (VPC ID, EC2 IP) for environment: $(ENV_FULL)"
-	./scripts/aws/fetch-monitoring-info.sh
+	@ENVIRONMENT=$(ENV_FULL) ./scripts/aws/fetch-monitoring-info.sh
 
 fetch-aws-accounts:
 	@echo "Fetching AWS account IDs..."
@@ -280,22 +280,6 @@ check-monitoring-layered:
 		--query 'Stacks[0].StackStatus' \
 		--output text 2>/dev/null || echo "NOT_DEPLOYED"
 	@echo ""
-	@echo "Service Stack:"
-	@aws cloudformation describe-stacks \
-		--stack-name MonitoringServiceStack-pipeline \
-		--query 'Stacks[0].StackStatus' \
-		--output text 2>/dev/null || echo "NOT_DEPLOYED"
-	@echo ""
-	@echo "URLs:"
-	@aws cloudformation describe-stacks \
-		--stack-name MonitoringInfraStack-pipeline \
-		--query 'Stacks[0].Outputs[?OutputKey==`GrafanaUrl` || OutputKey==`PrometheusUrl`].{Service:OutputKey,URL:OutputValue}' \
-		--output table 2>/dev/null || echo "No outputs found"
-
-# Destroy layered monitoring
-destroy-monitoring-layered:
-	@chmod +x ./scripts/deploy/pipeline-monitoring.sh
-	@./scripts/deploy/pipeline-monitoring.sh destroy
 	@echo "Service Stack:"
 	@aws cloudformation describe-stacks \
 		--stack-name MonitoringServiceStack-pipeline \
