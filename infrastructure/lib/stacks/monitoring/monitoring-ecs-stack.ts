@@ -6,6 +6,7 @@ import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as efs from "aws-cdk-lib/aws-efs";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
+import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
 import { Construct } from "constructs";
 import {
@@ -264,6 +265,19 @@ export class MonitoringEcsStack extends cdk.Stack {
       fileSystem.connections.allowDefaultPortFrom(
         autoScalingGroup,
         "Allow ECS instances to mount EFS"
+      );
+
+      // Add IAM permissions for EFS mounting with IAM authentication
+      autoScalingGroup.role.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: [
+            "elasticfilesystem:ClientMount",
+            "elasticfilesystem:ClientWrite",
+            "elasticfilesystem:ClientRootAccess",
+          ],
+          resources: [fileSystem.fileSystemArn],
+        })
       );
     }
 

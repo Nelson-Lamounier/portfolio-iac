@@ -64,7 +64,7 @@ DEV_NODE_EXPORTER_IP=""
 
 if [ -n "${AWS_ACCOUNT_ID_DEV:-}" ]; then
   # Assume role in dev account
-  DEV_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT_ID_DEV}:role/GitHubActionsDeploymentRole"
+  DEV_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT_ID_DEV}:role/GitHubDeploymentRole"
   
   CREDS=$(aws sts assume-role \
     --role-arn "${DEV_ROLE_ARN}" \
