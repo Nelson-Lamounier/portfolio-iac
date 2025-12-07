@@ -5,13 +5,18 @@ name: Deploy Pipeline Monitoring
 on:
   push:
     branches:
-      - feature/*
+      - feature/monitoring
+    paths:
+      - "infrastructure/lib/stacks/monitoring/**"
+      - "monitoring/**"
+      - ".github/workflows/deploy-pipeline-monitoring.yml"
   workflow_dispatch:
     inputs:
       action:
         description: "Action to perform"
         required: true
         type: choice
+        default: "deploy-all"
         options:
           - deploy-all
           - deploy-infra-only
@@ -37,12 +42,17 @@ permissions:
 
 jobs:
   deploy:
-    name: ${{ github.event.inputs.action }} (${{ github.event.inputs.architecture }})
+    name: ${{ github.event.inputs.action || 'deploy-all' }} (${{ github.event.inputs.architecture || 'layered' }})
     runs-on: ubuntu-latest
     environment: pipeline
     concurrency:
       group: deploy-pipeline-monitoring
       cancel-in-progress: false
+
+    env:
+      # Default values for push triggers (workflow_dispatch will override via inputs)
+      ACTION: ${{ github.event.inputs.action || 'deploy-all' }}
+      ARCHITECTURE: ${{ github.event.inputs.architecture || 'layered' }}
 
     steps:
       - name: Checkout
@@ -62,83 +72,90 @@ jobs:
       - name: Build Infrastructure
         run: make build-infrastructure
 
-      - name: Configure AWS Credentials
+      - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # Get Dev account info for cross-account monitoring
-      - name: Get Dev Account Info
+      # Fetch Dev Account Info using Makefile
+      - name: Fetch Dev Account Monitoring Info
         id: dev-info
         continue-on-error: true
-        run: |
-          # Get dev VPC ID from SSM
-          DEV_VPC_ID=$(aws ssm get-parameter \
-            --name "/networking/development/vpc-id" \
-            --query 'Parameter.Value' --output text 2>/dev/null || echo "")
+        run: make fetch-monitoring-info ENV=development
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
 
-          if [ -n "$DEV_VPC_ID" ]; then
-            echo "DEV_VPC_ID=$DEV_VPC_ID" >> $GITHUB_ENV
-          fi
-
-          # Get dev EC2 private IP
-          DEV_IP=$(aws ssm get-parameter \
-            --name "/compute/development/ec2-private-ip" \
-            --query 'Parameter.Value' --output text 2>/dev/null || echo "")
-
-          if [ -n "$DEV_IP" ]; then
-            echo "DEV_NODE_EXPORTER_IP=$DEV_IP" >> $GITHUB_ENV
-          fi
+      # Fetch Staging Account Info (if needed)
+      - name: Fetch Staging Account Monitoring Info
+        id: staging-info
+        continue-on-error: true
+        if: vars.AWS_ACCOUNT_ID_STAGING != ''
+        run: make fetch-monitoring-info ENV=staging
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
 
       # Deploy All
       - name: Deploy All (Layered)
-        if: github.event.inputs.action == 'deploy-all' && github.event.inputs.architecture == 'layered'
+        if: env.ACTION == 'deploy-all' && env.ARCHITECTURE == 'layered'
         run: make deploy-monitoring-layered
         env:
           AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+          DEV_VPC_ID: ${{ env.DEV_VPC_ID }}
+          DEV_NODE_EXPORTER_IP: ${{ env.DEV_NODE_EXPORTER_IP }}
 
       - name: Deploy All (Embedded)
-        if: github.event.inputs.action == 'deploy-all' && github.event.inputs.architecture == 'embedded'
+        if: env.ACTION == 'deploy-all' && env.ARCHITECTURE == 'embedded'
         run: make deploy-monitoring-embedded
         env:
           AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+          DEV_VPC_ID: ${{ env.DEV_VPC_ID }}
+          DEV_NODE_EXPORTER_IP: ${{ env.DEV_NODE_EXPORTER_IP }}
 
       # Deploy Infrastructure Only
       - name: Deploy Infrastructure Only
-        if: github.event.inputs.action == 'deploy-infra-only'
+        if: env.ACTION == 'deploy-infra-only'
         run: make deploy-monitoring-infra
+        env:
+          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+          DEV_VPC_ID: ${{ env.DEV_VPC_ID }}
 
       # Deploy Services Only
       - name: Deploy Services Only
-        if: github.event.inputs.action == 'deploy-services-only'
+        if: env.ACTION == 'deploy-services-only'
         run: make deploy-monitoring-services
 
       # Sync Config Only
       - name: Sync Config Only
-        if: github.event.inputs.action == 'sync-config-only'
+        if: env.ACTION == 'sync-config-only'
         run: make sync-monitoring-config
 
       # Destroy All
       - name: Destroy All
-        if: github.event.inputs.action == 'destroy-all'
+        if: env.ACTION == 'destroy-all'
         run: make destroy-monitoring-layered
 
       # Check Status
       - name: Check Monitoring Status
-        if: github.event.inputs.action != 'destroy-all'
+        if: env.ACTION != 'destroy-all'
         run: make check-monitoring-layered
 
       # Summary
       - name: Generate Summary
         if: always()
         run: |
-          echo "## Pipeline Monitoring - ${{ github.event.inputs.action }}" >> $GITHUB_STEP_SUMMARY
+          echo "## Pipeline Monitoring - ${ACTION}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Architecture:** ${{ github.event.inputs.architecture }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Architecture:** ${ARCHITECTURE}" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if [ "${{ github.event.inputs.action }}" != "destroy-all" ]; then
+          echo "### Cross-Account Info Retrieved" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dev VPC ID:** ${DEV_VPC_ID:-NOT_FOUND}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dev EC2 IP:** ${DEV_NODE_EXPORTER_IP:-NOT_FOUND}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${ACTION}" != "destroy-all" ]; then
             # Get ALB DNS
             ALB_DNS=$(aws cloudformation describe-stacks \
               --stack-name MonitoringInfraStack-pipeline \

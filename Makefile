@@ -16,6 +16,8 @@ help:
 	@echo "AWS/Deployment targets:"
 	@echo "  check-infra          - Check if infrastructure exists"
 	@echo "  fetch-ecr-uri        - Fetch ECR repository URI"
+	@echo "  fetch-vpc-info       - Fetch VPC info"
+	@echo "  fetch-monitoring-info - Fetch VPC ID and EC2 IP for monitoring (ENV=development)"
 	@echo "  fetch-aws-accounts   - Fetch AWS account IDs from Parameter Store"
 	@echo "  setup-domain-params  - Setup domain configuration in SSM Parameter Store"
 	@echo "  verify-cdk-bootstrap - Verify CDK bootstrap"
@@ -146,6 +148,15 @@ check-infra:
 fetch-ecr-uri:
 	@echo "Fetching ECR repository URI..."
 	@./scripts/aws/fetch-ecr-uri.sh
+
+fetch-vpc-info:
+	@echo "Fetching VPC ID..."
+	@./scripts/aws/fetch-vpc-info.sh
+
+fetch-monitoring-info:
+	@echo "Fetching monitoring info (VPC ID, EC2 IP) for environment: $(ENV_FULL)"
+	@chmod +x ./scripts/aws/fetch-monitoring-info.sh
+	@ENVIRONMENT=$(ENV_FULL) ./scripts/aws/fetch-monitoring-info.sh
 
 fetch-aws-accounts:
 	@echo "Fetching AWS account IDs..."
