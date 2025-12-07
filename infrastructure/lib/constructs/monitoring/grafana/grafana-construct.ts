@@ -266,14 +266,19 @@ export class GrafanaConstruct extends Construct {
       GF_USERS_ALLOW_SIGN_UP: "false",
 
       // Provisioning path
-      GF_PATH_PROVISIONING: "/etc/grafana/provisioning",
+      GF_PATHS_PROVISIONING: "/etc/grafana/provisioning",
+
+      // Data paths - ensure Grafana can write to these
+      GF_PATHS_DATA: "/var/lib/grafana",
+      GF_PATHS_PLUGINS: "/var/lib/grafana/plugins",
+      GF_PATHS_LOGS: "/var/lib/grafana/logs",
 
       // Plugins
       GF_INSTALL_PLUGINS: props.installPlugins || "cloudwatch",
 
       // Telemetry
-      GF_ANALYTICS_REPORTING_ENABLE: " false",
-      GF_METRICS_ENABLED: " false",
+      GF_ANALYTICS_REPORTING_ENABLED: "false",
+      GF_METRICS_ENABLED: "false",
     };
 
     // Add AWs region if CloudWatch is enabled
