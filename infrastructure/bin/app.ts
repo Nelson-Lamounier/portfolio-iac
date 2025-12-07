@@ -324,44 +324,88 @@ if (config.enableMonitoring) {
     );
 
     // Build cross-account targets from environment variables
-    // These are the private IPs of Node Exporter instances in other accounts
-    // Set via: DEV_NODE_EXPORTER_IP, STAGING_NODE_EXPORTER_IP, PROD_NODE_EXPORTER_IP
+    // These are the private IPs of instances in other accounts
+    // Set via: DEV_NODE_EXPORTER_IP, DEV_APP_IP, etc.
     const crossAccountTargets: Array<{
       envName: string;
       privateIp: string;
       port?: number;
+      targetType?: "node-exporter" | "application";
+      metricsPath?: string;
     }> = [];
 
+    // Development account targets
     if (process.env.DEV_NODE_EXPORTER_IP) {
+      // Node Exporter target (host metrics)
       crossAccountTargets.push({
         envName: "development",
         privateIp: process.env.DEV_NODE_EXPORTER_IP,
         port: 9100,
+        targetType: "node-exporter",
       });
       console.log(
-        `   Adding development target: ${process.env.DEV_NODE_EXPORTER_IP}:9100`
+        `   Adding development node-exporter: ${process.env.DEV_NODE_EXPORTER_IP}:9100`
+      );
+
+      // Next.js application target (same IP, different port)
+      // The app runs on port 3000 and exposes metrics at /api/metrics
+      crossAccountTargets.push({
+        envName: "development",
+        privateIp: process.env.DEV_NODE_EXPORTER_IP,
+        port: 3000,
+        targetType: "application",
+        metricsPath: "/api/metrics",
+      });
+      console.log(
+        `   Adding development nextjs app: ${process.env.DEV_NODE_EXPORTER_IP}:3000/api/metrics`
       );
     }
 
+    // Staging account targets
     if (process.env.STAGING_NODE_EXPORTER_IP) {
       crossAccountTargets.push({
         envName: "staging",
         privateIp: process.env.STAGING_NODE_EXPORTER_IP,
         port: 9100,
+        targetType: "node-exporter",
       });
       console.log(
-        `   Adding staging target: ${process.env.STAGING_NODE_EXPORTER_IP}:9100`
+        `   Adding staging node-exporter: ${process.env.STAGING_NODE_EXPORTER_IP}:9100`
+      );
+
+      crossAccountTargets.push({
+        envName: "staging",
+        privateIp: process.env.STAGING_NODE_EXPORTER_IP,
+        port: 3000,
+        targetType: "application",
+        metricsPath: "/api/metrics",
+      });
+      console.log(
+        `   Adding staging nextjs app: ${process.env.STAGING_NODE_EXPORTER_IP}:3000/api/metrics`
       );
     }
 
+    // Production account targets
     if (process.env.PROD_NODE_EXPORTER_IP) {
       crossAccountTargets.push({
         envName: "production",
         privateIp: process.env.PROD_NODE_EXPORTER_IP,
         port: 9100,
+        targetType: "node-exporter",
       });
       console.log(
-        `   Adding production target: ${process.env.PROD_NODE_EXPORTER_IP}:9100`
+        `   Adding production node-exporter: ${process.env.PROD_NODE_EXPORTER_IP}:9100`
+      );
+
+      crossAccountTargets.push({
+        envName: "production",
+        privateIp: process.env.PROD_NODE_EXPORTER_IP,
+        port: 3000,
+        targetType: "application",
+        metricsPath: "/api/metrics",
+      });
+      console.log(
+        `   Adding production nextjs app: ${process.env.PROD_NODE_EXPORTER_IP}:3000/api/metrics`
       );
     }
 

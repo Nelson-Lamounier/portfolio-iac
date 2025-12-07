@@ -173,6 +173,7 @@ export class ComputeStackRefactored extends cdk.Stack {
             name: "app",
             image: containerImage,
             containerPort: 3000, // Next.js default port
+            hostPort: 3000, // Static host port for Prometheus metrics scraping
             cpu: props.cpu,
             memoryReservationMiB: props.memoryReservationMiB ?? 384,
             memoryLimitMiB: props.memoryLimitMiB,
@@ -279,6 +280,14 @@ export class ComputeStackRefactored extends cdk.Stack {
       ec2.Peer.ipv4(pipelineVpcCidr),
       ec2.Port.tcp(NodeExporterConstruct.PORT),
       "Allow Prometheus from pipeline account to scrape Node Exporter"
+    );
+
+    // Allow cross-account Prometheus to scrape Next.js application metrics
+    // The Next.js app exposes metrics at /api/metrics on port 3000
+    this.clusterConstruct.asg.connections.allowFrom(
+      ec2.Peer.ipv4(pipelineVpcCidr),
+      ec2.Port.tcp(3000),
+      "Allow Prometheus from pipeline account to scrape Next.js app metrics"
     );
 
     // ========================================================================

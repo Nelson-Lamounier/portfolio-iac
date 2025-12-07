@@ -21,6 +21,10 @@ export interface CrossAccountTarget {
   privateIp: string;
   /** Port to scrape (default: 9100 for node-exporter) */
   port?: number;
+  /** Target type: 'node-exporter' or 'application' */
+  targetType?: "node-exporter" | "application";
+  /** Metrics path (default: /metrics for node-exporter, /api/metrics for application) */
+  metricsPath?: string;
 }
 
 export interface MonitoringEcsStackProps extends cdk.StackProps {
@@ -672,8 +676,16 @@ export class MonitoringEcsStack extends cdk.Stack {
   ): string[] {
     const lines: string[] = [];
 
-    // Group targets by environment
-    const targetsByEnv = targets.reduce(
+    // Separate targets by type
+    const nodeExporterTargets = targets.filter(
+      (t) => !t.targetType || t.targetType === "node-exporter"
+    );
+    const applicationTargets = targets.filter(
+      (t) => t.targetType === "application"
+    );
+
+    // Group node-exporter targets by environment
+    const nodeExporterByEnv = nodeExporterTargets.reduce(
       (acc, target) => {
         if (!acc[target.envName]) {
           acc[target.envName] = [];
@@ -684,10 +696,12 @@ export class MonitoringEcsStack extends cdk.Stack {
       {} as Record<string, CrossAccountTarget[]>
     );
 
-    // Generate scrape config for each environment
-    for (const [env, envTargets] of Object.entries(targetsByEnv)) {
+    // Generate scrape config for node-exporter targets
+    for (const [env, envTargets] of Object.entries(nodeExporterByEnv)) {
       lines.push("");
-      lines.push(`  # Cross-Account: ${env} Environment (via VPC Peering)`);
+      lines.push(
+        `  # Cross-Account: ${env} Environment - Node Exporter (via VPC Peering)`
+      );
       lines.push(`  - job_name: 'node-exporter-${env}'`);
       lines.push("    static_configs:");
       lines.push("      - targets:");
@@ -700,6 +714,42 @@ export class MonitoringEcsStack extends cdk.Stack {
       lines.push("        labels:");
       lines.push(`          environment: '${env}'`);
       lines.push("          service: 'node-exporter'");
+      lines.push(`          account: '${env}'`);
+      lines.push("          source: 'cross-account'");
+    }
+
+    // Group application targets by environment
+    const applicationByEnv = applicationTargets.reduce(
+      (acc, target) => {
+        if (!acc[target.envName]) {
+          acc[target.envName] = [];
+        }
+        acc[target.envName].push(target);
+        return acc;
+      },
+      {} as Record<string, CrossAccountTarget[]>
+    );
+
+    // Generate scrape config for application targets (Next.js)
+    for (const [env, envTargets] of Object.entries(applicationByEnv)) {
+      lines.push("");
+      lines.push(
+        `  # Cross-Account: ${env} Environment - Next.js Application (via VPC Peering)`
+      );
+      lines.push(`  - job_name: 'nextjs-${env}'`);
+      lines.push(`    metrics_path: '/api/metrics'`);
+      lines.push("    static_configs:");
+      lines.push("      - targets:");
+
+      for (const target of envTargets) {
+        const port = target.port || 3000;
+        lines.push(`          - '${target.privateIp}:${port}'`);
+      }
+
+      lines.push("        labels:");
+      lines.push(`          environment: '${env}'`);
+      lines.push("          service: 'nextjs'");
+      lines.push("          app: 'portfolio'");
       lines.push(`          account: '${env}'`);
       lines.push("          source: 'cross-account'");
     }

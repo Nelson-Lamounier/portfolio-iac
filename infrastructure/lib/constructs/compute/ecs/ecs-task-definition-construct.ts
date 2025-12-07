@@ -13,6 +13,7 @@ export interface ContainerConfig {
   name: string;
   image: ecs.ContainerImage;
   containerPort?: number; // Optional - not needed for HOST mode without explicit port mapping
+  hostPort?: number; // Optional - if set, uses static host port mapping (required for metrics scraping)
   cpu?: number;
   memoryLimitMiB?: number;
   memoryReservationMiB?: number;
@@ -108,10 +109,18 @@ export class EcsTaskDefinitionConstruct extends Construct {
     // Add port mapping only if containerPort is specified
     // For HOST mode, port mapping is optional as container uses host network directly
     if (config.containerPort !== undefined) {
-      const hostPort =
-        this.taskDefinition.networkMode === ecs.NetworkMode.HOST
-          ? config.containerPort
-          : 0; // Dynamic port for BRIDGE mode
+      let hostPort: number;
+
+      if (this.taskDefinition.networkMode === ecs.NetworkMode.HOST) {
+        // HOST mode: container uses host network directly
+        hostPort = config.containerPort;
+      } else if (config.hostPort !== undefined) {
+        // BRIDGE mode with static host port (for metrics scraping)
+        hostPort = config.hostPort;
+      } else {
+        // BRIDGE mode with dynamic port (default)
+        hostPort = 0;
+      }
 
       container.addPortMappings({
         containerPort: config.containerPort,
