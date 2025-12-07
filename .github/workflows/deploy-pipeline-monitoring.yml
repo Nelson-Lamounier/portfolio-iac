@@ -85,7 +85,7 @@ jobs:
 
       # Assume role in dev account to fetch monitoring info
       - name: Configure AWS Credentials (Dev Account)
-        if: ${{ secrets.AWS_ACCOUNT_ID_DEV != '' }}
+        continue-on-error: true
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID_DEV }}:role/GitHubActionsDeploymentRole
@@ -98,7 +98,6 @@ jobs:
       # That's OK - monitoring can be deployed without cross-account access initially
       - name: Fetch Dev Account Monitoring Info
         id: dev-info
-        if: ${{ secrets.AWS_ACCOUNT_ID_DEV != '' }}
         continue-on-error: true
         run: |
           echo "::notice::Fetching dev account info (may be empty if not deployed yet)"
@@ -121,7 +120,7 @@ jobs:
 
       # Fetch Staging Account Info (if needed)
       - name: Configure AWS Credentials (Staging Account)
-        if: ${{ secrets.AWS_ACCOUNT_ID_STAGING != '' }}
+        continue-on-error: true
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID_STAGING }}:role/GitHubActionsDeploymentRole
@@ -131,14 +130,12 @@ jobs:
       - name: Fetch Staging Account Monitoring Info
         id: staging-info
         continue-on-error: true
-        if: ${{ secrets.AWS_ACCOUNT_ID_STAGING != '' }}
         run: make fetch-monitoring-info ENV=staging
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
 
       # Switch back to pipeline account for deployment
       - name: Configure AWS Credentials (Pipeline Account - Final)
-        if: ${{ secrets.AWS_ACCOUNT_ID_STAGING != '' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
