@@ -5,7 +5,7 @@ name: Deploy Pipeline Monitoring
 on:
   push:
     branches:
-      - feature/monitoring
+      - feature/*
     paths:
       - "infrastructure/lib/stacks/monitoring/**"
       - "monitoring/**"
