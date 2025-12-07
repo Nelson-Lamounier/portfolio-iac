@@ -281,6 +281,14 @@ export class ComputeStackRefactored extends cdk.Stack {
       "Allow Prometheus from pipeline account to scrape Node Exporter"
     );
 
+    // Allow cross-account Prometheus to scrape Next.js application metrics
+    // The Next.js app exposes metrics at /api/metrics on port 3000
+    this.clusterConstruct.asg.connections.allowFrom(
+      ec2.Peer.ipv4(pipelineVpcCidr),
+      ec2.Port.tcp(3000),
+      "Allow Prometheus from pipeline account to scrape Next.js app metrics"
+    );
+
     // ========================================================================
     // 7. SSM PARAMETERS FOR SERVICE DISCOVERY
     // ========================================================================
