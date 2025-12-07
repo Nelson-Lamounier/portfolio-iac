@@ -409,7 +409,18 @@ export class MonitoringEcsStack extends cdk.Stack {
       "chown -R 65534:65534 /mnt/prometheus-data /mnt/prometheus-config",
       "chown -R 472:472 /mnt/grafana-data /mnt/grafana-provisioning /mnt/grafana-dashboards",
       "chmod -R 755 /mnt/prometheus-data /mnt/prometheus-config",
-      "chmod -R 755 /mnt/grafana-data /mnt/grafana-provisioning /mnt/grafana-dashboards"
+      "chmod -R 755 /mnt/grafana-data /mnt/grafana-provisioning /mnt/grafana-dashboards",
+      "",
+      "# Verify prometheus.yml was created",
+      "if [ ! -f /mnt/prometheus-config/prometheus.yml ]; then",
+      "  echo 'ERROR: prometheus.yml not created'",
+      "  exit 1",
+      "fi",
+      "",
+      "# Create completion marker for ECS to know setup is done",
+      "touch /var/lib/cloud/instance/monitoring-setup-complete",
+      "",
+      "echo 'Monitoring setup completed successfully'"
     );
 
     // Ensure security group allows outbound HTTPS for ECS agent

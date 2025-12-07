@@ -21,6 +21,7 @@ export interface ContainerConfig {
   secrets?: { [key: string]: ecs.Secret };
   command?: string[];
   logStreamPrefix?: string;
+  user?: string; // Optional - run container as specific user (e.g., "472" for Grafana)
 }
 
 export interface EcsTaskDefinitionConstructProps {
@@ -104,6 +105,7 @@ export class EcsTaskDefinitionConstruct extends Construct {
       environment: config.environment,
       secrets: config.secrets,
       command: config.command,
+      user: config.user, // Run container as specific user if specified
     });
 
     // Add port mapping only if containerPort is specified

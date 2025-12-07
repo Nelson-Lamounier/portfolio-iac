@@ -117,6 +117,7 @@ export class PrometheusConstruct extends Construct {
             environment: {
               ENVIRONMENT: props.envName,
             },
+            user: "65534", // Run as nobody user (UID 65534) to match file permissions
           },
         ],
       }

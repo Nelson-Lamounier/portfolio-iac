@@ -120,6 +120,7 @@ export class GrafanaConstruct extends Construct {
             cpu: props.cpu,
             logStreamPrefix: "grafana",
             environment: environment,
+            user: "472", // Run as grafana user (UID 472) to match file permissions
           },
         ],
       }
