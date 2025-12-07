@@ -120,7 +120,7 @@ export class GrafanaConstruct extends Construct {
             cpu: props.cpu,
             logStreamPrefix: "grafana",
             environment: environment,
-            user: "472", // Run as grafana user (UID 472) to match file permissions
+            user: "472:0", // Run as grafana user (472) with root group (0) for write access
           },
         ],
       }
@@ -271,10 +271,10 @@ export class GrafanaConstruct extends Construct {
       // Data paths - ensure Grafana can write to these
       GF_PATHS_DATA: "/var/lib/grafana",
       GF_PATHS_PLUGINS: "/var/lib/grafana/plugins",
-      GF_PATHS_LOGS: "/var/lib/grafana/logs",
+      GF_PATHS_LOGS: "/var/log/grafana",
 
-      // Plugins
-      GF_INSTALL_PLUGINS: props.installPlugins || "cloudwatch",
+      // Plugins - CloudWatch plugin is built-in, no need to install
+      // GF_INSTALL_PLUGINS: props.installPlugins || "",
 
       // Telemetry
       GF_ANALYTICS_REPORTING_ENABLED: "false",
