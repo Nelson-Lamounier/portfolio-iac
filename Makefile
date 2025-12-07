@@ -157,6 +157,11 @@ fetch-monitoring-info:
 	@echo "Fetching monitoring info (VPC ID, EC2 IP) for environment: $(ENV_FULL)"
 	@ENVIRONMENT=$(ENV_FULL) ./scripts/aws/fetch-monitoring-info.sh
 
+update-prometheus-targets:
+	@echo "Updating Prometheus targets with current IPs..."
+	@chmod +x ./scripts/monitoring/update-prometheus-targets.sh
+	@./scripts/monitoring/update-prometheus-targets.sh
+
 fetch-aws-accounts:
 	@echo "Fetching AWS account IDs..."
 	@./scripts/aws/fetch-aws-accounts.sh
