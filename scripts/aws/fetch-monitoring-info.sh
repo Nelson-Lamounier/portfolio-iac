@@ -27,6 +27,18 @@ set -euo pipefail
 : "${ENVIRONMENT:?ENVIRONMENT must be set (e.g., development, staging, production)}"
 : "${AWS_REGION:=${AWS_DEFAULT_REGION:-eu-west-1}}"
 
+
+# Map environment to parameter name
+case "${ENVIRONMENT}" in
+  development) PARAM_NAME="dev" ; ENV_VAR_NAME="AWS_ACCOUNT_ID_DEV" ;;
+  staging)     PARAM_NAME="test"; ENV_VAR_NAME="AWS_ACCOUNT_ID_STAGING" ;;
+  production)  PARAM_NAME="prod"; ENV_VAR_NAME="AWS_ACCOUNT_ID_PROD" ;;
+  *)
+    echo "Unknown environment: ${ENVIRONMENT}"
+    exit 1
+    ;;
+esac
+
 echo "========================================="
 echo "Fetching Monitoring Info"
 echo "========================================="

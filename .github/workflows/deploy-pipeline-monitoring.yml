@@ -72,11 +72,19 @@ jobs:
       - name: Build Infrastructure
         run: make build-infrastructure
 
-      - name: Configure AWS Credentials (OIDC)
+      - name: Configure AWS Credentials (OIDC - Pipeline Account)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
+
+      # Assume role in dev account to fetch monitoring info
+      - name: Configure AWS Credentials (Dev Account)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.DEPLOYMENT_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-chaining: true
 
       # Fetch Dev Account Info using Makefile
       - name: Fetch Dev Account Monitoring Info
@@ -86,7 +94,22 @@ jobs:
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
 
+      # Switch back to pipeline account for deployment
+      - name: Configure AWS Credentials (Pipeline Account)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
       # Fetch Staging Account Info (if needed)
+      - name: Configure AWS Credentials (Staging Account)
+        if: vars.AWS_ACCOUNT_ID_STAGING != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_STAGING }}:role/GitHubActionsDeploymentRole
+          aws-region: ${{ env.AWS_REGION }}
+          role-chaining: true
+
       - name: Fetch Staging Account Monitoring Info
         id: staging-info
         continue-on-error: true
@@ -94,6 +117,14 @@ jobs:
         run: make fetch-monitoring-info ENV=staging
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
+
+      # Switch back to pipeline account for deployment
+      - name: Configure AWS Credentials (Pipeline Account - Final)
+        if: vars.AWS_ACCOUNT_ID_STAGING != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
 
       # Deploy All
       - name: Deploy All (Layered)
