@@ -150,9 +150,9 @@ check-infra:
 	@./scripts/aws/check-infrastructure.sh
 
 fetch-ecr-uri:
-	@echo "Fetching ECR repository URI for environment: $(ENV_FULL)"
+	@echo "Fetching ECR repository URI for environment: $(or $(ENVIRONMENT),$(ENV_FULL))"
 	@chmod +x ./scripts/aws/fetch-ecr-uri.sh
-	@ENVIRONMENT=$(ENV_FULL) AWS_REGION=$(AWS_REGION) ./scripts/aws/fetch-ecr-uri.sh
+	@ENVIRONMENT=$(or $(ENVIRONMENT),$(ENV_FULL)) AWS_REGION=$(AWS_REGION) ./scripts/aws/fetch-ecr-uri.sh
 
 fetch-vpc-info:
 	@echo "Fetching VPC ID..."
