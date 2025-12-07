@@ -3,6 +3,9 @@
 name: Deploy Pipeline Monitoring
 
 on:
+  push:
+    branches:
+      - feature/*
   workflow_dispatch:
     inputs:
       action:

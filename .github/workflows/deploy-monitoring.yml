@@ -3,6 +3,9 @@
 name: Deploy Monitoring
 
 on:
+  push:
+    branches:
+      - feature/*
   workflow_dispatch:
     inputs:
       target:
@@ -10,7 +13,7 @@ on:
         required: true
         type: choice
         options:
-          - centralized # Deploy to pipeline account
+          - centralised # Deploy to pipeline account
           - development # Deploy local monitoring to dev
           - cross-account # Setup cross-account access
           - vpc-peering # Setup VPC peering
