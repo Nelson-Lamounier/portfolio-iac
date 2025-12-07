@@ -173,6 +173,7 @@ export class ComputeStackRefactored extends cdk.Stack {
             name: "app",
             image: containerImage,
             containerPort: 3000, // Next.js default port
+            hostPort: 3000, // Static host port for Prometheus metrics scraping
             cpu: props.cpu,
             memoryReservationMiB: props.memoryReservationMiB ?? 384,
             memoryLimitMiB: props.memoryLimitMiB,
