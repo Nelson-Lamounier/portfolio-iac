@@ -1,6 +1,9 @@
 # @format
 .PHONY: help install build test clean deploy
 
+# Default AWS region (can be overridden)
+AWS_REGION ?= eu-west-1
+
 # Default target
 help:
 	@echo "Available targets:"
@@ -143,38 +146,47 @@ clean:
 # AWS/Deployment targets
 check-infra:
 	@echo "Checking if infrastructure exists..."
+	@chmod +x ./scripts/aws/check-infrastructure.sh
 	@./scripts/aws/check-infrastructure.sh
 
 fetch-ecr-uri:
-	@echo "Fetching ECR repository URI..."
-	@./scripts/aws/fetch-ecr-uri.sh
+	@echo "Fetching ECR repository URI for environment: $(ENV_FULL)"
+	@chmod +x ./scripts/aws/fetch-ecr-uri.sh
+	@ENVIRONMENT=$(ENV_FULL) AWS_REGION=$(AWS_REGION) ./scripts/aws/fetch-ecr-uri.sh
 
 fetch-vpc-info:
 	@echo "Fetching VPC ID..."
+	@chmod +x ./scripts/aws/fetch-vpc-info.sh
 	@./scripts/aws/fetch-vpc-info.sh
 
 fetch-monitoring-info:
 	@echo "Fetching monitoring info (VPC ID, EC2 IP) for environment: $(ENV_FULL)"
+	@chmod +x ./scripts/aws/fetch-monitoring-info.sh
 	@ENVIRONMENT=$(ENV_FULL) ./scripts/aws/fetch-monitoring-info.sh
 
 fetch-aws-accounts:
 	@echo "Fetching AWS account IDs..."
+	@chmod +x ./scripts/aws/fetch-aws-accounts.sh
 	@./scripts/aws/fetch-aws-accounts.sh
 
 setup-domain-params:
 	@echo "Setting up domain configuration in SSM Parameter Store..."
+	@chmod +x ./scripts/setup/domain-parameters.sh
 	@./scripts/setup/domain-parameters.sh
 
 verify-cdk-bootstrap:
 	@echo "Verifying CDK bootstrap..."
+	@chmod +x ./scripts/aws/verify-cdk-bootstrap.sh
 	@./scripts/aws/verify-cdk-bootstrap.sh
 
 docker-build-push:
 	@echo "Building and pushing Docker image..."
+	@chmod +x ./scripts/docker/build-push.sh
 	@./scripts/docker/build-push.sh
 
 cleanup-buildcache:
 	@echo "Cleaning up buildcache tag from ECR..."
+	@chmod +x ./scripts/docker/cleanup-buildcache.sh
 	@./scripts/docker/cleanup-buildcache.sh
 
 cdk-synth:
@@ -187,10 +199,12 @@ cdk-deploy:
 
 deploy-lb-local:
 	@echo "Deploying Load Balancer locally for environment: $(ENV)"
+	@chmod +x ./scripts/deploy/lb-local.sh
 	@./scripts/deploy/lb-local.sh $(ENV)
 
 recover-stacks:
 	@echo "Recovering stacks for environment: $(ENV)"
+	@chmod +x ./scripts/aws/recover-stack.sh
 	@./scripts/aws/recover-stack.sh $(ENV)
 
 # Monitoring deployment targets
