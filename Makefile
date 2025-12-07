@@ -32,8 +32,17 @@ help:
 	@echo "  check-monitoring-ecs    - Check ECS monitoring status (ENV=development)"
 	@echo "  logs-monitoring-ecs     - Show log group names for monitoring (ENV=development)"
 	@echo ""
-	@echo "Centralized Monitoring (Pipeline Account):"
-	@echo "  deploy-monitoring-centralized   - Deploy centralized monitoring to pipeline account"
+	@echo "Layered Monitoring (Recommended for Production):"
+	@echo "  deploy-monitoring-layered       - Deploy full layered monitoring (infra + services + config)"
+	@echo "  deploy-monitoring-infra         - Deploy Layer 1: Infrastructure only"
+	@echo "  deploy-monitoring-services      - Deploy Layer 2: Services only"
+	@echo "  init-monitoring-config          - Initialize config on EFS (run once)"
+	@echo "  sync-monitoring-config          - Sync config from Git to EFS (no CDK deploy!)"
+	@echo "  check-monitoring-layered        - Check layered monitoring status"
+	@echo "  destroy-monitoring-layered      - Destroy layered monitoring stacks"
+	@echo ""
+	@echo "Centralized Monitoring (Pipeline Account - Legacy):"
+	@echo "  deploy-monitoring-centralized   - Deploy centralized monitoring (embedded)"
 	@echo "  deploy-dev-with-monitoring      - Deploy dev account with cross-account monitoring support"
 	@echo "  setup-cross-account-access      - Setup cross-account access in dev/staging/prod"
 	@echo "  setup-multi-account-monitoring  - Configure multi-account data collection"
@@ -208,14 +217,106 @@ logs-monitoring-ecs:
 	@echo "Usage: aws logs tail /ecs/$(ENV)-grafana --follow"
 
 ##############################################################################
-# CENTRALIZED MONITORING (Pipeline Account)
+# LAYERED MONITORING (Recommended for Production)
+##############################################################################
+# Separates infrastructure from configuration for faster iteration
+# Layer 1: Infrastructure (EFS, ECS Cluster, ALB) - changes rarely
+# Layer 2: Services (Prometheus, Grafana) - changes occasionally  
+# Layer 3: Config (prometheus.yml, dashboards) - changes frequently via GitOps
+
+.PHONY: deploy-monitoring-layered deploy-monitoring-infra deploy-monitoring-services
+.PHONY: sync-monitoring-config init-monitoring-config destroy-monitoring-layered
+
+# Deploy full layered monitoring stack
+deploy-monitoring-layered:
+	@echo "========================================="
+	@echo "Deploying LAYERED monitoring (recommended)"
+	@echo "========================================="
+	@echo ""
+	@echo "Layer 1: Infrastructure (EFS, ECS Cluster, ALB)"
+	@cd infrastructure && USE_LAYERED_MONITORING=true ENVIRONMENT=pipeline \
+		yarn cdk deploy MonitoringInfraStack-pipeline --require-approval never
+	@echo ""
+	@echo "Initializing config on EFS..."
+	@chmod +x ./scripts/monitoring/init-config.sh
+	@./scripts/monitoring/init-config.sh --env pipeline || echo "Init may have already run"
+	@echo ""
+	@echo "Layer 2: Services (Prometheus, Grafana, Node Exporter)"
+	@cd infrastructure && USE_LAYERED_MONITORING=true ENVIRONMENT=pipeline \
+		yarn cdk deploy MonitoringServiceStack-pipeline --require-approval never
+	@echo ""
+	@echo "Layer 3: Syncing config from Git..."
+	@chmod +x ./scripts/monitoring/sync-config.sh
+	@./scripts/monitoring/sync-config.sh --env pipeline || echo "Sync completed"
+	@echo ""
+	@echo "✓ Layered monitoring deployed!"
+	@$(MAKE) check-monitoring-layered
+
+# Deploy only Layer 1: Infrastructure
+deploy-monitoring-infra:
+	@echo "Deploying Layer 1: Monitoring Infrastructure..."
+	@cd infrastructure && USE_LAYERED_MONITORING=true ENVIRONMENT=pipeline \
+		yarn cdk deploy MonitoringInfraStack-pipeline --require-approval never
+
+# Deploy only Layer 2: Services
+deploy-monitoring-services:
+	@echo "Deploying Layer 2: Monitoring Services..."
+	@cd infrastructure && USE_LAYERED_MONITORING=true ENVIRONMENT=pipeline \
+		yarn cdk deploy MonitoringServiceStack-pipeline --require-approval never
+
+# Initialize config on EFS (run once after infra deploy)
+init-monitoring-config:
+	@echo "Initializing monitoring config on EFS..."
+	@chmod +x ./scripts/monitoring/init-config.sh
+	@./scripts/monitoring/init-config.sh --env pipeline
+
+# Sync config from Git to EFS (Layer 3 - no CDK deploy needed!)
+sync-monitoring-config:
+	@echo "Syncing monitoring config to EFS..."
+	@chmod +x ./scripts/monitoring/sync-config.sh
+	@./scripts/monitoring/sync-config.sh --env pipeline
+
+# Check layered monitoring status
+check-monitoring-layered:
+	@echo "========================================="
+	@echo "Layered Monitoring Status"
+	@echo "========================================="
+	@echo ""
+	@echo "Infrastructure Stack:"
+	@aws cloudformation describe-stacks \
+		--stack-name MonitoringInfraStack-pipeline \
+		--query 'Stacks[0].StackStatus' \
+		--output text 2>/dev/null || echo "NOT_DEPLOYED"
+	@echo ""
+	@echo "Service Stack:"
+	@aws cloudformation describe-stacks \
+		--stack-name MonitoringServiceStack-pipeline \
+		--query 'Stacks[0].StackStatus' \
+		--output text 2>/dev/null || echo "NOT_DEPLOYED"
+	@echo ""
+	@echo "URLs:"
+	@aws cloudformation describe-stacks \
+		--stack-name MonitoringInfraStack-pipeline \
+		--query 'Stacks[0].Outputs[?OutputKey==`GrafanaUrl` || OutputKey==`PrometheusUrl`].{Service:OutputKey,URL:OutputValue}' \
+		--output table 2>/dev/null || echo "No outputs found"
+
+# Destroy layered monitoring
+destroy-monitoring-layered:
+	@echo "Destroying layered monitoring stacks..."
+	@cd infrastructure && ENVIRONMENT=pipeline yarn cdk destroy MonitoringServiceStack-pipeline --force 2>/dev/null || true
+	@cd infrastructure && ENVIRONMENT=pipeline yarn cdk destroy MonitoringInfraStack-pipeline --force 2>/dev/null || true
+	@echo "✓ Layered monitoring destroyed"
+
+##############################################################################
+# CENTRALIZED MONITORING (Pipeline Account) - Legacy Embedded
 ##############################################################################
 # Deploy monitoring infrastructure to pipeline account for centralized monitoring
 # of all environments (dev, staging, production)
+# NOTE: Consider using deploy-monitoring-layered instead for production
 
 .PHONY: deploy-monitoring-centralized destroy-monitoring-centralized check-monitoring-centralized setup-cross-account-access
 
-# Deploy centralized monitoring to pipeline account
+# Deploy centralized monitoring to pipeline account (embedded - legacy)
 deploy-monitoring-centralized:
 	@echo "========================================="
 	@echo "Deploying CENTRALIZED monitoring to pipeline account"
