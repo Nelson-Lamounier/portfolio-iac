@@ -227,6 +227,19 @@ export class MonitoringInfraStack extends cdk.Stack {
       "Allow ECS instances to mount EFS"
     );
 
+    // Grant EFS IAM permissions for mounting with IAM authentication
+    asg.role.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          "elasticfilesystem:ClientMount",
+          "elasticfilesystem:ClientWrite",
+          "elasticfilesystem:ClientRootAccess",
+        ],
+        resources: [fileSystem.fileSystemArn],
+      })
+    );
+
     // User data to mount EFS and setup directory structure
     asg.addUserData(
       "#!/bin/bash",
@@ -263,9 +276,9 @@ export class MonitoringInfraStack extends cdk.Stack {
       "",
       "# Set permissions",
       "chown -R 65534:65534 /mnt/efs/prometheus-data /mnt/efs/config/prometheus",
-      "chown -R 472:472 /mnt/efs/grafana-data /mnt/efs/config/grafana",
+      "chown -R 472:0 /mnt/efs/grafana-data /mnt/efs/config/grafana",
       "chmod -R 755 /mnt/efs/prometheus-data /mnt/efs/config/prometheus",
-      "chmod -R 755 /mnt/efs/grafana-data /mnt/efs/config/grafana"
+      "chmod -R 775 /mnt/efs/grafana-data /mnt/efs/config/grafana"
     );
 
     // Security group rules
