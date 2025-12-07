@@ -85,10 +85,11 @@ jobs:
 
       # Assume role in dev account to fetch monitoring info
       - name: Configure AWS Credentials (Dev Account)
+        if: vars.AWS_ACCOUNT_ID_DEV != ''
         continue-on-error: true
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID_DEV }}:role/GitHubActionsDeploymentRole
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/GitHubActionsDeploymentRole
           aws-region: ${{ env.AWS_REGION }}
           role-chaining: true
           role-session-name: GitHubActions-FetchDevInfo
@@ -98,6 +99,7 @@ jobs:
       # That's OK - monitoring can be deployed without cross-account access initially
       - name: Fetch Dev Account Monitoring Info
         id: dev-info
+        if: vars.AWS_ACCOUNT_ID_DEV != ''
         continue-on-error: true
         run: |
           echo "::notice::Fetching dev account info (may be empty if not deployed yet)"
@@ -120,15 +122,17 @@ jobs:
 
       # Fetch Staging Account Info (if needed)
       - name: Configure AWS Credentials (Staging Account)
+        if: vars.AWS_ACCOUNT_ID_STAGING != ''
         continue-on-error: true
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID_STAGING }}:role/GitHubActionsDeploymentRole
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_STAGING }}:role/GitHubActionsDeploymentRole
           aws-region: ${{ env.AWS_REGION }}
           role-chaining: true
 
       - name: Fetch Staging Account Monitoring Info
         id: staging-info
+        if: vars.AWS_ACCOUNT_ID_STAGING != ''
         continue-on-error: true
         run: make fetch-monitoring-info ENV=staging
         env:
@@ -146,10 +150,10 @@ jobs:
         if: env.ACTION == 'deploy-all' && env.ARCHITECTURE == 'layered'
         run: make deploy-monitoring-layered
         env:
-          AWS_PIPELINE_ACCOUNT_ID: ${{ secrets.AWS_PIPELINE_ACCOUNT_ID }}
-          AWS_ACCOUNT_ID_DEV: ${{ secrets.AWS_ACCOUNT_ID_DEV }}
-          AWS_ACCOUNT_ID_STAGING: ${{ secrets.AWS_ACCOUNT_ID_STAGING }}
-          AWS_ACCOUNT_ID_PROD: ${{ secrets.AWS_ACCOUNT_ID_PROD }}
+          AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
+          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+          AWS_ACCOUNT_ID_STAGING: ${{ vars.AWS_ACCOUNT_ID_STAGING }}
+          AWS_ACCOUNT_ID_PROD: ${{ vars.AWS_ACCOUNT_ID_PROD }}
           DEV_VPC_ID: ${{ env.DEV_VPC_ID }}
           DEV_NODE_EXPORTER_IP: ${{ env.DEV_NODE_EXPORTER_IP }}
 
@@ -157,10 +161,10 @@ jobs:
         if: env.ACTION == 'deploy-all' && env.ARCHITECTURE == 'embedded'
         run: make deploy-monitoring-embedded
         env:
-          AWS_PIPELINE_ACCOUNT_ID: ${{ secrets.AWS_PIPELINE_ACCOUNT_ID }}
-          AWS_ACCOUNT_ID_DEV: ${{ secrets.AWS_ACCOUNT_ID_DEV }}
-          AWS_ACCOUNT_ID_STAGING: ${{ secrets.AWS_ACCOUNT_ID_STAGING }}
-          AWS_ACCOUNT_ID_PROD: ${{ secrets.AWS_ACCOUNT_ID_PROD }}
+          AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
+          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+          AWS_ACCOUNT_ID_STAGING: ${{ vars.AWS_ACCOUNT_ID_STAGING }}
+          AWS_ACCOUNT_ID_PROD: ${{ vars.AWS_ACCOUNT_ID_PROD }}
           DEV_VPC_ID: ${{ env.DEV_VPC_ID }}
           DEV_NODE_EXPORTER_IP: ${{ env.DEV_NODE_EXPORTER_IP }}
 
@@ -169,10 +173,10 @@ jobs:
         if: env.ACTION == 'deploy-infra-only'
         run: make deploy-monitoring-infra
         env:
-          AWS_PIPELINE_ACCOUNT_ID: ${{ secrets.AWS_PIPELINE_ACCOUNT_ID }}
-          AWS_ACCOUNT_ID_DEV: ${{ secrets.AWS_ACCOUNT_ID_DEV }}
-          AWS_ACCOUNT_ID_STAGING: ${{ secrets.AWS_ACCOUNT_ID_STAGING }}
-          AWS_ACCOUNT_ID_PROD: ${{ secrets.AWS_ACCOUNT_ID_PROD }}
+          AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
+          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+          AWS_ACCOUNT_ID_STAGING: ${{ vars.AWS_ACCOUNT_ID_STAGING }}
+          AWS_ACCOUNT_ID_PROD: ${{ vars.AWS_ACCOUNT_ID_PROD }}
           DEV_VPC_ID: ${{ env.DEV_VPC_ID }}
 
       # Deploy Services Only
@@ -180,21 +184,21 @@ jobs:
         if: env.ACTION == 'deploy-services-only'
         run: make deploy-monitoring-services
         env:
-          AWS_PIPELINE_ACCOUNT_ID: ${{ secrets.AWS_PIPELINE_ACCOUNT_ID }}
+          AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
 
       # Sync Config Only
       - name: Sync Config Only
         if: env.ACTION == 'sync-config-only'
         run: make sync-monitoring-config
         env:
-          AWS_PIPELINE_ACCOUNT_ID: ${{ secrets.AWS_PIPELINE_ACCOUNT_ID }}
+          AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
 
       # Destroy All
       - name: Destroy All
         if: env.ACTION == 'destroy-all'
         run: make destroy-monitoring-layered
         env:
-          AWS_PIPELINE_ACCOUNT_ID: ${{ secrets.AWS_PIPELINE_ACCOUNT_ID }}
+          AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
 
       # Check Status
       - name: Check Monitoring Status
