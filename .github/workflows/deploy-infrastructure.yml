@@ -182,11 +182,11 @@ jobs:
 
           if [ "$STACKS" = "all" ]; then
             # Deploy in dependency order
+            # Note: MonitoringStack removed - using centralized monitoring in pipeline account
             yarn cdk deploy \
               NetworkingStack-$ENV \
               LoadBalancerStack-$ENV \
               ComputeStack-$ENV \
-              MonitoringStack-$ENV \
               CrossAccountMonitoring-$ENV \
               --require-approval never
           else

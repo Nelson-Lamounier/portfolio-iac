@@ -24,8 +24,8 @@ export const environments: Record<string, EnvironmentConfig> = {
     region: process.env.AWS_REGION || "eu-west-1",
     envName: "development",
     pipelineAccount: process.env.AWS_PIPELINE_ACCOUNT_ID || "",
-    enableMonitoring: true, // Disabled for cost optimisation
-    enableEventBridge: true,
+    enableMonitoring: false, // Using centralized monitoring in pipeline account
+    enableEventBridge: true, // Allows pipeline account to collect metrics
   },
 
   // Pre-production testing, mirrors production config
@@ -34,8 +34,8 @@ export const environments: Record<string, EnvironmentConfig> = {
     region: process.env.AWS_REGION || "eu-west-1",
     envName: "staging",
     pipelineAccount: process.env.AWS_PIPELINE_ACCOUNT_ID || "",
-    enableMonitoring: true, // Enabled for testing
-    enableEventBridge: false,
+    enableMonitoring: false, // Using centralized monitoring in pipeline account
+    enableEventBridge: true, // Allows pipeline account to collect metrics
     alertEmail: process.env.ALERT_EMAIL,
   },
 
@@ -45,7 +45,7 @@ export const environments: Record<string, EnvironmentConfig> = {
     region: process.env.AWS_REGION || "eu-west-1",
     envName: "production",
     pipelineAccount: process.env.AWS_PIPELINE_ACCOUNT_ID || "",
-    enableMonitoring: true, // Always enabled for production
+    enableMonitoring: false, // Using centralized monitoring in pipeline account
     enableEventBridge: true, // Cross-account monitoring
     alertEmail: process.env.ALERT_EMAIL,
   },
