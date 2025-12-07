@@ -1,0 +1,19 @@
+# @format
+
+apiVersion: 1
+
+# This file is synced to EFS automatically via GitHub Actions
+# Edit this file and commit to update dashboard provisioning
+
+providers:
+  - name: "Default"
+    orgId: 1
+    folder: ""
+    type: file
+    disableDeletion: false
+    # Dashboards refresh every 10 seconds
+    updateIntervalSeconds: 10
+    # Allow editing dashboards in UI (changes won't persist unless exported)
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards

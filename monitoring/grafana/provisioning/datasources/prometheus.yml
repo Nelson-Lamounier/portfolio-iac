@@ -1,19 +1,20 @@
 # @format
 
-# Grafana Datasource Configuration
 apiVersion: 1
+
+# This file is synced to EFS automatically via GitHub Actions
+# Edit this file and commit to update the datasource configuration
 
 datasources:
   - name: Prometheus
     type: prometheus
-    access: proxy
     uid: prometheus
-    orgId: 1
-    url: http://prometheus:9090
+    access: proxy
+    # URL is dynamically set by init-config.sh based on host IP
+    # This is a fallback/template
+    url: http://localhost:9090/prometheus
     isDefault: true
     editable: true
-    version: 1
     jsonData:
       timeInterval: "15s"
-      queryTimeout: "60s"
-      httpMethod: "POST"
+      httpMethod: POST

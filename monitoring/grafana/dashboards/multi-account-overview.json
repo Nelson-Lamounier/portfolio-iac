@@ -25,7 +25,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -90,7 +90,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
+            "uid": "prometheus"
           },
           "expr": "up{job=~\"node-exporter-$environment\"}",
           "refId": "A"
@@ -102,7 +102,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -155,7 +155,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
+            "uid": "prometheus"
           },
           "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{job=~\"node-exporter-$environment\",mode=\"idle\"}[5m])) * 100)",
           "refId": "A"
@@ -167,7 +167,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -220,7 +220,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
+            "uid": "prometheus"
           },
           "expr": "100 * (1 - (node_memory_MemAvailable_bytes{job=~\"node-exporter-$environment\"} / node_memory_MemTotal_bytes{job=~\"node-exporter-$environment\"}))",
           "refId": "A"
@@ -232,7 +232,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -285,7 +285,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
+            "uid": "prometheus"
           },
           "expr": "100 - ((node_filesystem_avail_bytes{job=~\"node-exporter-$environment\",mountpoint=\"/\",fstype!=\"rootfs\"} * 100) / node_filesystem_size_bytes{job=~\"node-exporter-$environment\",mountpoint=\"/\",fstype!=\"rootfs\"})",
           "refId": "A"
@@ -297,7 +297,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -372,7 +372,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
+            "uid": "prometheus"
           },
           "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{job=~\"node-exporter-$environment\",mode=\"idle\"}[5m])) * 100)",
           "legendFormat": "CPU Usage",
@@ -385,7 +385,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -491,7 +491,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
+            "uid": "prometheus"
           },
           "expr": "node_memory_MemAvailable_bytes{job=~\"node-exporter-$environment\"}",
           "legendFormat": "Available",
@@ -500,7 +500,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
+            "uid": "prometheus"
           },
           "expr": "node_memory_MemTotal_bytes{job=~\"node-exporter-$environment\"} - node_memory_MemAvailable_bytes{job=~\"node-exporter-$environment\"}",
           "legendFormat": "Used",
@@ -513,7 +513,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -619,7 +619,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
+            "uid": "prometheus"
           },
           "expr": "rate(node_network_receive_bytes_total{job=~\"node-exporter-$environment\",device!=\"lo\"}[5m])",
           "legendFormat": "Receive - {{device}}",
@@ -628,7 +628,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
+            "uid": "prometheus"
           },
           "expr": "rate(node_network_transmit_bytes_total{job=~\"node-exporter-$environment\",device!=\"lo\"}[5m])",
           "legendFormat": "Transmit - {{device}}",
@@ -641,7 +641,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -716,7 +716,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
+            "uid": "prometheus"
           },
           "expr": "node_filesystem_avail_bytes{job=~\"node-exporter-$environment\",mountpoint=\"/\",fstype!=\"rootfs\"}",
           "legendFormat": "Available",
@@ -725,7 +725,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
+            "uid": "prometheus"
           },
           "expr": "node_filesystem_size_bytes{job=~\"node-exporter-$environment\",mountpoint=\"/\",fstype!=\"rootfs\"} - node_filesystem_avail_bytes{job=~\"node-exporter-$environment\",mountpoint=\"/\",fstype!=\"rootfs\"}",
           "legendFormat": "Used",
@@ -750,7 +750,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "PBFA97CFB590B2093"
+          "uid": "prometheus"
         },
         "definition": "label_values(up{job=~\"node-exporter-.*\"}, job)",
         "hide": 0,
