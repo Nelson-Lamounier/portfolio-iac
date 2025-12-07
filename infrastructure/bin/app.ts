@@ -14,6 +14,8 @@ import {
   ComputeStack,
   MonitoringStack,
   MonitoringEcsStack,
+  MonitoringInfraStack,
+  MonitoringServiceStack,
   LoadBalancerStack,
   VpcPeeringStack,
 } from "../lib/stacks";
@@ -278,11 +280,15 @@ if (ecsSecurityGroup) {
 // ========================================
 // Creates CloudWatch alarms, dashboards, and Prometheus/Grafana on EC2
 //
-// Two deployment modes:
-// 1. Local monitoring (legacy): Monitoring deployed in same account as application
-// 2. Centralized monitoring: Monitoring deployed in pipeline account for all environments
+// Three deployment modes:
+// 1. Embedded (legacy): All monitoring in single MonitoringEcsStack (default)
+// 2. Layered (recommended): Separate infra/service stacks for production
+// 3. Centralized: Monitoring deployed in pipeline account for all environments
 //
+// Set USE_LAYERED_MONITORING=true to use the layered architecture
 // For centralized monitoring, deploy with ENVIRONMENT=pipeline
+const useLayeredMonitoring = process.env.USE_LAYERED_MONITORING === "true";
+
 if (config.enableMonitoring) {
   // Check if this is the centralized monitoring account
   if (config.isMonitoringAccount) {
@@ -410,23 +416,68 @@ if (config.enableMonitoring) {
     }
 
     // ECS Monitoring Stack (Prometheus + Grafana on ECS)
-    const monitoringEcsStack = new MonitoringEcsStack(
-      app,
-      `MonitoringEcsStack-${config.envName}`,
-      {
-        ...stackProps,
-        envName: config.envName,
-        vpc: monitoringVpc.vpc,
-        // Cross-account targets for Prometheus to scrape via VPC peering
-        crossAccountTargets:
-          crossAccountTargets.length > 0 ? crossAccountTargets : undefined,
-        // Optional: Restrict access to specific IPs
-        // allowedIpRanges: ['YOUR_IP/32'],
-      }
-    );
+    // Choose between embedded (legacy) or layered (recommended) architecture
+    if (useLayeredMonitoring) {
+      console.log("   Using LAYERED monitoring architecture (recommended)\n");
 
-    if (monitoringVpc !== networkingStack) {
-      monitoringEcsStack.addDependency(monitoringVpc);
+      // Layer 1: Infrastructure (VPC, ECS Cluster, EFS, ALB)
+      const monitoringInfraStack = new MonitoringInfraStack(
+        app,
+        `MonitoringInfraStack-${config.envName}`,
+        {
+          ...stackProps,
+          envName: config.envName,
+          vpc: monitoringVpc.vpc,
+        }
+      );
+
+      if (monitoringVpc !== networkingStack) {
+        monitoringInfraStack.addDependency(monitoringVpc);
+      }
+
+      // Layer 2: Services (ECS Task Definitions, Services)
+      const monitoringServiceStack = new MonitoringServiceStack(
+        app,
+        `MonitoringServiceStack-${config.envName}`,
+        {
+          ...stackProps,
+          envName: config.envName,
+          cluster: monitoringInfraStack.cluster,
+          autoScalingGroup: monitoringInfraStack.autoScalingGroup,
+          loadBalancer: monitoringInfraStack.loadBalancer,
+          listener: monitoringInfraStack.listener,
+        }
+      );
+
+      monitoringServiceStack.addDependency(monitoringInfraStack);
+
+      // Layer 3: Config is managed via EFS and sync-config.sh script
+      console.log(
+        "   Layer 3 (Config): Use ./scripts/monitoring/sync-config.sh to update\n"
+      );
+    } else {
+      console.log("   Using EMBEDDED monitoring architecture (legacy)\n");
+
+      const monitoringEcsStack = new MonitoringEcsStack(
+        app,
+        `MonitoringEcsStack-${config.envName}`,
+        {
+          ...stackProps,
+          envName: config.envName,
+          vpc: monitoringVpc.vpc,
+          // Cross-account targets for Prometheus to scrape via VPC peering
+          crossAccountTargets:
+            crossAccountTargets.length > 0 ? crossAccountTargets : undefined,
+          // Enable EFS for persistent storage (data survives instance replacement)
+          enablePersistence: true,
+          // Optional: Restrict access to specific IPs
+          // allowedIpRanges: ['YOUR_IP/32'],
+        }
+      );
+
+      if (monitoringVpc !== networkingStack) {
+        monitoringEcsStack.addDependency(monitoringVpc);
+      }
     }
   } else {
     // Local monitoring mode (legacy) - monitoring in same account as application
@@ -452,21 +503,64 @@ if (config.enableMonitoring) {
     monitoringStack.addDependency(computeStack);
 
     // ECS Monitoring Stack (Prometheus + Grafana on ECS)
-    const monitoringEcsStack = new MonitoringEcsStack(
-      app,
-      `MonitoringEcsStack-${config.envName}`,
-      {
-        ...stackProps,
-        envName: config.envName,
-        vpc: networkingStack.vpc,
-        albDnsName: loadBalancerStack.alb.loadBalancer.loadBalancerDnsName,
-        // Optional: Restrict access to specific IPs
-        // allowedIpRanges: ['YOUR_IP/32'],
-      }
-    );
+    // Choose between embedded (legacy) or layered (recommended) architecture
+    if (useLayeredMonitoring) {
+      console.log("   Using LAYERED monitoring architecture (recommended)\n");
 
-    monitoringEcsStack.addDependency(networkingStack);
-    monitoringEcsStack.addDependency(loadBalancerStack);
+      // Layer 1: Infrastructure (VPC, ECS Cluster, EFS, ALB)
+      const monitoringInfraStack = new MonitoringInfraStack(
+        app,
+        `MonitoringInfraStack-${config.envName}`,
+        {
+          ...stackProps,
+          envName: config.envName,
+          vpc: networkingStack.vpc,
+        }
+      );
+
+      monitoringInfraStack.addDependency(networkingStack);
+
+      // Layer 2: Services (ECS Task Definitions, Services)
+      const monitoringServiceStack = new MonitoringServiceStack(
+        app,
+        `MonitoringServiceStack-${config.envName}`,
+        {
+          ...stackProps,
+          envName: config.envName,
+          cluster: monitoringInfraStack.cluster,
+          autoScalingGroup: monitoringInfraStack.autoScalingGroup,
+          loadBalancer: monitoringInfraStack.loadBalancer,
+          listener: monitoringInfraStack.listener,
+        }
+      );
+
+      monitoringServiceStack.addDependency(monitoringInfraStack);
+
+      // Layer 3: Config is managed via EFS and sync-config.sh script
+      console.log(
+        "   Layer 3 (Config): Use ./scripts/monitoring/sync-config.sh to update\n"
+      );
+    } else {
+      console.log("   Using EMBEDDED monitoring architecture (legacy)\n");
+
+      const monitoringEcsStack = new MonitoringEcsStack(
+        app,
+        `MonitoringEcsStack-${config.envName}`,
+        {
+          ...stackProps,
+          envName: config.envName,
+          vpc: networkingStack.vpc,
+          albDnsName: loadBalancerStack.alb.loadBalancer.loadBalancerDnsName,
+          // Enable EFS for persistent storage (data survives instance replacement)
+          enablePersistence: true,
+          // Optional: Restrict access to specific IPs
+          // allowedIpRanges: ['YOUR_IP/32'],
+        }
+      );
+
+      monitoringEcsStack.addDependency(networkingStack);
+      monitoringEcsStack.addDependency(loadBalancerStack);
+    }
   }
 }
 

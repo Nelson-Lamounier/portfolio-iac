@@ -24,51 +24,42 @@
   "panels": [
     {
       "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 0
-      },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
       "id": 100,
       "panels": [],
       "title": "Overview",
       "type": "row"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            {
+              "options": {
+                "0": { "color": "red", "text": "DOWN" },
+                "1": { "color": "green", "text": "UP" }
+              },
+              "type": "value"
+            }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
             ]
           },
-          "unit": "dtdurations"
+          "unit": "none"
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 0,
-        "y": 1
-      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
       "id": 1,
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
+        "colorMode": "background",
+        "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
@@ -81,47 +72,29 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "expr": "time() - nextjs_process_start_time_seconds{app=\"portfolio\"}",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "nextjs_up{app=\"portfolio\", job=~\"nextjs-$environment\"}",
           "refId": "A"
         }
       ],
-      "title": "Uptime",
+      "title": "App Status",
       "type": "stat"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
+          "color": { "mode": "thresholds" },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
+            "steps": [{ "color": "green", "value": null }]
           },
-          "unit": "short"
+          "unit": "dtdurations"
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 4,
-        "y": 1
-      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
       "id": 2,
       "options": {
         "colorMode": "value",
@@ -138,47 +111,29 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "expr": "sum(increase(nextjs_page_views_total{app=\"portfolio\"}[24h]))",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "time() - nextjs_process_start_time_seconds{app=\"portfolio\", job=~\"nextjs-$environment\"}",
           "refId": "A"
         }
       ],
-      "title": "Page Views (24h)",
+      "title": "Uptime",
       "type": "stat"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
+          "color": { "mode": "thresholds" },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
+            "steps": [{ "color": "green", "value": null }]
           },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 8,
-        "y": 1
-      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
       "id": 3,
       "options": {
         "colorMode": "value",
@@ -195,57 +150,35 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "expr": "nextjs_unique_visitors{app=\"portfolio\"}",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(increase(nextjs_page_views_total{app=\"portfolio\", job=~\"nextjs-$environment\"}[24h]))",
           "refId": "A"
         }
       ],
-      "title": "Unique Visitors",
+      "title": "Page Views (24h)",
       "type": "stat"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
+          "color": { "mode": "thresholds" },
           "mappings": [],
           "max": 100,
           "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 60
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 60 },
+              { "color": "red", "value": 80 }
             ]
           },
           "unit": "percent"
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 12,
-        "y": 1
-      },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
       "id": 4,
       "options": {
         "orientation": "auto",
@@ -260,11 +193,8 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "expr": "rate(nextjs_process_cpu_seconds_total{app=\"portfolio\"}[5m]) * 100",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(nextjs_process_cpu_seconds_total{app=\"portfolio\", job=~\"nextjs-$environment\"}[5m]) * 100",
           "refId": "A"
         }
       ],
@@ -272,43 +202,24 @@
       "type": "gauge"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
+          "color": { "mode": "thresholds" },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 300000000
-              },
-              {
-                "color": "red",
-                "value": 500000000
-              }
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 300000000 },
+              { "color": "red", "value": 500000000 }
             ]
           },
           "unit": "decbytes"
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 16,
-        "y": 1
-      },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
       "id": 5,
       "options": {
         "colorMode": "value",
@@ -325,55 +236,33 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "expr": "nextjs_process_resident_memory_bytes{app=\"portfolio\"}",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "nextjs_process_resident_memory_bytes{app=\"portfolio\", job=~\"nextjs-$environment\"}",
           "refId": "A"
         }
       ],
-      "title": "Memory Usage (RSS)",
+      "title": "Memory (RSS)",
       "type": "stat"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
+          "color": { "mode": "thresholds" },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 0.01
-              },
-              {
-                "color": "red",
-                "value": 0.05
-              }
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.01 },
+              { "color": "red", "value": 0.05 }
             ]
           },
           "unit": "s"
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 20,
-        "y": 1
-      },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
       "id": 6,
       "options": {
         "orientation": "auto",
@@ -388,11 +277,8 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "expr": "nextjs_nodejs_eventloop_lag_seconds{app=\"portfolio\"}",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "nextjs_nodejs_eventloop_lag_seconds{app=\"portfolio\", job=~\"nextjs-$environment\"}",
           "refId": "A"
         }
       ],
@@ -401,27 +287,17 @@
     },
     {
       "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 5
-      },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
       "id": 101,
       "panels": [],
       "title": "Traffic & Page Views",
       "type": "row"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
+          "color": { "mode": "palette-classic" },
           "custom": {
             "axisCenteredZero": false,
             "axisColorMode": "text",
@@ -431,47 +307,26 @@
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
-            "hideFrom": {
-              "tooltip": false,
-              "viz": false,
-              "legend": false
-            },
+            "hideFrom": { "tooltip": false, "viz": false, "legend": false },
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
+            "scaleDistribution": { "type": "linear" },
             "showPoints": "never",
             "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
+            "steps": [{ "color": "green", "value": null }]
           },
           "unit": "reqps"
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 6
-      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
       "id": 7,
       "options": {
         "legend": {
@@ -480,36 +335,25 @@
           "placement": "bottom",
           "showLegend": true
         },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
+        "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "expr": "sum(rate(nextjs_page_views_total{app=\"portfolio\"}[5m]))",
-          "legendFormat": "Total Requests/sec",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(nextjs_page_views_total{app=\"portfolio\", job=~\"nextjs-$environment\"}[5m]))",
+          "legendFormat": "Requests/sec",
           "refId": "A"
         }
       ],
-      "title": "Request Rate (Requests/sec)",
+      "title": "Request Rate",
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
+          "color": { "mode": "palette-classic" },
           "custom": {
             "axisCenteredZero": false,
             "axisColorMode": "text",
@@ -519,47 +363,26 @@
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
-            "hideFrom": {
-              "tooltip": false,
-              "viz": false,
-              "legend": false
-            },
+            "hideFrom": { "tooltip": false, "viz": false, "legend": false },
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
+            "scaleDistribution": { "type": "linear" },
             "showPoints": "never",
             "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
+            "stacking": { "group": "A", "mode": "normal" },
+            "thresholdsStyle": { "mode": "off" }
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
+            "steps": [{ "color": "green", "value": null }]
           },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 6
-      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
       "id": 8,
       "options": {
         "legend": {
@@ -568,165 +391,33 @@
           "placement": "bottom",
           "showLegend": true
         },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
+        "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "expr": "increase(nextjs_page_views_total{app=\"portfolio\"}[1h])",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "increase(nextjs_page_views_total{app=\"portfolio\", job=~\"nextjs-$environment\"}[1h])",
           "legendFormat": "{{page}}",
           "refId": "A"
         }
       ],
-      "title": "Page Views by Page (Last Hour)",
+      "title": "Page Views by Page (1h)",
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 14
-      },
-      "id": 9,
-      "options": {
-        "displayMode": "gradient",
-        "minVizHeight": 10,
-        "minVizWidth": 0,
-        "orientation": "horizontal",
-        "reduceOptions": {
-          "values": false,
-          "calcs": ["sum"],
-          "fields": ""
-        },
-        "showUnfilled": true
-      },
-      "pluginVersion": "10.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "expr": "topk(10, sum by (page) (increase(nextjs_page_views_total{app=\"portfolio\"}[24h])))",
-          "legendFormat": "{{page}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Top 10 Pages (24h)",
-      "type": "bargauge"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 14
-      },
-      "id": 10,
-      "options": {
-        "displayMode": "gradient",
-        "minVizHeight": 10,
-        "minVizWidth": 0,
-        "orientation": "horizontal",
-        "reduceOptions": {
-          "values": false,
-          "calcs": ["sum"],
-          "fields": ""
-        },
-        "showUnfilled": true
-      },
-      "pluginVersion": "10.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "expr": "topk(10, sum by (article_slug) (increase(nextjs_article_views_total{app=\"portfolio\"}[24h])))",
-          "legendFormat": "{{article_slug}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Top 10 Articles (24h)",
-      "type": "bargauge"
-    },
-    {
       "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 22
-      },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
       "id": 102,
       "panels": [],
-      "title": "Performance & Response Times",
+      "title": "Performance",
       "type": "row"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
+          "color": { "mode": "palette-classic" },
           "custom": {
             "axisCenteredZero": false,
             "axisColorMode": "text",
@@ -736,47 +427,26 @@
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
-            "hideFrom": {
-              "tooltip": false,
-              "viz": false,
-              "legend": false
-            },
+            "hideFrom": { "tooltip": false, "viz": false, "legend": false },
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
+            "scaleDistribution": { "type": "linear" },
             "showPoints": "never",
             "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
+            "steps": [{ "color": "green", "value": null }]
           },
           "unit": "s"
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 23
-      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
       "id": 11,
       "options": {
         "legend": {
@@ -785,63 +455,37 @@
           "placement": "bottom",
           "showLegend": true
         },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
+        "tooltip": { "mode": "multi", "sort": "none" }
       },
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "expr": "histogram_quantile(0.50, sum(rate(nextjs_http_request_duration_seconds_bucket{app=\"portfolio\"}[5m])) by (le))",
-          "legendFormat": "P50 (median)",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.50, sum(rate(nextjs_http_request_duration_seconds_bucket{app=\"portfolio\", job=~\"nextjs-$environment\"}[5m])) by (le))",
+          "legendFormat": "P50",
           "refId": "A"
         },
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "expr": "histogram_quantile(0.90, sum(rate(nextjs_http_request_duration_seconds_bucket{app=\"portfolio\"}[5m])) by (le))",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.90, sum(rate(nextjs_http_request_duration_seconds_bucket{app=\"portfolio\", job=~\"nextjs-$environment\"}[5m])) by (le))",
           "legendFormat": "P90",
           "refId": "B"
         },
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "expr": "histogram_quantile(0.95, sum(rate(nextjs_http_request_duration_seconds_bucket{app=\"portfolio\"}[5m])) by (le))",
-          "legendFormat": "P95",
-          "refId": "C"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "expr": "histogram_quantile(0.99, sum(rate(nextjs_http_request_duration_seconds_bucket{app=\"portfolio\"}[5m])) by (le))",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.99, sum(rate(nextjs_http_request_duration_seconds_bucket{app=\"portfolio\", job=~\"nextjs-$environment\"}[5m])) by (le))",
           "legendFormat": "P99",
-          "refId": "D"
+          "refId": "C"
         }
       ],
       "title": "Response Time Percentiles",
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
+          "color": { "mode": "palette-classic" },
           "custom": {
             "axisCenteredZero": false,
             "axisColorMode": "text",
@@ -851,47 +495,26 @@
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
-            "hideFrom": {
-              "tooltip": false,
-              "viz": false,
-              "legend": false
-            },
+            "hideFrom": { "tooltip": false, "viz": false, "legend": false },
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
+            "scaleDistribution": { "type": "linear" },
             "showPoints": "never",
             "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
+            "steps": [{ "color": "green", "value": null }]
           },
           "unit": "s"
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 23
-      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
       "id": 12,
       "options": {
         "legend": {
@@ -900,49 +523,33 @@
           "placement": "bottom",
           "showLegend": true
         },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
+        "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "expr": "sum by (route) (rate(nextjs_http_request_duration_seconds_sum{app=\"portfolio\"}[5m])) / sum by (route) (rate(nextjs_http_request_duration_seconds_count{app=\"portfolio\"}[5m]))",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (route) (rate(nextjs_http_request_duration_seconds_sum{app=\"portfolio\", job=~\"nextjs-$environment\"}[5m])) / sum by (route) (rate(nextjs_http_request_duration_seconds_count{app=\"portfolio\", job=~\"nextjs-$environment\"}[5m]))",
           "legendFormat": "{{route}}",
           "refId": "A"
         }
       ],
-      "title": "Average Response Time by Route",
+      "title": "Avg Response Time by Route",
       "type": "timeseries"
     },
     {
       "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 31
-      },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
       "id": 103,
       "panels": [],
-      "title": "Resource Usage",
+      "title": "Resources",
       "type": "row"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
+          "color": { "mode": "palette-classic" },
           "custom": {
             "axisCenteredZero": false,
             "axisColorMode": "text",
@@ -952,93 +559,54 @@
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
-            "hideFrom": {
-              "tooltip": false,
-              "viz": false,
-              "legend": false
-            },
+            "hideFrom": { "tooltip": false, "viz": false, "legend": false },
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
+            "scaleDistribution": { "type": "linear" },
             "showPoints": "never",
             "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
+            "steps": [{ "color": "green", "value": null }]
           },
           "unit": "decbytes"
         },
         "overrides": [
           {
-            "matcher": {
-              "id": "byName",
-              "options": "Heap Used"
-            },
+            "matcher": { "id": "byName", "options": "Heap Used" },
             "properties": [
               {
                 "id": "color",
-                "value": {
-                  "fixedColor": "blue",
-                  "mode": "fixed"
-                }
+                "value": { "fixedColor": "blue", "mode": "fixed" }
               }
             ]
           },
           {
-            "matcher": {
-              "id": "byName",
-              "options": "Heap Total"
-            },
+            "matcher": { "id": "byName", "options": "Heap Total" },
             "properties": [
               {
                 "id": "color",
-                "value": {
-                  "fixedColor": "green",
-                  "mode": "fixed"
-                }
+                "value": { "fixedColor": "green", "mode": "fixed" }
               }
             ]
           },
           {
-            "matcher": {
-              "id": "byName",
-              "options": "RSS"
-            },
+            "matcher": { "id": "byName", "options": "RSS" },
             "properties": [
               {
                 "id": "color",
-                "value": {
-                  "fixedColor": "orange",
-                  "mode": "fixed"
-                }
+                "value": { "fixedColor": "orange", "mode": "fixed" }
               }
             ]
           }
         ]
       },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 32
-      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
       "id": 13,
       "options": {
         "legend": {
@@ -1047,54 +615,37 @@
           "placement": "bottom",
           "showLegend": true
         },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
+        "tooltip": { "mode": "multi", "sort": "none" }
       },
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "expr": "nextjs_nodejs_heap_size_used_bytes{app=\"portfolio\"}",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "nextjs_nodejs_heap_size_used_bytes{app=\"portfolio\", job=~\"nextjs-$environment\"}",
           "legendFormat": "Heap Used",
           "refId": "A"
         },
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "expr": "nextjs_nodejs_heap_size_total_bytes{app=\"portfolio\"}",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "nextjs_nodejs_heap_size_total_bytes{app=\"portfolio\", job=~\"nextjs-$environment\"}",
           "legendFormat": "Heap Total",
           "refId": "B"
         },
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "expr": "nextjs_process_resident_memory_bytes{app=\"portfolio\"}",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "nextjs_process_resident_memory_bytes{app=\"portfolio\", job=~\"nextjs-$environment\"}",
           "legendFormat": "RSS",
           "refId": "C"
         }
       ],
-      "title": "Memory Usage Over Time",
+      "title": "Memory Usage",
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
+          "color": { "mode": "palette-classic" },
           "custom": {
             "axisCenteredZero": false,
             "axisColorMode": "text",
@@ -1104,47 +655,26 @@
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
-            "hideFrom": {
-              "tooltip": false,
-              "viz": false,
-              "legend": false
-            },
+            "hideFrom": { "tooltip": false, "viz": false, "legend": false },
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
+            "scaleDistribution": { "type": "linear" },
             "showPoints": "never",
             "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
+            "steps": [{ "color": "green", "value": null }]
           },
           "unit": "percent"
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 32
-      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
       "id": 14,
       "options": {
         "legend": {
@@ -1153,67 +683,39 @@
           "placement": "bottom",
           "showLegend": true
         },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
+        "tooltip": { "mode": "multi", "sort": "none" }
       },
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "expr": "rate(nextjs_process_cpu_user_seconds_total{app=\"portfolio\"}[5m]) * 100",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(nextjs_process_cpu_user_seconds_total{app=\"portfolio\", job=~\"nextjs-$environment\"}[5m]) * 100",
           "legendFormat": "User CPU",
           "refId": "A"
         },
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "expr": "rate(nextjs_process_cpu_system_seconds_total{app=\"portfolio\"}[5m]) * 100",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(nextjs_process_cpu_system_seconds_total{app=\"portfolio\", job=~\"nextjs-$environment\"}[5m]) * 100",
           "legendFormat": "System CPU",
           "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "expr": "rate(nextjs_process_cpu_seconds_total{app=\"portfolio\"}[5m]) * 100",
-          "legendFormat": "Total CPU",
-          "refId": "C"
         }
       ],
-      "title": "CPU Usage Over Time",
+      "title": "CPU Usage",
       "type": "timeseries"
     },
     {
       "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 40
-      },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
       "id": 104,
       "panels": [],
-      "title": "Errors & Issues",
+      "title": "Errors",
       "type": "row"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
+          "color": { "mode": "palette-classic" },
           "custom": {
             "axisCenteredZero": false,
             "axisColorMode": "text",
@@ -1223,47 +725,26 @@
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
-            "hideFrom": {
-              "tooltip": false,
-              "viz": false,
-              "legend": false
-            },
+            "hideFrom": { "tooltip": false, "viz": false, "legend": false },
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
+            "scaleDistribution": { "type": "linear" },
             "showPoints": "never",
             "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
+            "stacking": { "group": "A", "mode": "normal" },
+            "thresholdsStyle": { "mode": "off" }
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
+            "steps": [{ "color": "green", "value": null }]
           },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 41
-      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 33 },
       "id": 15,
       "options": {
         "legend": {
@@ -1272,45 +753,31 @@
           "placement": "bottom",
           "showLegend": true
         },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
+        "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "expr": "increase(nextjs_client_errors_total{app=\"portfolio\"}[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "increase(nextjs_client_errors_total{app=\"portfolio\", job=~\"nextjs-$environment\"}[5m])",
           "legendFormat": "Client: {{error_type}}",
           "refId": "A"
         },
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "expr": "increase(nextjs_server_errors_total{app=\"portfolio\"}[5m])",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "increase(nextjs_server_errors_total{app=\"portfolio\", job=~\"nextjs-$environment\"}[5m])",
           "legendFormat": "Server: {{error_type}}",
           "refId": "B"
         }
       ],
-      "title": "Error Rate (5m window)",
+      "title": "Error Rate (5m)",
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
+          "color": { "mode": "palette-classic" },
           "custom": {
             "axisCenteredZero": false,
             "axisColorMode": "text",
@@ -1320,47 +787,26 @@
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
-            "hideFrom": {
-              "tooltip": false,
-              "viz": false,
-              "legend": false
-            },
+            "hideFrom": { "tooltip": false, "viz": false, "legend": false },
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
+            "scaleDistribution": { "type": "linear" },
             "showPoints": "never",
             "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
+            "steps": [{ "color": "green", "value": null }]
           },
           "unit": "s"
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 41
-      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 33 },
       "id": 16,
       "options": {
         "legend": {
@@ -1369,39 +815,21 @@
           "placement": "bottom",
           "showLegend": true
         },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
+        "tooltip": { "mode": "multi", "sort": "none" }
       },
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "expr": "nextjs_nodejs_eventloop_lag_seconds{app=\"portfolio\"}",
-          "legendFormat": "Current Lag",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "nextjs_nodejs_eventloop_lag_seconds{app=\"portfolio\", job=~\"nextjs-$environment\"}",
+          "legendFormat": "Current",
           "refId": "A"
         },
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "expr": "nextjs_nodejs_eventloop_lag_p90_seconds{app=\"portfolio\"}",
-          "legendFormat": "P90",
-          "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "expr": "nextjs_nodejs_eventloop_lag_p99_seconds{app=\"portfolio\"}",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "nextjs_nodejs_eventloop_lag_p99_seconds{app=\"portfolio\", job=~\"nextjs-$environment\"}",
           "legendFormat": "P99",
-          "refId": "C"
+          "refId": "B"
         }
       ],
       "title": "Event Loop Lag",
@@ -1411,18 +839,40 @@
   "refresh": "10s",
   "schemaVersion": 38,
   "style": "dark",
-  "tags": ["nextjs", "nodejs", "application", "portfolio"],
+  "tags": ["nextjs", "nodejs", "application"],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "current": {
+          "selected": true,
+          "text": "development",
+          "value": "development"
+        },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(nextjs_up{app=\"portfolio\"}, job)",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Environment",
+        "multi": false,
+        "name": "environment",
+        "options": [],
+        "query": {
+          "query": "label_values(nextjs_up{app=\"portfolio\"}, job)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "/nextjs-(.*)/",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
   },
-  "time": {
-    "from": "now-1h",
-    "to": "now"
-  },
+  "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "",
-  "title": "Next.js Application Monitoring",
-  "uid": "nextjs-app-monitoring",
+  "title": "Next.js Application",
+  "uid": "nextjs-app-v2",
   "version": 1,
   "weekStart": ""
 }
