@@ -155,8 +155,7 @@ fetch-vpc-info:
 
 fetch-monitoring-info:
 	@echo "Fetching monitoring info (VPC ID, EC2 IP) for environment: $(ENV_FULL)"
-	@chmod +x ./scripts/aws/fetch-monitoring-info.sh
-	@ENVIRONMENT=$(ENV_FULL) ./scripts/aws/fetch-monitoring-info.sh
+	./scripts/aws/fetch-monitoring-info.sh
 
 fetch-aws-accounts:
 	@echo "Fetching AWS account IDs..."
