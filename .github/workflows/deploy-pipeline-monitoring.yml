@@ -85,12 +85,23 @@ jobs:
           role-to-assume: ${{ secrets.DEPLOYMENT_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
           role-chaining: true
+          role-session-name: GitHubActions-FetchDevInfo
 
       # Fetch Dev Account Info using Makefile
+      # Note: This may return NOT_FOUND if dev infrastructure isn't deployed yet
+      # That's OK - monitoring can be deployed without cross-account access initially
       - name: Fetch Dev Account Monitoring Info
         id: dev-info
         continue-on-error: true
-        run: make fetch-monitoring-info ENV=development
+        run: |
+          echo "::notice::Fetching dev account info (may be empty if not deployed yet)"
+          echo "Current AWS Account:"
+          aws sts get-caller-identity
+          echo ""
+          echo "Testing SSM access:"
+          aws ssm get-parameter --name /networking/development/vpc-id --query 'Parameter.Value' --output text || echo "Cannot access SSM parameter"
+          echo ""
+          make fetch-monitoring-info ENV=development
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
 

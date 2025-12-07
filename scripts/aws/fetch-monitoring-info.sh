@@ -177,6 +177,28 @@ echo "VPC ID:         ${VPC_ID:-NOT_FOUND}"
 echo "EC2 Private IP: ${EC2_PRIVATE_IP:-NOT_FOUND}"
 echo "VPC Found:      ${VPC_FOUND}"
 echo "EC2 Found:      ${EC2_FOUND}"
+echo ""
+
+# Provide guidance if resources not found
+if [ "${VPC_FOUND}" = "false" ] || [ "${EC2_FOUND}" = "false" ]; then
+  echo "========================================="
+  echo "ℹ️  Resources Not Found - This is OK!"
+  echo "========================================="
+  echo ""
+  echo "The monitoring stack can be deployed without cross-account access."
+  echo "Cross-account monitoring can be configured later by:"
+  echo ""
+  echo "1. Deploy development infrastructure:"
+  echo "   cd infrastructure && ENVIRONMENT=development yarn cdk deploy \\"
+  echo "     NetworkingStack-development \\"
+  echo "     ComputeStack-development \\"
+  echo "     --require-approval never"
+  echo ""
+  echo "2. Re-run this script to fetch the values"
+  echo ""
+  echo "3. Update monitoring configuration with the new values"
+  echo ""
+fi
 
 # Output to GitHub Actions
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
