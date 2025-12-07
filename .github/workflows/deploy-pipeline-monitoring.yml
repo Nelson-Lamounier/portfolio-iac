@@ -15,11 +15,14 @@ on:
           - deploy-services-only
           - sync-config-only
           - destroy-all
-      use_layered:
-        description: "Use layered architecture (recommended)"
+      architecture:
+        description: "Monitoring architecture"
         required: true
-        type: boolean
-        default: true
+        type: choice
+        default: "layered"
+        options:
+          - layered
+          - embedded
 
 env:
   NODE_VERSION: "22"
@@ -30,27 +33,31 @@ permissions:
   contents: read
 
 jobs:
-  # ============================================================================
-  # DEPLOY PIPELINE MONITORING INFRASTRUCTURE
-  # ============================================================================
   deploy:
+    name: ${{ github.event.inputs.action }} (${{ github.event.inputs.architecture }})
     runs-on: ubuntu-latest
-    if: github.event.inputs.action != 'destroy-all'
     environment: pipeline
     concurrency:
       group: deploy-pipeline-monitoring
       cancel-in-progress: false
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - run: corepack enable
-      - run: make install
-      - run: make build-infrastructure
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install Dependencies
+        run: make install
+
+      - name: Build Infrastructure
+        run: make build-infrastructure
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -63,176 +70,88 @@ jobs:
         id: dev-info
         continue-on-error: true
         run: |
-          # Get dev VPC ID (assumes dev account role is accessible)
+          # Get dev VPC ID from SSM
           DEV_VPC_ID=$(aws ssm get-parameter \
             --name "/networking/development/vpc-id" \
             --query 'Parameter.Value' --output text 2>/dev/null || echo "")
 
           if [ -n "$DEV_VPC_ID" ]; then
             echo "DEV_VPC_ID=$DEV_VPC_ID" >> $GITHUB_ENV
-            echo "dev_vpc_found=true" >> $GITHUB_OUTPUT
-          else
-            echo "dev_vpc_found=false" >> $GITHUB_OUTPUT
           fi
 
-          # Get dev EC2 private IP for Prometheus scraping
+          # Get dev EC2 private IP
           DEV_IP=$(aws ssm get-parameter \
             --name "/compute/development/ec2-private-ip" \
             --query 'Parameter.Value' --output text 2>/dev/null || echo "")
 
           if [ -n "$DEV_IP" ]; then
             echo "DEV_NODE_EXPORTER_IP=$DEV_IP" >> $GITHUB_ENV
-            echo "dev_ip_found=true" >> $GITHUB_OUTPUT
-          else
-            echo "dev_ip_found=false" >> $GITHUB_OUTPUT
           fi
 
-      # Deploy NetworkingStack (if needed)
-      - name: Deploy NetworkingStack
-        if: github.event.inputs.action == 'deploy-all' || github.event.inputs.action == 'deploy-infra-only'
-        run: |
-          cd infrastructure
-          ENVIRONMENT=pipeline yarn cdk deploy NetworkingStack-pipeline --require-approval never
+      # Deploy All
+      - name: Deploy All (Layered)
+        if: github.event.inputs.action == 'deploy-all' && github.event.inputs.architecture == 'layered'
+        run: make deploy-monitoring-layered
         env:
-          ENVIRONMENT: pipeline
-
-      # Deploy VPC Peering (if dev VPC exists)
-      - name: Deploy VPC Peering
-        if: (github.event.inputs.action == 'deploy-all' || github.event.inputs.action == 'deploy-infra-only') && steps.dev-info.outputs.dev_vpc_found == 'true'
-        continue-on-error: true
-        run: |
-          cd infrastructure
-          ENVIRONMENT=pipeline yarn cdk deploy VpcPeeringStack-pipeline --require-approval never
-        env:
-          ENVIRONMENT: pipeline
-          DEV_VPC_ID: ${{ env.DEV_VPC_ID }}
           AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
 
-      # Deploy Monitoring - Layered Architecture
-      - name: Deploy Monitoring (Layered)
-        if: github.event.inputs.use_layered == 'true' && (github.event.inputs.action == 'deploy-all' || github.event.inputs.action == 'deploy-infra-only')
-        run: |
-          cd infrastructure
-
-          echo "Deploying MonitoringInfraStack (Layer 1)..."
-          USE_LAYERED_MONITORING=true \
-          ENVIRONMENT=pipeline \
-          yarn cdk deploy MonitoringInfraStack-pipeline --require-approval never
+      - name: Deploy All (Embedded)
+        if: github.event.inputs.action == 'deploy-all' && github.event.inputs.architecture == 'embedded'
+        run: make deploy-monitoring-embedded
         env:
-          ENVIRONMENT: pipeline
-          USE_LAYERED_MONITORING: "true"
+          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
 
-      - name: Deploy Monitoring Services (Layered)
-        if: github.event.inputs.use_layered == 'true' && (github.event.inputs.action == 'deploy-all' || github.event.inputs.action == 'deploy-services-only')
+      # Deploy Infrastructure Only
+      - name: Deploy Infrastructure Only
+        if: github.event.inputs.action == 'deploy-infra-only'
+        run: make deploy-monitoring-infra
+
+      # Deploy Services Only
+      - name: Deploy Services Only
+        if: github.event.inputs.action == 'deploy-services-only'
+        run: make deploy-monitoring-services
+
+      # Sync Config Only
+      - name: Sync Config Only
+        if: github.event.inputs.action == 'sync-config-only'
+        run: make sync-monitoring-config
+
+      # Destroy All
+      - name: Destroy All
+        if: github.event.inputs.action == 'destroy-all'
+        run: make destroy-monitoring-layered
+
+      # Check Status
+      - name: Check Monitoring Status
+        if: github.event.inputs.action != 'destroy-all'
+        run: make check-monitoring-layered
+
+      # Summary
+      - name: Generate Summary
+        if: always()
         run: |
-          cd infrastructure
-
-          echo "Deploying MonitoringServiceStack (Layer 2)..."
-          USE_LAYERED_MONITORING=true \
-          ENVIRONMENT=pipeline \
-          yarn cdk deploy MonitoringServiceStack-pipeline --require-approval never
-        env:
-          ENVIRONMENT: pipeline
-          USE_LAYERED_MONITORING: "true"
-
-      # Deploy Monitoring - Embedded Architecture (legacy)
-      - name: Deploy Monitoring (Embedded)
-        if: github.event.inputs.use_layered == 'false' && (github.event.inputs.action == 'deploy-all' || github.event.inputs.action == 'deploy-infra-only')
-        run: |
-          cd infrastructure
-
-          echo "Deploying MonitoringEcsStack (Embedded)..."
-          ENVIRONMENT=pipeline \
-          yarn cdk deploy MonitoringEcsStack-pipeline --require-approval never
-        env:
-          ENVIRONMENT: pipeline
-          DEV_NODE_EXPORTER_IP: ${{ env.DEV_NODE_EXPORTER_IP }}
-
-      # Initialize EFS Config (first time only)
-      - name: Initialize EFS Config
-        if: github.event.inputs.use_layered == 'true' && github.event.inputs.action == 'deploy-all'
-        continue-on-error: true
-        run: |
-          chmod +x ./scripts/monitoring/init-config.sh
-          ./scripts/monitoring/init-config.sh --env pipeline
-
-      # Sync monitoring config to EFS
-      - name: Sync Monitoring Config
-        if: github.event.inputs.action == 'deploy-all' || github.event.inputs.action == 'sync-config-only'
-        run: |
-          chmod +x ./scripts/monitoring/sync-config.sh
-          ./scripts/monitoring/sync-config.sh --env pipeline
-
-      # Output URLs
-      - name: Get Monitoring URLs
-        run: |
-          echo "## Monitoring Deployment Complete! 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "## Pipeline Monitoring - ${{ github.event.inputs.action }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Architecture:** ${{ github.event.inputs.architecture }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          # Get ALB DNS
-          ALB_DNS=$(aws cloudformation describe-stacks \
-            --stack-name MonitoringInfraStack-pipeline \
-            --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerDns`].OutputValue' \
-            --output text 2>/dev/null || \
-            aws cloudformation describe-stacks \
-            --stack-name MonitoringEcsStack-pipeline \
-            --query 'Stacks[0].Outputs[?OutputKey==`MonitoringAlbDns`].OutputValue' \
-            --output text 2>/dev/null || echo "")
-
-          if [ -n "$ALB_DNS" ]; then
-            echo "### Access URLs:" >> $GITHUB_STEP_SUMMARY
-            echo "- **Grafana**: http://${ALB_DNS}/grafana (admin/admin)" >> $GITHUB_STEP_SUMMARY
-            echo "- **Prometheus**: http://${ALB_DNS}/prometheus" >> $GITHUB_STEP_SUMMARY
-            echo "- **Prometheus Targets**: http://${ALB_DNS}/prometheus/targets" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event.inputs.action }}" != "destroy-all" ]; then
+            # Get ALB DNS
+            ALB_DNS=$(aws cloudformation describe-stacks \
+              --stack-name MonitoringInfraStack-pipeline \
+              --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerDns`].OutputValue' \
+              --output text 2>/dev/null || \
+              aws cloudformation describe-stacks \
+              --stack-name MonitoringEcsStack-pipeline \
+              --query 'Stacks[0].Outputs[?OutputKey==`MonitoringAlbDns`].OutputValue' \
+              --output text 2>/dev/null || echo "")
+            
+            if [ -n "$ALB_DNS" ]; then
+              echo "### Access URLs" >> $GITHUB_STEP_SUMMARY
+              echo "- **Grafana**: http://${ALB_DNS}/grafana (admin/admin)" >> $GITHUB_STEP_SUMMARY
+              echo "- **Prometheus**: http://${ALB_DNS}/prometheus" >> $GITHUB_STEP_SUMMARY
+              echo "- **Targets**: http://${ALB_DNS}/prometheus/targets" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "✓ All monitoring stacks destroyed" >> $GITHUB_STEP_SUMMARY
           fi
-
-  # ============================================================================
-  # DESTROY PIPELINE MONITORING
-  # ============================================================================
-  destroy:
-    runs-on: ubuntu-latest
-    if: github.event.inputs.action == 'destroy-all'
-    environment: pipeline
-    concurrency:
-      group: deploy-pipeline-monitoring
-      cancel-in-progress: false
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - run: corepack enable
-      - run: make install
-      - run: make build-infrastructure
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Destroy Monitoring Stacks
-        run: |
-          cd infrastructure
-
-          echo "Destroying monitoring stacks in reverse dependency order..."
-
-          # Destroy layered stacks (if they exist)
-          ENVIRONMENT=pipeline yarn cdk destroy MonitoringServiceStack-pipeline --force 2>/dev/null || true
-          ENVIRONMENT=pipeline yarn cdk destroy MonitoringInfraStack-pipeline --force 2>/dev/null || true
-
-          # Destroy embedded stack (if it exists)
-          ENVIRONMENT=pipeline yarn cdk destroy MonitoringEcsStack-pipeline --force 2>/dev/null || true
-
-          # Destroy VPC peering
-          ENVIRONMENT=pipeline yarn cdk destroy VpcPeeringStack-pipeline --force 2>/dev/null || true
-
-          # Destroy networking (last)
-          ENVIRONMENT=pipeline yarn cdk destroy NetworkingStack-pipeline --force 2>/dev/null || true
-
-          echo "✓ All monitoring stacks destroyed"
-        env:
-          ENVIRONMENT: pipeline

@@ -32,8 +32,9 @@ help:
 	@echo "  check-monitoring-ecs    - Check ECS monitoring status (ENV=development)"
 	@echo "  logs-monitoring-ecs     - Show log group names for monitoring (ENV=development)"
 	@echo ""
-	@echo "Layered Monitoring (Recommended for Production):"
+	@echo "Pipeline Monitoring (Layered - Recommended):"
 	@echo "  deploy-monitoring-layered       - Deploy full layered monitoring (infra + services + config)"
+	@echo "  deploy-monitoring-embedded      - Deploy embedded monitoring (legacy, all-in-one)"
 	@echo "  deploy-monitoring-infra         - Deploy Layer 1: Infrastructure only"
 	@echo "  deploy-monitoring-services      - Deploy Layer 2: Services only"
 	@echo "  init-monitoring-config          - Initialize config on EFS (run once)"
@@ -227,54 +228,35 @@ logs-monitoring-ecs:
 .PHONY: deploy-monitoring-layered deploy-monitoring-infra deploy-monitoring-services
 .PHONY: sync-monitoring-config init-monitoring-config destroy-monitoring-layered
 
-# Deploy full layered monitoring stack
+# Deploy full layered monitoring stack (uses script)
 deploy-monitoring-layered:
-	@echo "========================================="
-	@echo "Deploying LAYERED monitoring (recommended)"
-	@echo "========================================="
-	@echo ""
-	@echo "Layer 1: Infrastructure (EFS, ECS Cluster, ALB)"
-	@cd infrastructure && USE_LAYERED_MONITORING=true ENVIRONMENT=pipeline \
-		yarn cdk deploy MonitoringInfraStack-pipeline --require-approval never
-	@echo ""
-	@echo "Initializing config on EFS..."
-	@chmod +x ./scripts/monitoring/init-config.sh
-	@./scripts/monitoring/init-config.sh --env pipeline || echo "Init may have already run"
-	@echo ""
-	@echo "Layer 2: Services (Prometheus, Grafana, Node Exporter)"
-	@cd infrastructure && USE_LAYERED_MONITORING=true ENVIRONMENT=pipeline \
-		yarn cdk deploy MonitoringServiceStack-pipeline --require-approval never
-	@echo ""
-	@echo "Layer 3: Syncing config from Git..."
-	@chmod +x ./scripts/monitoring/sync-config.sh
-	@./scripts/monitoring/sync-config.sh --env pipeline || echo "Sync completed"
-	@echo ""
-	@echo "✓ Layered monitoring deployed!"
-	@$(MAKE) check-monitoring-layered
+	@chmod +x ./scripts/deploy/pipeline-monitoring.sh
+	@./scripts/deploy/pipeline-monitoring.sh deploy-all --layered
+
+# Deploy full monitoring stack with embedded architecture (legacy)
+deploy-monitoring-embedded:
+	@chmod +x ./scripts/deploy/pipeline-monitoring.sh
+	@./scripts/deploy/pipeline-monitoring.sh deploy-all --embedded
 
 # Deploy only Layer 1: Infrastructure
 deploy-monitoring-infra:
-	@echo "Deploying Layer 1: Monitoring Infrastructure..."
-	@cd infrastructure && USE_LAYERED_MONITORING=true ENVIRONMENT=pipeline \
-		yarn cdk deploy MonitoringInfraStack-pipeline --require-approval never
+	@chmod +x ./scripts/deploy/pipeline-monitoring.sh
+	@./scripts/deploy/pipeline-monitoring.sh deploy-infra --layered
 
 # Deploy only Layer 2: Services
 deploy-monitoring-services:
-	@echo "Deploying Layer 2: Monitoring Services..."
-	@cd infrastructure && USE_LAYERED_MONITORING=true ENVIRONMENT=pipeline \
-		yarn cdk deploy MonitoringServiceStack-pipeline --require-approval never
+	@chmod +x ./scripts/deploy/pipeline-monitoring.sh
+	@./scripts/deploy/pipeline-monitoring.sh deploy-services --layered
 
 # Initialize config on EFS (run once after infra deploy)
 init-monitoring-config:
-	@echo "Initializing monitoring config on EFS..."
 	@chmod +x ./scripts/monitoring/init-config.sh
 	@./scripts/monitoring/init-config.sh --env pipeline
 
 # Sync config from Git to EFS (Layer 3 - no CDK deploy needed!)
 sync-monitoring-config:
-	@echo "Syncing monitoring config to EFS..."
-	@chmod +x ./scripts/monitoring/sync-config.sh
-	@./scripts/monitoring/sync-config.sh --env pipeline
+	@chmod +x ./scripts/deploy/pipeline-monitoring.sh
+	@./scripts/deploy/pipeline-monitoring.sh sync-config
 
 # Check layered monitoring status
 check-monitoring-layered:
@@ -288,6 +270,22 @@ check-monitoring-layered:
 		--query 'Stacks[0].StackStatus' \
 		--output text 2>/dev/null || echo "NOT_DEPLOYED"
 	@echo ""
+	@echo "Service Stack:"
+	@aws cloudformation describe-stacks \
+		--stack-name MonitoringServiceStack-pipeline \
+		--query 'Stacks[0].StackStatus' \
+		--output text 2>/dev/null || echo "NOT_DEPLOYED"
+	@echo ""
+	@echo "URLs:"
+	@aws cloudformation describe-stacks \
+		--stack-name MonitoringInfraStack-pipeline \
+		--query 'Stacks[0].Outputs[?OutputKey==`GrafanaUrl` || OutputKey==`PrometheusUrl`].{Service:OutputKey,URL:OutputValue}' \
+		--output table 2>/dev/null || echo "No outputs found"
+
+# Destroy layered monitoring
+destroy-monitoring-layered:
+	@chmod +x ./scripts/deploy/pipeline-monitoring.sh
+	@./scripts/deploy/pipeline-monitoring.sh destroy
 	@echo "Service Stack:"
 	@aws cloudformation describe-stacks \
 		--stack-name MonitoringServiceStack-pipeline \
