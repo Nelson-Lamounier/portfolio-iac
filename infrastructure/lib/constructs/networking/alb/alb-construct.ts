@@ -51,10 +51,13 @@ export class AlbConstruct extends Construct {
 
     // Create S3 bucket for access logs if enabled and not provided
     if (props.accessLogEnabled) {
+      const stack = cdk.Stack.of(this);
+      const accountId = stack.account || cdk.Aws.ACCOUNT_ID;
+
       this.accessLogBucket =
         props.accessLogBucket ||
         new s3.Bucket(this, "AccessLogBucket", {
-          bucketName: `${props.loadBalancerName}-access-logs-${cdk.Stack.of(this).account}`,
+          bucketName: `${props.loadBalancerName}-access-logs-${accountId}`,
           encryption: s3.BucketEncryption.S3_MANAGED,
           blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
           enforceSSL: true, // Require SSL/TLS for all requests

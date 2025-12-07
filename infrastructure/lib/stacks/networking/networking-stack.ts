@@ -2,6 +2,7 @@
 
 import * as cdk from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
+import * as ssm from "aws-cdk-lib/aws-ssm";
 import { Construct } from "constructs";
 import { VpcConstruct } from "../../constructs/networking/vpc/vpc-construct";
 import { VpcFlowLogsConstruct } from "../../constructs/networking/vpc/vpc-flow-logs-construct";
@@ -110,7 +111,24 @@ export class NetworkingStack extends cdk.Stack {
     }
 
     // ========================================================================
-    // 4. CLOUDFORMATION OUTPUTS
+    // 4. SSM PARAMETERS (for cross-stack/cross-account discovery)
+    // ========================================================================
+    new ssm.StringParameter(this, "VpcIdParameter", {
+      parameterName: `/networking/${envName}/vpc-id`,
+      stringValue: this.vpc.vpcId,
+      description: `VPC ID for ${envName} environment`,
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
+    new ssm.StringParameter(this, "VpcCidrParameter", {
+      parameterName: `/networking/${envName}/vpc-cidr`,
+      stringValue: this.vpc.vpcCidrBlock,
+      description: `VPC CIDR for ${envName} environment`,
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
+    // ========================================================================
+    // 5. CLOUDFORMATION OUTPUTS
     // ========================================================================
     new cdk.CfnOutput(this, "VpcId", {
       value: this.vpc.vpcId,
@@ -162,13 +180,13 @@ export class NetworkingStack extends cdk.Stack {
     }
 
     // ========================================================================
-    // 5. CDK NAG SUPPRESSIONS
+    // 6. CDK NAG SUPPRESSIONS
     // ========================================================================
     // Apply centralized CDK Nag suppressions
     SuppressionManager.applyToStack(this, "NetworkingStack", envName);
 
     // ========================================================================
-    // 6. RESOURCE TAGGING
+    // 7. RESOURCE TAGGING
     // ========================================================================
     cdk.Tags.of(this).add("Stack", "Networking");
     cdk.Tags.of(this).add("Environment", envName);
