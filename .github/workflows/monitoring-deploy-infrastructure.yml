@@ -4,9 +4,9 @@
 name: Deploy Monitoring Infrastructure
 
 on:
-  push:
-    branches:
-      - feature/monitoring # Specific branch for monitoring work
+  # push:
+  #   branches:
+  #     - feature/monitoring # Specific branch for monitoring work
   workflow_call:
     inputs:
       environment:
@@ -28,6 +28,9 @@ on:
       instance-id:
         description: "EC2 instance ID"
         value: ${{ jobs.deploy.outputs.instance-id }}
+    secrets:
+      AWS_OIDC_ROLE:
+        required: true
 
 permissions:
   id-token: write

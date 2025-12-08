@@ -31,9 +31,9 @@ name: Deploy Monitoring
 #   -f environment=pipeline
 
 on:
-  push:
-    branches:
-      - feature/monitoring # Specific branch for monitoring work
+  # push:
+  #   branches:
+  #     - feature/monitoring # Specific branch for monitoring work
   workflow_dispatch:
     inputs:
       target:

@@ -274,8 +274,8 @@ jobs:
     if: |
       always() && 
       needs.deploy.result == 'success' &&
-      github.event.inputs.run_health_checks == 'true' &&
-      github.event.inputs.action != 'destroy-all'
+      (github.event.inputs.run_health_checks != 'false') &&
+      (github.event.inputs.action != 'destroy-all')
     runs-on: ubuntu-latest
     environment: pipeline
 
@@ -428,8 +428,8 @@ jobs:
     if: |
       always() && 
       needs.deploy.result == 'success' &&
-      github.event.inputs.fix_grafana == 'true' &&
-      github.event.inputs.action != 'destroy-all'
+      (github.event.inputs.fix_grafana != 'false') &&
+      (github.event.inputs.action != 'destroy-all')
     runs-on: ubuntu-latest
     environment: pipeline
 

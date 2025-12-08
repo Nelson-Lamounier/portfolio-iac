@@ -4,9 +4,9 @@
 name: Post-Deployment Checks
 
 on:
-  push:
-    branches:
-      - feature/monitoring # Specific branch for monitoring work
+  # push:
+  #   branches:
+  #     - feature/monitoring # Specific branch for monitoring work
   workflow_call:
     inputs:
       environment:
@@ -21,6 +21,9 @@ on:
         description: "ALB DNS name"
         required: true
         type: string
+    secrets:
+      AWS_OIDC_ROLE:
+        required: true
 
 permissions:
   id-token: write
