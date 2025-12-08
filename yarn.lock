@@ -46,7 +46,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@aws-cdk/cloud-assembly-schema@npm:^48.6.0":
+"@aws-cdk/cloud-assembly-schema@npm:^48.20.0":
   version: 48.20.0
   resolution: "@aws-cdk/cloud-assembly-schema@npm:48.20.0"
   dependencies:
@@ -3349,27 +3349,27 @@ __metadata:
   languageName: node
   linkType: hard
 
-"aws-cdk-lib@npm:^2.150.0":
-  version: 2.230.0
-  resolution: "aws-cdk-lib@npm:2.230.0"
+"aws-cdk-lib@npm:^2.232.1":
+  version: 2.232.1
+  resolution: "aws-cdk-lib@npm:2.232.1"
   dependencies:
     "@aws-cdk/asset-awscli-v1": "npm:2.2.242"
     "@aws-cdk/asset-node-proxy-agent-v6": "npm:^2.1.0"
-    "@aws-cdk/cloud-assembly-schema": "npm:^48.6.0"
+    "@aws-cdk/cloud-assembly-schema": "npm:^48.20.0"
     "@balena/dockerignore": "npm:^1.0.2"
     case: "npm:1.6.3"
-    fs-extra: "npm:^11.3.1"
+    fs-extra: "npm:^11.3.2"
     ignore: "npm:^5.3.2"
     jsonschema: "npm:^1.5.0"
     mime-types: "npm:^2.1.35"
     minimatch: "npm:^3.1.2"
     punycode: "npm:^2.3.1"
-    semver: "npm:^7.7.2"
+    semver: "npm:^7.7.3"
     table: "npm:^6.9.0"
     yaml: "npm:1.10.2"
   peerDependencies:
     constructs: ^10.0.0
-  checksum: a71faa57ed8574e7fe7675b21f899ec0836a3404597b49821f28c23c54d404abcecc9e22add43febc3c01d0308ee5f5257603807dd41ff8ec2ee6577163e7f0f
+  checksum: 03c01d8de15a1cae677601632eb7efea925c73d620768a2eb25a9010bf6d031f87033ac8171e62abd567d18ad8b31ad2129143a5613a5b16f5a17ce59abfb371
   languageName: node
   linkType: hard
 
@@ -5251,7 +5251,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"fs-extra@npm:^11.3.1":
+"fs-extra@npm:^11.3.2":
   version: 11.3.2
   resolution: "fs-extra@npm:11.3.2"
   dependencies:
@@ -5823,7 +5823,7 @@ __metadata:
     "@types/jest": "npm:^29.5.11"
     "@types/node": "npm:^20.10.0"
     aws-cdk: "npm:^2.150.0"
-    aws-cdk-lib: "npm:^2.150.0"
+    aws-cdk-lib: "npm:^2.232.1"
     constructs: "npm:^10.3.0"
     dotenv: "npm:^16.3.1"
     jest: "npm:^29.7.0"
