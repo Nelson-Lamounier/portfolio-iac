@@ -254,19 +254,18 @@ export class GrafanaConstruct extends Construct {
     // ========================================================================
     // Suppress wildcard log group resource warnings for CloudWatch Logs access
     if (props.enableCloudWatch !== false) {
-      NagSuppressions.addResourceSuppressions(
-        this.taskDefinition.taskRole.node.findChild("DefaultPolicy"),
-        [
-          {
-            id: "AwsSolutions-IAM5",
-            reason:
-              "Grafana CloudWatch datasource requires permissions to query logs across all log groups in the account. The wildcard is scoped to the account and region, and permissions are read-only. This is standard practice for monitoring solutions.",
-            appliesTo: [
-              `Resource::arn:aws:logs:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:log-group:*:*`,
-            ],
-          },
-        ]
-      );
+      NagSuppressions.addResourceSuppressions(this.taskDefinition.taskRole, [
+        {
+          id: "AwsSolutions-IAM5",
+          reason:
+            "Grafana CloudWatch datasource requires permissions to query logs across all log groups in the account. The wildcard is scoped to the account and region, and permissions are read-only. This is standard practice for monitoring solutions.",
+          appliesTo: [
+            {
+              regex: "^Resource::arn:aws:logs:.*:.*:log-group:\\*:\\*$",
+            },
+          ],
+        },
+      ]);
     }
   }
 
