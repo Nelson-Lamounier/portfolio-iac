@@ -5,6 +5,7 @@ import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
 import { Construct } from "constructs";
+import { NagSuppressions } from "cdk-nag";
 import { EcsTaskDefinitionConstruct } from "../../compute/ecs/ecs-task-definition-construct";
 import { EcsServiceConstruct } from "../../compute/ecs/ecs-service-construct";
 
@@ -247,6 +248,27 @@ export class GrafanaConstruct extends Construct {
 
     // Expose the service
     this.service = this.serviceConstruct.service;
+
+    // ========================================================================
+    // 5. CDK NAG SUPPRESSIONS
+    // ========================================================================
+    // Suppress wildcard log group resource warnings
+    // Grafana CloudWatch datasource requires access to all log groups and streams
+    // for querying and filtering logs across the account
+    if (props.enableCloudWatch !== false) {
+      NagSuppressions.addResourceSuppressions(this.taskDefinition.taskRole, [
+        {
+          id: "AwsSolutions-IAM5",
+          reason:
+            "Grafana CloudWatch datasource requires permissions to query logs across all log groups in the account. The wildcard is scoped to the account and region, and permissions are read-only. This is standard practice for monitoring solutions.",
+          appliesTo: [
+            {
+              regex: "/^Resource::arn:aws:logs:.*:.*:log-group:\\*:\\*$/",
+            },
+          ],
+        },
+      ]);
+    }
   }
 
   /**
