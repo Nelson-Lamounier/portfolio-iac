@@ -46,7 +46,7 @@ scrape_configs:
   # Development Environment - Node Exporter
   - job_name: 'node-exporter-development'
     static_configs:
-      - targets: ['10.1.0.70:9100']
+      - targets: ['10.1.0.35:9100']
         labels:
           service: 'node-exporter'
           environment: 'development'
@@ -56,7 +56,7 @@ scrape_configs:
   - job_name: 'nextjs-development'
     metrics_path: /api/metrics
     static_configs:
-      - targets: ['10.1.0.70:3000']
+      - targets: ['10.1.0.35:3000']
         labels:
           service: 'nextjs'
           environment: 'development'
