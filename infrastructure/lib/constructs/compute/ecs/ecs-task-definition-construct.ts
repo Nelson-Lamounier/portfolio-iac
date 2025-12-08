@@ -96,9 +96,11 @@ export class EcsTaskDefinitionConstruct extends Construct {
   private addContainer(config: ContainerConfig, envName: string): void {
     const container = this.taskDefinition.addContainer(config.name, {
       image: config.image,
-      logging: ecs.LogDrivers.awsLogs({
-        streamPrefix: config.logStreamPrefix || `ecs-${envName}`,
-      }),
+      logging: config.logStreamPrefix
+        ? ecs.LogDrivers.awsLogs({
+            streamPrefix: config.logStreamPrefix,
+          })
+        : undefined,
       memoryReservationMiB: config.memoryReservationMiB || 512,
       memoryLimitMiB: config.memoryLimitMiB,
       cpu: config.cpu,

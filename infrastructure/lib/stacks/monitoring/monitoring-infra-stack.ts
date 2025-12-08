@@ -74,8 +74,16 @@ export class MonitoringInfraStack extends cdk.Stack {
     this.cluster = new ecs.Cluster(this, "MonitoringCluster", {
       vpc,
       clusterName: `${envName}-monitoring-cluster`,
-      containerInsights: true,
     });
+
+    // Enable Container Insights for enhanced monitoring
+    const cfnCluster = this.cluster.node.defaultChild as ecs.CfnCluster;
+    cfnCluster.clusterSettings = [
+      {
+        name: "containerInsights",
+        value: "enabled",
+      },
+    ];
 
     // ========================================================================
     // EC2 AUTO SCALING GROUP
@@ -124,14 +132,43 @@ export class MonitoringInfraStack extends cdk.Stack {
     // APPLICATION LOAD BALANCER
     // ========================================================================
     this.loadBalancer = this.createLoadBalancer(vpc, envName, allowedIpRanges);
-    this.listener = this.loadBalancer.addListener("MonitoringListener", {
-      port: 80,
-      protocol: elbv2.ApplicationProtocol.HTTP,
-      defaultAction: elbv2.ListenerAction.redirect({
-        path: "/grafana",
-        permanent: true,
-      }),
-    });
+
+    // Check if certificate is available via CloudFormation exports
+    const certificateArn = this.getCertificateArn();
+
+    if (certificateArn) {
+      // HTTPS listener with certificate
+      this.listener = this.loadBalancer.addListener("MonitoringListener", {
+        port: 443,
+        protocol: elbv2.ApplicationProtocol.HTTPS,
+        certificates: [elbv2.ListenerCertificate.fromArn(certificateArn)],
+        defaultAction: elbv2.ListenerAction.redirect({
+          path: "/grafana",
+          permanent: true,
+        }),
+      });
+
+      // HTTP to HTTPS redirect
+      this.loadBalancer.addListener("HttpRedirect", {
+        port: 80,
+        protocol: elbv2.ApplicationProtocol.HTTP,
+        defaultAction: elbv2.ListenerAction.redirect({
+          protocol: "HTTPS",
+          port: "443",
+          permanent: true,
+        }),
+      });
+    } else {
+      // HTTP only (fallback if no certificate)
+      this.listener = this.loadBalancer.addListener("MonitoringListener", {
+        port: 80,
+        protocol: elbv2.ApplicationProtocol.HTTP,
+        defaultAction: elbv2.ListenerAction.redirect({
+          path: "/grafana",
+          permanent: true,
+        }),
+      });
+    }
 
     // ========================================================================
     // SECURITY GROUP CONNECTIONS
@@ -316,6 +353,20 @@ export class MonitoringInfraStack extends cdk.Stack {
     return asg;
   }
 
+  /**
+   * Get certificate ARN from CloudFormation exports
+   * Returns undefined if certificate stack not deployed
+   */
+  private getCertificateArn(): string | undefined {
+    try {
+      return cdk.Fn.importValue(
+        `${this.node.tryGetContext("envName") || "pipeline"}-certificate-arn`
+      );
+    } catch {
+      return undefined;
+    }
+  }
+
   private createLoadBalancer(
     vpc: ec2.IVpc,
     envName: string,
@@ -329,10 +380,18 @@ export class MonitoringInfraStack extends cdk.Stack {
 
     const ipRanges = allowedIpRanges || ["0.0.0.0/0"];
     ipRanges.forEach((ipRange) => {
+      // HTTP
       albSecurityGroup.addIngressRule(
         ec2.Peer.ipv4(ipRange),
         ec2.Port.tcp(80),
         `Allow HTTP access from ${ipRange}`
+      );
+
+      // HTTPS
+      albSecurityGroup.addIngressRule(
+        ec2.Peer.ipv4(ipRange),
+        ec2.Port.tcp(443),
+        `Allow HTTPS access from ${ipRange}`
       );
     });
 

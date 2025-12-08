@@ -228,8 +228,16 @@ export class MonitoringEcsStack extends cdk.Stack {
     const cluster = new ecs.Cluster(this, "MonitoringCluster", {
       vpc,
       clusterName: `${envName}-monitoring-cluster`,
-      containerInsights: true,
     });
+
+    // Enable Container Insights for enhanced monitoring
+    const cfnCluster = cluster.node.defaultChild as ecs.CfnCluster;
+    cfnCluster.clusterSettings = [
+      {
+        name: "containerInsights",
+        value: "enabled",
+      },
+    ];
 
     // Add EC2 capacity - t3.small for monitoring workload with EBS volume
     const autoScalingGroup = cluster.addCapacity("MonitoringCapacity", {

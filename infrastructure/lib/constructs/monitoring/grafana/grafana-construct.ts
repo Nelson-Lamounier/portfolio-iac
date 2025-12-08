@@ -63,7 +63,7 @@ export interface GrafanaConstructProps {
 export class GrafanaConstruct extends Construct {
   public readonly service: ecs.Ec2Service;
   public readonly taskDefinition: ecs.Ec2TaskDefinition;
-  public readonly logGroup: logs.LogGroup;
+  public readonly logGroup?: logs.LogGroup;
 
   private readonly taskDefConstruct: EcsTaskDefinitionConstruct;
   private readonly serviceConstruct: EcsServiceConstruct;
@@ -71,13 +71,23 @@ export class GrafanaConstruct extends Construct {
   constructor(scope: Construct, id: string, props: GrafanaConstructProps) {
     super(scope, id);
 
-    this.logGroup = new logs.LogGroup(this, "LogGroup", {
-      logGroupName: `/ecs/${props.envName}-grafana`,
-      retention: props.logRetention || logs.RetentionDays.ONE_WEEK,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-    });
+    const logGroupName = `/ecs/${props.envName}-grafana`;
+    // TODO: Add log group creation and logging configuration later with proper IAM permissions
+    // this.logGroup = new logs.LogGroup(this, "LogGroup", {
+    //   logGroupName: logGroupName,
+    //   retention: props.logRetention || logs.RetentionDays.ONE_WEEK,
+    //   removalPolicy: cdk.RemovalPolicy.DESTROY,
+    // });
+
     // Build environment varibles
     const environment = this.buildEnvironment(props);
+
+    // Create a minimal task role without any permissions
+    // TODO: Add permissions later as needed
+    const taskRole = new iam.Role(this, "TaskRole", {
+      assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
+      description: "Minimal task role for Grafana",
+    });
 
     // ========================================================================
     // 1. CREATE TASK DEFINITION USING EcsTaskDefinitionConstruct
@@ -89,6 +99,14 @@ export class GrafanaConstruct extends Construct {
         envName: props.envName,
         networkMode: ecs.NetworkMode.BRIDGE,
         grantEcrReadAccess: false,
+        taskRole: taskRole,
+        // Disable CloudWatch Logs in execution role for now
+        // TODO: Re-enable with proper IAM permissions
+        executionRole: new iam.Role(this, "ExecutionRole", {
+          assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
+          description:
+            "Minimal execution role without CloudWatch Logs permissions",
+        }),
 
         // Volume
         volumes: [
@@ -119,7 +137,9 @@ export class GrafanaConstruct extends Construct {
             containerPort: 3000,
             memoryReservationMiB: props.memoryReservationMiB || 256,
             cpu: props.cpu,
-            logStreamPrefix: "grafana",
+            // TODO: Add CloudWatch Logs logging driver with proper IAM permissions
+            // logStreamPrefix: "grafana",
+            // logGroup: this.logGroup,
             environment: environment,
             user: "472:0", // Run as grafana user (472) with root group (0) for write access
           },
@@ -153,72 +173,6 @@ export class GrafanaConstruct extends Construct {
     );
 
     // ========================================================================
-    // 3. ADD IAM PERMISSIONS FOR CLOUDWATCH (if enabled)
-    // ========================================================================
-    // Replace AWS managed policy with custom inline policy for CDK Nag compliance
-    if (props.enableCloudWatch !== false) {
-      // Add CloudWatch read permissions for Grafana CloudWatch datasource
-      this.taskDefinition.taskRole.addToPrincipalPolicy(
-        new iam.PolicyStatement({
-          effect: iam.Effect.ALLOW,
-          actions: [
-            "cloudwatch:DescribeAlarmsForMetric",
-            "cloudwatch:DescribeAlarmHistory",
-            "cloudwatch:DescribeAlarms",
-            "cloudwatch:ListMetrics",
-            "cloudwatch:GetMetricStatistics",
-            "cloudwatch:GetMetricData",
-            "cloudwatch:GetInsightRuleReport",
-          ],
-          resources: ["*"], // CloudWatch metrics don't support resource-level permissions
-        })
-      );
-
-      // Add CloudWatch Logs read permissions
-      this.taskDefinition.taskRole.addToPrincipalPolicy(
-        new iam.PolicyStatement({
-          effect: iam.Effect.ALLOW,
-          actions: [
-            "logs:DescribeLogGroups",
-            "logs:DescribeLogStreams",
-            "logs:GetLogGroupFields",
-            "logs:StartQuery",
-            "logs:StopQuery",
-            "logs:GetQueryResults",
-            "logs:GetLogEvents",
-            "logs:FilterLogEvents",
-          ],
-          resources: [
-            `arn:aws:logs:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:log-group:*`,
-            `arn:aws:logs:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:log-group:*:*`,
-          ],
-        })
-      );
-
-      // Add EC2 read permissions for CloudWatch datasource
-      this.taskDefinition.taskRole.addToPrincipalPolicy(
-        new iam.PolicyStatement({
-          effect: iam.Effect.ALLOW,
-          actions: [
-            "ec2:DescribeTags",
-            "ec2:DescribeInstances",
-            "ec2:DescribeRegions",
-          ],
-          resources: ["*"], // EC2 describe actions don't support resource-level permissions
-        })
-      );
-
-      // Add resource group tagging permissions
-      this.taskDefinition.taskRole.addToPrincipalPolicy(
-        new iam.PolicyStatement({
-          effect: iam.Effect.ALLOW,
-          actions: ["tag:GetResources"],
-          resources: ["*"], // Tag API doesn't support resource-level permissions
-        })
-      );
-    }
-
-    // ========================================================================
     // 4. CREATE SERVICE USING EcsServiceConstruct
     // ========================================================================
     this.serviceConstruct = new EcsServiceConstruct(this, "Service", {
@@ -248,25 +202,6 @@ export class GrafanaConstruct extends Construct {
 
     // Expose the service
     this.service = this.serviceConstruct.service;
-
-    // ========================================================================
-    // 5. CDK NAG SUPPRESSIONS
-    // ========================================================================
-    // Suppress wildcard log group resource warnings for CloudWatch Logs access
-    if (props.enableCloudWatch !== false) {
-      NagSuppressions.addResourceSuppressions(this.taskDefinition.taskRole, [
-        {
-          id: "AwsSolutions-IAM5",
-          reason:
-            "Grafana CloudWatch datasource requires permissions to query logs across all log groups in the account. The wildcard is scoped to the account and region, and permissions are read-only. This is standard practice for monitoring solutions.",
-          appliesTo: [
-            {
-              regex: "^Resource::arn:aws:logs:.*:.*:log-group:\\*:\\*$",
-            },
-          ],
-        },
-      ]);
-    }
   }
 
   /**
