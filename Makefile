@@ -452,7 +452,16 @@ deploy-vpc-peering:
 	fi
 	@echo ""
 	@echo "Deploying VPC peering stack..."
-	@cd infrastructure && ENVIRONMENT=pipeline yarn cdk deploy VpcPeeringStack-pipeline --require-approval never
+	@echo "Environment variables:"
+	@echo "  AWS_PIPELINE_ACCOUNT_ID: $(AWS_PIPELINE_ACCOUNT_ID)"
+	@echo "  AWS_ACCOUNT_ID_DEV: $(AWS_ACCOUNT_ID_DEV)"
+	@echo "  DEV_VPC_ID: $(DEV_VPC_ID)"
+	@cd infrastructure && \
+		ENVIRONMENT=pipeline \
+		AWS_PIPELINE_ACCOUNT_ID=$(AWS_PIPELINE_ACCOUNT_ID) \
+		AWS_ACCOUNT_ID_DEV=$(AWS_ACCOUNT_ID_DEV) \
+		DEV_VPC_ID=$(DEV_VPC_ID) \
+		yarn cdk deploy VpcPeeringStack-pipeline --require-approval never
 	@echo ""
 	@echo "✓ VPC peering deployed!"
 	@echo ""
