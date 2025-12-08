@@ -506,9 +506,8 @@ exports[`MonitoringEcsStack Test Suite Snapshots MonitoringEcsStack matches snap
         },
         {
           "applies_to": [
-            {
-              "regex": "/^Resource::arn:aws:logs:.*:.*:log-group:\\*$/",
-            },
+            "Resource::arn:aws:logs:*:*:log-group:*",
+            "Resource::arn:aws:logs:*:*:log-group:*:*",
           ],
           "id": "AwsSolutions-IAM5",
           "reason": "Grafana CloudWatch datasource requires permissions to query logs across all log groups in the account. The wildcard is scoped to the account and region, and permissions are read-only.",
@@ -1186,45 +1185,6 @@ exports[`MonitoringEcsStack Test Suite Snapshots MonitoringEcsStack matches snap
       "Properties": {
         "PolicyDocument": {
           "Statement": [
-            {
-              "Action": [
-                "cloudwatch:DescribeAlarmsForMetric",
-                "cloudwatch:DescribeAlarmHistory",
-                "cloudwatch:DescribeAlarms",
-                "cloudwatch:ListMetrics",
-                "cloudwatch:GetMetricStatistics",
-                "cloudwatch:GetMetricData",
-                "cloudwatch:GetInsightRuleReport",
-              ],
-              "Effect": "Allow",
-              "Resource": "*",
-            },
-            {
-              "Action": [
-                "logs:DescribeLogGroups",
-                "logs:GetLogGroupFields",
-                "logs:StartQuery",
-                "logs:StopQuery",
-                "logs:GetQueryResults",
-                "logs:GetLogEvents",
-              ],
-              "Effect": "Allow",
-              "Resource": "arn:aws:logs:eu-west-1:123456789012:log-group:*",
-            },
-            {
-              "Action": [
-                "ec2:DescribeTags",
-                "ec2:DescribeInstances",
-                "ec2:DescribeRegions",
-              ],
-              "Effect": "Allow",
-              "Resource": "*",
-            },
-            {
-              "Action": "tag:GetResources",
-              "Effect": "Allow",
-              "Resource": "*",
-            },
             {
               "Action": [
                 "ssmmessages:CreateControlChannel",
