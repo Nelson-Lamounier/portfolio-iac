@@ -81,6 +81,11 @@ export class SuppressionManager {
         reason:
           "Environment variables like NODE_ENV, PORT, and service configuration are non-sensitive values. Sensitive values (API keys, passwords, tokens) must use AWS Secrets Manager or SSM Parameter Store with SecureString. These basic config values are safe as environment variables.",
       },
+      {
+        id: "AwsSolutions-ECS7",
+        reason:
+          "Container logging is intentionally disabled for certain containers to reduce costs in development environments. For production, enable CloudWatch Logs with proper IAM permissions.",
+      },
     ];
   }
 
@@ -216,9 +221,8 @@ export class SuppressionManager {
         reason:
           "Grafana CloudWatch datasource requires permissions to query logs across all log groups in the account. The wildcard is scoped to the account and region, and permissions are read-only.",
         appliesTo: [
-          {
-            regex: "/^Resource::arn:aws:logs:.*:.*:log-group:\\*$/",
-          },
+          { regex: "/^Resource::arn:aws:logs:.*:.*:log-group:\\*$/" },
+          { regex: "/^Resource::arn:aws:logs:.*:.*:log-group:\\*:\\*$/" },
         ],
       },
       {
@@ -285,6 +289,7 @@ export class SuppressionManager {
     stackType:
       | "ComputeStack"
       | "MonitoringStack"
+      | "MonitoringEcsStack"
       | "MonitoringInfraStack"
       | "MonitoringServiceStack"
       | "NetworkingStack"
@@ -311,6 +316,7 @@ export class SuppressionManager {
         break;
 
       case "MonitoringStack":
+      case "MonitoringEcsStack":
       case "MonitoringInfraStack":
         suppressions.push(...this.getMonitoringSuppressions());
         suppressions.push(...this.getEcsEnvironmentVariableSuppressions());
