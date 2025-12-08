@@ -29,6 +29,10 @@ on:
         description: "EC2 instance ID"
         value: ${{ jobs.deploy.outputs.instance-id }}
 
+permissions:
+  id-token: write
+  contents: read
+
 env:
   AWS_REGION: eu-west-1
   NODE_VERSION: "22"
