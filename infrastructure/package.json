@@ -15,6 +15,7 @@
   },
   "devDependencies": {
     "@aws-sdk/client-dynamodb": "^3.943.0",
+    "@aws-sdk/client-ec2": "^3.943.0",
     "@aws-sdk/client-s3": "^3.943.0",
     "@aws-sdk/client-ssm": "^3.943.0",
     "@types/jest": "^29.5.11",
