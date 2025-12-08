@@ -3,18 +3,18 @@
 name: Deploy Pipeline Monitoring
 
 on:
-  push:
-    branches:
-      - feature/monitoring # Specific branch for monitoring work / TESTING
-    paths:
-      - "infrastructure/lib/stacks/monitoring/**"
-      - "infrastructure/config/**"
-      - "infrastructure/bin/app.ts"
-      - "monitoring/**"
-      - "scripts/monitoring/**"
-      - "scripts/deploy/pipeline-monitoring.sh"
-      - "Makefile"
-      - ".github/workflows/deploy-pipeline-monitoring.yml"
+  # push:
+  #   branches:
+  #     - feature/monitoring # Specific branch for monitoring work / TESTING
+  #   paths:
+  #     - "infrastructure/lib/stacks/monitoring/**"
+  #     - "infrastructure/config/**"
+  #     - "infrastructure/bin/app.ts"
+  #     - "monitoring/**"
+  #     - "scripts/monitoring/**"
+  #     - "scripts/deploy/pipeline-monitoring.sh"
+  #     - "Makefile"
+  #     - ".github/workflows/deploy-pipeline-monitoring.yml"
   workflow_dispatch:
     inputs:
       action:
