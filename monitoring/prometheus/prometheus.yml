@@ -1,67 +1,121 @@
 # @format
 
-# Prometheus Configuration
+# AWS Deployment Prometheus Configuration
 global:
-  scrape_interval: 15s # How often to scrape targets
-  evaluation_interval: 15s # How often to evaluate rules
+  scrape_interval: 15s
+  evaluation_interval: 15s
   external_labels:
-    cluster: "local-dev"
-    environment: "development"
+    environment: 'development
 
-# Alertmanager configuration (optional)
-alerting:
-  alertmanagers:
-    - static_configs:
-        - targets:
-            - alertmanager:9093
-      scheme: http
-      timeout: 10s
-      api_version: v2
-
-# Load rules once and periodically evaluate them // Test
-rule_files:
-  - "alerts.yml"
-
-# Scrape configurations
 scrape_configs:
   # Prometheus itself
-  - job_name: "prometheus"
-    honor_timestamps: true
-    scrape_interval: 15s
-    scrape_timeout: 10s
-    metrics_path: /metrics
-    scheme: http
-    body_size_limit: "0"
+  - job_name: 'prometheus'
     static_configs:
-      - targets: ["localhost:9090"]
-        labels:
-          service: "prometheus"
+      - targets: ['localhost:9090']
 
-  # Node Exporter - System metrics
-  - job_name: "node-exporter"
-    static_configs:
-      - targets: ["node-exporter:9100"]
-        labels:
-          service: "node-exporter"
-          instance: "local-machine"
+  # Node Exporter - EC2 Service Discovery (All Clusters)
+  - job_name: 'node-exporter'
+    ec2_sd_configs:
+      - region: eu-west-1
+        port: 9100
+        filters:
+          # Filter by environment tag to get all clusters in this environment
+          - name: tag:Environment
+            values: ['development']
+          - name: instance-state-name
+            values: ['running']
+    relabel_configs:
+      # Use private IP
+      - source_labels: [__meta_ec2_private_ip]
+        target_label: __address__
+        replacement: '\$1:9100'
+      # Add instance ID as label
+      - source_labels: [__meta_ec2_instance_id]
+        target_label: instance_id
+      # Add availability zone
+      - source_labels: [__meta_ec2_availability_zone]
+        target_label: availability_zone
+      # Add cluster name from Purpose tag (Monitoring vs Application)
+      - source_labels: [__meta_ec2_tag_Purpose]
+        target_label: cluster
+        replacement: '\$1'
+      # If no Purpose tag, derive from Name tag
+      - source_labels: [__meta_ec2_tag_Name]
+        regex: '.*monitoring.*'
+        target_label: cluster
+        replacement: 'Monitoring'
+      # Default to Application cluster if not monitoring
+      - source_labels: [__meta_ec2_tag_Name, cluster]
+        regex: '.*;'
+        target_label: cluster
+        replacement: 'Application'
+      # Use instance name tag as instance label
+      - source_labels: [__meta_ec2_tag_Name]
+        target_label: instance
 
-  # cAdvisor - Container metrics
-  - job_name: "cadvisor"
-    static_configs:
-      - targets: ["cadvisor:8080"]
-        labels:
-          service: "cadvisor"
-          instance: "local-docker"
 
-  # Your Next.js application (if it exposes metrics)
-  # Uncomment and adjust when you add metrics to your app
-  - job_name: "nextjs-app"
-    metrics_path: /api/metrics
-    static_configs:
-      - targets: ["host.docker.internal:3000"]
-        labels:
-          service: "nextjs"
-          environment: "development"
+# # Prometheus Configuration
+# global:
+#   scrape_interval: 15s # How often to scrape targets
+#   evaluation_interval: 15s # How often to evaluate rules
+#   external_labels:
+#     cluster: "local-dev"
+#     environment: "development"
+
+# # Alertmanager configuration (optional)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#             - alertmanager:9093
+#       scheme: http
+#       timeout: 10s
+#       api_version: v2
+
+# # Load rules once and periodically evaluate them // Test
+# rule_files:
+#   - "alerts.yml"
+
+# # Scrape configurations
+# scrape_configs:
+#   # Prometheus itself
+#   - job_name: "prometheus"
+#     honor_timestamps: true
+#     scrape_interval: 15s
+#     scrape_timeout: 10s
+#     metrics_path: /metrics
+#     scheme: http
+#     body_size_limit: "0"
+#     static_configs:
+#       - targets: ["localhost:9090"]
+#         labels:
+#           service: "prometheus"
+
+#   # Node Exporter - System metrics
+#   - job_name: "node-exporter"
+#     static_configs:
+#       - targets: ["node-exporter:9100"]
+#         labels:
+#           service: "node-exporter"
+#           instance: "local-machine"
+
+#   # cAdvisor - Container metrics
+#   - job_name: "cadvisor"
+#     static_configs:
+#       - targets: ["cadvisor:8080"]
+#         labels:
+#           service: "cadvisor"
+#           instance: "local-docker"
+
+#   # Your Next.js application (if it exposes metrics)
+#   # Uncomment and adjust when you add metrics to your app
+#   - job_name: "nextjs-app"
+#     metrics_path: /api/metrics
+#     static_configs:
+#       - targets: ["host.docker.internal:3000"]
+#         labels:
+#           service: "nextjs"
+#           environment: "development"
 
   # ========================================
   # Cross-Account Scraping (Pipeline Account)
