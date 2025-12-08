@@ -179,14 +179,17 @@ export class GrafanaConstruct extends Construct {
           effect: iam.Effect.ALLOW,
           actions: [
             "logs:DescribeLogGroups",
+            "logs:DescribeLogStreams",
             "logs:GetLogGroupFields",
             "logs:StartQuery",
             "logs:StopQuery",
             "logs:GetQueryResults",
             "logs:GetLogEvents",
+            "logs:FilterLogEvents",
           ],
           resources: [
             `arn:aws:logs:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:log-group:*`,
+            `arn:aws:logs:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:log-group:*:*`,
           ],
         })
       );
