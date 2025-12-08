@@ -494,12 +494,23 @@ jobs:
         if: vars.AWS_ACCOUNT_ID_DEV != ''
         continue-on-error: true
         run: |
+          echo "=== Debugging VPC Discovery ==="
+          echo "Current AWS Identity:"
+          aws sts get-caller-identity
+
+          echo ""
+          echo "Searching for VPCs with tag Environment=development..."
+          aws ec2 describe-vpcs --query 'Vpcs[*].[VpcId,CidrBlock,Tags]' --output table || echo "Failed to list VPCs"
+
+          echo ""
           VPC_ID=$(aws ec2 describe-vpcs \
             --filters "Name=tag:Environment,Values=development" \
             --query 'Vpcs[0].VpcId' \
-            --output text 2>/dev/null || echo "NOT_FOUND")
+            --output text 2>&1)
 
-          if [ "$VPC_ID" != "NOT_FOUND" ] && [ "$VPC_ID" != "None" ]; then
+          echo "VPC_ID result: '$VPC_ID'"
+
+          if [ "$VPC_ID" != "NOT_FOUND" ] && [ "$VPC_ID" != "None" ] && [ "$VPC_ID" != "" ] && [[ ! "$VPC_ID" =~ "error" ]]; then
             CIDR=$(aws ec2 describe-vpcs \
               --vpc-ids "$VPC_ID" \
               --query 'Vpcs[0].CidrBlock' \
@@ -508,10 +519,14 @@ jobs:
             echo "vpc_id=$VPC_ID" >> $GITHUB_OUTPUT
             echo "cidr=$CIDR" >> $GITHUB_OUTPUT
             
-            echo "Development VPC: $VPC_ID ($CIDR)"
+            echo "✅ Development VPC Found: $VPC_ID ($CIDR)"
           else
             echo "vpc_id=NOT_FOUND" >> $GITHUB_OUTPUT
-            echo "Development VPC not found"
+            echo "❌ Development VPC not found or error occurred"
+            echo "This could mean:"
+            echo "  1. No VPC exists in dev account"
+            echo "  2. VPC is not tagged with Environment=development"
+            echo "  3. IAM role lacks ec2:DescribeVpcs permission"
           fi
 
       - name: Switch Back to Pipeline Account
@@ -520,9 +535,25 @@ jobs:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Debug VPC Outputs
+        run: |
+          echo "=== VPC Peering Decision ==="
+          echo "Dev VPC ID from output: '${{ steps.dev-vpc.outputs.vpc_id }}'"
+          echo "Pipeline VPC ID: '${{ steps.pipeline-vpc.outputs.vpc_id }}'"
+
+          if [ "${{ steps.dev-vpc.outputs.vpc_id }}" != "NOT_FOUND" ] && [ "${{ steps.dev-vpc.outputs.vpc_id }}" != "" ]; then
+            echo "✅ Will deploy VPC peering"
+          else
+            echo "❌ Will skip VPC peering - dev VPC not found"
+          fi
+
       - name: Deploy VPC Peering Stack
         if: steps.dev-vpc.outputs.vpc_id != 'NOT_FOUND' && steps.dev-vpc.outputs.vpc_id != ''
-        run: make deploy-vpc-peering
+        run: |
+          echo "Deploying VPC peering between:"
+          echo "  Pipeline VPC: ${{ steps.pipeline-vpc.outputs.vpc_id }}"
+          echo "  Dev VPC: ${{ steps.dev-vpc.outputs.vpc_id }}"
+          make deploy-vpc-peering
         env:
           AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
           AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
@@ -533,12 +564,15 @@ jobs:
         run: |
           echo "⚠️ VPC Peering deployment skipped" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Reason:** Development VPC not found" >> $GITHUB_STEP_SUMMARY
+          echo "**Reason:** Development VPC not found (got: '${{ steps.dev-vpc.outputs.vpc_id }}')" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
-          echo "1. Deploy networking stack to dev account: \`ENVIRONMENT=development make deploy-networking\`" >> $GITHUB_STEP_SUMMARY
-          echo "2. Ensure VPC is tagged with \`Environment=development\`" >> $GITHUB_STEP_SUMMARY
-          echo "3. Re-run this workflow to create VPC peering" >> $GITHUB_STEP_SUMMARY
+          echo "**Troubleshooting:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Check if VPC exists in dev account (ID: ${{ vars.AWS_ACCOUNT_ID_DEV }})" >> $GITHUB_STEP_SUMMARY
+          echo "2. Verify VPC has tag: \`Environment=development\`" >> $GITHUB_STEP_SUMMARY
+          echo "3. Verify IAM role \`GitHubDeploymentRole\` has \`ec2:DescribeVpcs\` permission" >> $GITHUB_STEP_SUMMARY
+          echo "4. Deploy networking: \`ENVIRONMENT=development make deploy-networking\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Check the 'Get Development VPC Info' step logs for details" >> $GITHUB_STEP_SUMMARY
 
       - name: Verify Peering Connection
         if: steps.dev-vpc.outputs.vpc_id != 'NOT_FOUND'
