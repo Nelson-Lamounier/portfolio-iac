@@ -336,6 +336,58 @@ jobs:
           chmod +x ./scripts/monitoring/check-monitoring-instance.sh
           ENVIRONMENT=pipeline ./scripts/monitoring/check-monitoring-instance.sh
 
+      - name: Verify Peering Connection
+        if: steps.dev-vpc.outputs.vpc_id != 'NOT_FOUND'
+        run: |
+          echo "## VPC Peering Setup" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Pipeline VPC**: ${{ steps.pipeline-vpc.outputs.vpc_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dev VPC**: ${{ steps.dev-vpc.outputs.vpc_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          aws ec2 describe-vpc-peering-connections \
+            --filters "Name=status-code,Values=active,pending-acceptance" \
+            --query 'VpcPeeringConnections[*].{ID:VpcPeeringConnectionId,Status:Status.Code}' \
+            --output table
+
+          echo "VPC Peering configured" >> $GITHUB_STEP_SUMMARY
+
+      # Summary
+      - name: Generate Summary
+        if: always()
+        run: |
+          echo "## Pipeline Monitoring - ${ACTION}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Architecture:** ${ARCHITECTURE}" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### Cross-Account Info Retrieved" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dev VPC ID:** ${DEV_VPC_ID:-NOT_FOUND}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dev EC2 IP:** ${DEV_NODE_EXPORTER_IP:-NOT_FOUND}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${ACTION}" != "destroy-all" ]; then
+            # Get ALB DNS
+            ALB_DNS=$(aws cloudformation describe-stacks \
+              --stack-name MonitoringInfraStack-pipeline \
+              --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerDns`].OutputValue' \
+              --output text 2>/dev/null || \
+              aws cloudformation describe-stacks \
+              --stack-name MonitoringEcsStack-pipeline \
+              --query 'Stacks[0].Outputs[?OutputKey==`MonitoringAlbDns`].OutputValue' \
+              --output text 2>/dev/null || echo "")
+            
+            if [ -n "$ALB_DNS" ]; then
+              echo "### Access URLs" >> $GITHUB_STEP_SUMMARY
+              echo "- **Grafana**: http://${ALB_DNS}/grafana (admin/admin)" >> $GITHUB_STEP_SUMMARY
+              echo "- **Prometheus**: http://${ALB_DNS}/prometheus" >> $GITHUB_STEP_SUMMARY
+              echo "- **Targets**: http://${ALB_DNS}/prometheus/targets" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "✓ All monitoring stacks destroyed" >> $GITHUB_STEP_SUMMARY
+          fi
+
       - name: Generate Health Report
         if: always()
         run: |
