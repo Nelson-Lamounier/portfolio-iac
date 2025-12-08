@@ -5,7 +5,7 @@ name: Deploy Monitoring (Complete)
 on:
   push:
     branches:
-      - main
+      - feature/monitoring # Specific branch for monitoring work
     paths:
       - "infrastructure/lib/stacks/monitoring/**"
       - "infrastructure/config/**"
@@ -59,7 +59,7 @@ jobs:
   # ============================================================================
   deploy-infrastructure:
     name: Deploy Infrastructure
-    uses: ./.github/workflows/monitoring/deploy-infrastructure.yml
+    uses: ./.github/workflows/monitoring-deploy-infrastructure.yml
     with:
       environment: ${{ github.event.inputs.environment || 'pipeline' }}
       architecture: ${{ github.event.inputs.architecture || 'layered' }}
@@ -72,7 +72,7 @@ jobs:
     name: Health Checks
     needs: deploy-infrastructure
     if: always() && needs.deploy-infrastructure.result == 'success'
-    uses: ./.github/workflows/monitoring/post-deployment-checks.yml
+    uses: ./.github/workflows/monitoring-post-deployment-checks.yml
     with:
       environment: ${{ github.event.inputs.environment || 'pipeline' }}
       instance-id: ${{ needs.deploy-infrastructure.outputs.instance-id }}
@@ -186,7 +186,7 @@ jobs:
       always() && 
       needs.deploy-infrastructure.result == 'success' &&
       github.event.inputs.setup_vpc_peering == 'true'
-    uses: ./.github/workflows/monitoring/setup-vpc-peering.yml
+    uses: ./.github/workflows/monitoring-setup-vpc-peering.yml
     with:
       environment: ${{ github.event.inputs.environment || 'pipeline' }}
     secrets: inherit
