@@ -13,7 +13,7 @@ if ! docker info > /dev/null 2>&1; then
     exit 1
 fi
 
-# Check if docker-compose is available
+# Check if docker-compose is available // TEST
 if ! command -v docker-compose &> /dev/null; then
     echo "❌ Error: docker-compose is not installed"
     echo "Please install docker-compose and try again"
