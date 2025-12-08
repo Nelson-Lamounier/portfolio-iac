@@ -2118,15 +2118,34 @@ echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config
 #!/bin/bash
 set -e
 
+# Log all commands for debugging
+exec > >(tee -a /var/log/monitoring-setup.log)
+exec 2>&1
+
+echo '========================================='
+echo 'Monitoring Setup Started'
+echo '========================================='
+date
+
+# Stop ECS agent to prevent tasks from starting before setup completes
+echo 'Stopping ECS agent...'
+systemctl stop ecs || true
+
+# Add ec2-user to docker group for docker command access
+echo 'Adding ec2-user to docker group...'
+usermod -a -G docker ec2-user
+
 # Create data directories (local storage - not persistent)
 mkdir -p /mnt/prometheus-data
 mkdir -p /mnt/grafana-data
+mkdir -p /mnt/grafana-data/plugins
+mkdir -p /mnt/grafana-data/logs
 mkdir -p /mnt/prometheus-config
 mkdir -p /mnt/grafana-provisioning/datasources
 mkdir -p /mnt/grafana-provisioning/dashboards
 mkdir -p /mnt/grafana-dashboards
 
-# Create Prometheus configuration
+echo 'Creating Prometheus configuration...'
 cat > /mnt/prometheus-config/prometheus.yml << 'EOF'
 global:
   scrape_interval: 15s
@@ -2219,11 +2238,70 @@ providers:
       path: /var/lib/grafana/dashboards
 EOF
 
-# Set permissions
-chown -R 65534:65534 /mnt/prometheus-data /mnt/prometheus-config
-chown -R 472:472 /mnt/grafana-data /mnt/grafana-provisioning /mnt/grafana-dashboards
-chmod -R 755 /mnt/prometheus-data /mnt/prometheus-config
-chmod -R 755 /mnt/grafana-data /mnt/grafana-provisioning /mnt/grafana-dashboards",
+# Set permissions on config directories (local, not on EFS)
+chown -R 65534:65534 /mnt/prometheus-config
+chmod -R 755 /mnt/prometheus-config
+chown -R 472:0 /mnt/grafana-provisioning /mnt/grafana-dashboards
+chmod -R 755 /mnt/grafana-provisioning /mnt/grafana-dashboards
+
+# Set permissions on EFS data directories (if using EFS)
+if [ -d /mnt/efs ]; then
+  echo 'Setting permissions on EFS directories...'
+  chown -R 65534:65534 /mnt/efs/prometheus-data
+  chown -R 472:0 /mnt/efs/grafana-data
+  chmod -R 755 /mnt/efs/prometheus-data
+  chmod -R 775 /mnt/efs/grafana-data
+else
+  echo 'Setting permissions on local directories...'
+  chown -R 65534:65534 /mnt/prometheus-data
+  chown -R 472:0 /mnt/grafana-data
+  chmod -R 755 /mnt/prometheus-data
+  chmod -R 775 /mnt/grafana-data
+fi
+
+# Verify prometheus.yml was created
+if [ ! -f /mnt/prometheus-config/prometheus.yml ]; then
+  echo 'ERROR: prometheus.yml not created'
+  exit 1
+fi
+
+# Verify all required files exist
+echo '========================================='
+echo 'Verifying setup...'
+echo '========================================='
+
+echo 'Prometheus config:'
+ls -la /mnt/prometheus-config/prometheus.yml
+
+echo 'Grafana datasource:'
+ls -la /mnt/grafana-provisioning/datasources/prometheus.yml
+
+echo 'Grafana dashboards:'
+ls -la /mnt/grafana-provisioning/dashboards/dashboards.yml
+
+echo 'Data directories:'
+ls -la /mnt/ | grep -E '(prometheus|grafana)'
+
+if [ -d /mnt/efs ]; then
+  echo 'EFS directories:'
+  ls -la /mnt/efs/
+fi
+
+# Create completion marker for ECS to know setup is done
+touch /var/lib/cloud/instance/monitoring-setup-complete
+
+echo '========================================='
+echo '✓ Monitoring setup completed successfully'
+echo '========================================='
+date
+
+# Start ECS agent now that setup is complete
+echo 'Starting ECS agent...'
+systemctl start ecs
+systemctl enable ecs
+
+echo '✓ ECS agent started - ready for tasks'
+echo 'Setup log available at: /var/log/monitoring-setup.log'",
               ],
             ],
           },
