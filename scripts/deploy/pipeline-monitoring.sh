@@ -72,25 +72,67 @@ stack_exists() {
 get_dev_info() {
   echo "Checking for dev account configuration..."
   
-  # Try to get dev VPC ID from SSM
-  DEV_VPC_ID=$(aws ssm get-parameter \
-    --name "/networking/development/vpc-id" \
-    --query 'Parameter.Value' --output text 2>/dev/null || echo "")
-  
-  if [ -n "$DEV_VPC_ID" ]; then
-    export DEV_VPC_ID
-    echo "  Found dev VPC: $DEV_VPC_ID"
+  # Check if AWS_ACCOUNT_ID_DEV is set
+  if [ -z "$AWS_ACCOUNT_ID_DEV" ]; then
+    echo "  AWS_ACCOUNT_ID_DEV not set, skipping dev account query"
+    return 0
   fi
   
-  # Try to get dev EC2 private IP
+  echo "  Dev account ID: $AWS_ACCOUNT_ID_DEV"
+  
+  # Save current credentials
+  ORIGINAL_AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID"
+  ORIGINAL_AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
+  ORIGINAL_AWS_SESSION_TOKEN="$AWS_SESSION_TOKEN"
+  
+  # Assume role in dev account
+  echo "  Assuming role in dev account..."
+  CREDS=$(aws sts assume-role \
+    --role-arn "arn:aws:iam::${AWS_ACCOUNT_ID_DEV}:role/GitHubDeploymentRole" \
+    --role-session-name "PipelineMonitoringDeploy" \
+    --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+    --output text 2>/dev/null || echo "")
+  
+  if [ -z "$CREDS" ]; then
+    echo "  Warning: Could not assume role in dev account"
+    echo "  VPC peering will be skipped"
+    return 0
+  fi
+  
+  # Set temporary credentials
+  export AWS_ACCESS_KEY_ID=$(echo "$CREDS" | awk '{print $1}')
+  export AWS_SECRET_ACCESS_KEY=$(echo "$CREDS" | awk '{print $2}')
+  export AWS_SESSION_TOKEN=$(echo "$CREDS" | awk '{print $3}')
+  
+  # Query dev VPC ID
+  DEV_VPC_ID=$(aws ec2 describe-vpcs \
+    --filters "Name=tag:Environment,Values=development" \
+    --query 'Vpcs[0].VpcId' \
+    --output text 2>/dev/null || echo "")
+  
+  if [ -n "$DEV_VPC_ID" ] && [ "$DEV_VPC_ID" != "None" ]; then
+    export DEV_VPC_ID
+    echo "  ✓ Found dev VPC: $DEV_VPC_ID"
+  else
+    echo "  Warning: Dev VPC not found (no VPC tagged with Environment=development)"
+  fi
+  
+  # Try to get dev EC2 private IP from SSM
   DEV_IP=$(aws ssm get-parameter \
     --name "/compute/development/ec2-private-ip" \
     --query 'Parameter.Value' --output text 2>/dev/null || echo "")
   
   if [ -n "$DEV_IP" ]; then
     export DEV_NODE_EXPORTER_IP="$DEV_IP"
-    echo "  Found dev EC2 IP: $DEV_IP"
+    echo "  ✓ Found dev EC2 IP: $DEV_IP"
   fi
+  
+  # Restore original credentials
+  export AWS_ACCESS_KEY_ID="$ORIGINAL_AWS_ACCESS_KEY_ID"
+  export AWS_SECRET_ACCESS_KEY="$ORIGINAL_AWS_SECRET_ACCESS_KEY"
+  export AWS_SESSION_TOKEN="$ORIGINAL_AWS_SESSION_TOKEN"
+  
+  echo "  Switched back to pipeline account"
 }
 
 # Deploy networking
