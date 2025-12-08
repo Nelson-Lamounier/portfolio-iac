@@ -5,7 +5,7 @@ name: Deploy Monitoring (Complete)
 on:
   push:
     branches:
-      - main
+      - feature/monitoring
     paths:
       - "infrastructure/lib/stacks/monitoring/**"
       - "infrastructure/config/**"
