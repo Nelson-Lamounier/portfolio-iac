@@ -156,9 +156,8 @@ jobs:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # Deploy All
-      - name: Deploy All (Layered)
-        if: env.ACTION == 'deploy-all' && env.ARCHITECTURE == 'layered'
+      # Deploy Monitoring Infrastructure (Layered Architecture)
+      - name: Deploy Monitoring Infrastructure
         run: make deploy-monitoring-layered
         env:
           AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
@@ -167,62 +166,6 @@ jobs:
           AWS_ACCOUNT_ID_PROD: ${{ vars.AWS_ACCOUNT_ID_PROD }}
           DEV_VPC_ID: ${{ env.DEV_VPC_ID }}
           DEV_NODE_EXPORTER_IP: ${{ env.DEV_NODE_EXPORTER_IP }}
-
-      - name: Deploy All (Embedded)
-        if: env.ACTION == 'deploy-all' && env.ARCHITECTURE == 'embedded'
-        run: make deploy-monitoring-embedded
-        env:
-          AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
-          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
-          AWS_ACCOUNT_ID_STAGING: ${{ vars.AWS_ACCOUNT_ID_STAGING }}
-          AWS_ACCOUNT_ID_PROD: ${{ vars.AWS_ACCOUNT_ID_PROD }}
-          DEV_VPC_ID: ${{ env.DEV_VPC_ID }}
-          DEV_NODE_EXPORTER_IP: ${{ env.DEV_NODE_EXPORTER_IP }}
-
-      # Deploy Infrastructure Only
-      - name: Deploy Infrastructure Only
-        if: env.ACTION == 'deploy-infra-only'
-        run: make deploy-monitoring-infra
-        env:
-          AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
-          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
-          AWS_ACCOUNT_ID_STAGING: ${{ vars.AWS_ACCOUNT_ID_STAGING }}
-          AWS_ACCOUNT_ID_PROD: ${{ vars.AWS_ACCOUNT_ID_PROD }}
-          DEV_VPC_ID: ${{ env.DEV_VPC_ID }}
-
-      # Deploy VPC Peering
-      - name: Deploy VPC Peering
-        if: env.ACTION == 'deploy-vpc-peering'
-        run: |
-          cd infrastructure
-          ENVIRONMENT=pipeline yarn cdk deploy VpcPeeringStack-pipeline --require-approval never
-        env:
-          AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
-          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
-          AWS_ACCOUNT_ID_STAGING: ${{ vars.AWS_ACCOUNT_ID_STAGING }}
-          AWS_ACCOUNT_ID_PROD: ${{ vars.AWS_ACCOUNT_ID_PROD }}
-          DEV_VPC_ID: ${{ env.DEV_VPC_ID }}
-
-      # Deploy Services Only
-      - name: Deploy Services Only
-        if: env.ACTION == 'deploy-services-only'
-        run: make deploy-monitoring-services
-        env:
-          AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
-
-      # Sync Config Only
-      - name: Sync Config Only
-        if: env.ACTION == 'sync-config-only'
-        run: make sync-monitoring-config
-        env:
-          AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
-
-      # Destroy All
-      - name: Destroy All
-        if: env.ACTION == 'destroy-all'
-        run: make destroy-monitoring-layered
-        env:
-          AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
 
       # Check Status
       - name: Check Monitoring Status
@@ -578,12 +521,24 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Deploy VPC Peering Stack
-        if: steps.dev-vpc.outputs.vpc_id != 'NOT_FOUND'
+        if: steps.dev-vpc.outputs.vpc_id != 'NOT_FOUND' && steps.dev-vpc.outputs.vpc_id != ''
         run: make deploy-vpc-peering
         env:
           AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
           AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
           DEV_VPC_ID: ${{ steps.dev-vpc.outputs.vpc_id }}
+
+      - name: VPC Peering Skipped
+        if: steps.dev-vpc.outputs.vpc_id == 'NOT_FOUND' || steps.dev-vpc.outputs.vpc_id == ''
+        run: |
+          echo "⚠️ VPC Peering deployment skipped" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Reason:** Development VPC not found" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Deploy networking stack to dev account: \`ENVIRONMENT=development make deploy-networking\`" >> $GITHUB_STEP_SUMMARY
+          echo "2. Ensure VPC is tagged with \`Environment=development\`" >> $GITHUB_STEP_SUMMARY
+          echo "3. Re-run this workflow to create VPC peering" >> $GITHUB_STEP_SUMMARY
 
       - name: Verify Peering Connection
         if: steps.dev-vpc.outputs.vpc_id != 'NOT_FOUND'
