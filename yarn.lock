@@ -1883,9 +1883,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@next/mdx@npm:^15":
-  version: 15.5.6
-  resolution: "@next/mdx@npm:15.5.6"
+"@next/mdx@npm:^16":
+  version: 16.0.7
+  resolution: "@next/mdx@npm:16.0.7"
   dependencies:
     source-map: "npm:^0.7.0"
   peerDependencies:
@@ -1896,7 +1896,7 @@ __metadata:
       optional: true
     "@mdx-js/react":
       optional: true
-  checksum: 15be26994da89f66a086881055fcdce47509b1a6b579a8f97b16f0dd640f78a5ce723ac1b54ebf16310cb81becdd7abe83a1c051c84270bd9fbd9eeeaa9fbff4
+  checksum: 17c2012c6748b6138a51285fa3b3daf8ce18490fc59d0f2158a513b21445f81d5375341b0df79194fd6386cd2dd2c49f231bb9136965e64a1fa0f2fbc087c353
   languageName: node
   linkType: hard
 
@@ -5216,7 +5216,7 @@ __metadata:
     "@mapbox/rehype-prism": "npm:^0.9.0"
     "@mdx-js/loader": "npm:^3.1.0"
     "@mdx-js/react": "npm:^3.1.0"
-    "@next/mdx": "npm:^15"
+    "@next/mdx": "npm:^16"
     "@tailwindcss/postcss": "npm:^4.1.15"
     "@tailwindcss/typography": "npm:^0.5.16"
     "@testing-library/dom": "npm:^10.4.1"
