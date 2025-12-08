@@ -1,139 +1,67 @@
 # @format
+# Prometheus Configuration for Pipeline Monitoring
+# All services run on the same EC2 instance, use localhost
 
-# AWS Deployment Prometheus Configuration
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
   external_labels:
-    environment: 'development
+    environment: 'pipeline'
+    cluster: 'pipeline-monitoring'
 
+# Load alert rules
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+# Scrape configurations
 scrape_configs:
   # Prometheus itself
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
 
-  # Node Exporter - EC2 Service Discovery (All Clusters)
+  # Node Exporter - System metrics (EC2 instance metrics)
   - job_name: 'node-exporter'
-    ec2_sd_configs:
-      - region: eu-west-1
-        port: 9100
-        filters:
-          # Filter by environment tag to get all clusters in this environment
-          - name: tag:Environment
-            values: ['development']
-          - name: instance-state-name
-            values: ['running']
-    relabel_configs:
-      # Use private IP
-      - source_labels: [__meta_ec2_private_ip]
-        target_label: __address__
-        replacement: '\$1:9100'
-      # Add instance ID as label
-      - source_labels: [__meta_ec2_instance_id]
-        target_label: instance_id
-      # Add availability zone
-      - source_labels: [__meta_ec2_availability_zone]
-        target_label: availability_zone
-      # Add cluster name from Purpose tag (Monitoring vs Application)
-      - source_labels: [__meta_ec2_tag_Purpose]
-        target_label: cluster
-        replacement: '\$1'
-      # If no Purpose tag, derive from Name tag
-      - source_labels: [__meta_ec2_tag_Name]
-        regex: '.*monitoring.*'
-        target_label: cluster
-        replacement: 'Monitoring'
-      # Default to Application cluster if not monitoring
-      - source_labels: [__meta_ec2_tag_Name, cluster]
-        regex: '.*;'
-        target_label: cluster
-        replacement: 'Application'
-      # Use instance name tag as instance label
-      - source_labels: [__meta_ec2_tag_Name]
-        target_label: instance
+    static_configs:
+      - targets: ['localhost:9100']
+        labels:
+          service: 'node-exporter'
+          instance: 'pipeline-monitoring'
 
-
-# # Prometheus Configuration
-# global:
-#   scrape_interval: 15s # How often to scrape targets
-#   evaluation_interval: 15s # How often to evaluate rules
-#   external_labels:
-#     cluster: "local-dev"
-#     environment: "development"
-
-# # Alertmanager configuration (optional)
-# alerting:
-#   alertmanagers:
-#     - static_configs:
-#         - targets:
-#             - alertmanager:9093
-#       scheme: http
-#       timeout: 10s
-#       api_version: v2
-
-# # Load rules once and periodically evaluate them // Test
-# rule_files:
-#   - "alerts.yml"
-
-# # Scrape configurations
-# scrape_configs:
-#   # Prometheus itself
-#   - job_name: "prometheus"
-#     honor_timestamps: true
-#     scrape_interval: 15s
-#     scrape_timeout: 10s
-#     metrics_path: /metrics
-#     scheme: http
-#     body_size_limit: "0"
-#     static_configs:
-#       - targets: ["localhost:9090"]
-#         labels:
-#           service: "prometheus"
-
-#   # Node Exporter - System metrics
-#   - job_name: "node-exporter"
-#     static_configs:
-#       - targets: ["node-exporter:9100"]
-#         labels:
-#           service: "node-exporter"
-#           instance: "local-machine"
-
-#   # cAdvisor - Container metrics
-#   - job_name: "cadvisor"
-#     static_configs:
-#       - targets: ["cadvisor:8080"]
-#         labels:
-#           service: "cadvisor"
-#           instance: "local-docker"
-
-#   # Your Next.js application (if it exposes metrics)
-#   # Uncomment and adjust when you add metrics to your app
-#   - job_name: "nextjs-app"
-#     metrics_path: /api/metrics
-#     static_configs:
-#       - targets: ["host.docker.internal:3000"]
-#         labels:
-#           service: "nextjs"
-#           environment: "development"
-
-  # ========================================
-  # Cross-Account Scraping (Pipeline Account)
-  # ========================================
-  # These targets are scraped via VPC peering from the pipeline account
-  # Update the IP addresses after deploying each environment
-
-  # Development Environment - Node Exporter
-  # IP will be updated by scripts/monitoring/setup-cross-account-scraping.sh
-  # - job_name: 'node-exporter-development'
+  # Grafana metrics (uses dynamic port mapping)
+  # Note: Port changes on each deployment, check with: docker ps | grep grafana
+  # - job_name: 'grafana'
   #   static_configs:
-  #     - targets: ['10.1.x.x:9100']  # Update with dev instance IP
+  #     - targets: ['localhost:32775']  # Update port after each deployment
   #       labels:
-  #         service: 'node-exporter'
-  #         environment: 'development'
-  #         account: 'development'
+  #         service: 'grafana'
+  #   metrics_path: /metrics
 
-  # Staging Environment - Node Exporter (future)
+  # ========================================
+  # Cross-Account Scraping via VPC Peering
+  # ========================================
+  # Development Environment - Node Exporter
+  - job_name: 'node-exporter-development'
+    static_configs:
+      - targets: ['10.1.0.70:9100']
+        labels:
+          service: 'node-exporter'
+          environment: 'development'
+          account: 'development'
+
+  # Development Environment - Next.js Application
+  - job_name: 'nextjs-development'
+    metrics_path: /api/metrics
+    static_configs:
+      - targets: ['10.1.0.70:3000']
+        labels:
+          service: 'nextjs'
+          environment: 'development'
+          account: 'development'
+
+  # Staging Environment (future)
   # - job_name: 'node-exporter-staging'
   #   static_configs:
   #     - targets: ['10.2.x.x:9100']
@@ -142,11 +70,29 @@ scrape_configs:
   #         environment: 'staging'
   #         account: 'staging'
 
-  # Production Environment - Node Exporter (future)
+  # - job_name: 'nextjs-staging'
+  #   metrics_path: /api/metrics
+  #   static_configs:
+  #     - targets: ['10.2.x.x:3000']
+  #       labels:
+  #         service: 'nextjs'
+  #         environment: 'staging'
+  #         account: 'staging'
+
+  # Production Environment (future)
   # - job_name: 'node-exporter-production'
   #   static_configs:
   #     - targets: ['10.3.x.x:9100']
   #       labels:
   #         service: 'node-exporter'
+  #         environment: 'production'
+  #         account: 'production'
+
+  # - job_name: 'nextjs-production'
+  #   metrics_path: /api/metrics
+  #   static_configs:
+  #     - targets: ['10.3.x.x:3000']
+  #       labels:
+  #         service: 'nextjs'
   #         environment: 'production'
   #         account: 'production'
