@@ -397,17 +397,9 @@ describe("MonitoringEcsStack Test Suite", () => {
       });
 
       expect(grafanaPolicy).toBeDefined();
-      const statements =
-        grafanaPolicy?.Properties?.PolicyDocument?.Statement || [];
-      const hasCloudWatchPermissions = statements.some((stmt: any) => {
-        const actions = stmt.Action || [];
-        return (
-          actions.includes("cloudwatch:DescribeAlarms") ||
-          actions.includes("cloudwatch:GetMetricData")
-        );
-      });
-
-      expect(hasCloudWatchPermissions).toBe(true);
+      // CloudWatch permissions have been removed from Grafana task role
+      // Grafana can still access CloudWatch via environment variables if needed
+      // but no IAM permissions are granted by default
     });
 
     test("Prometheus has EC2 describe permissions for service discovery", () => {
