@@ -18,7 +18,7 @@ alerting:
       timeout: 10s
       api_version: v2
 
-# Load rules once and periodically evaluate them
+# Load rules once and periodically evaluate them // Test
 rule_files:
   - "alerts.yml"
 
