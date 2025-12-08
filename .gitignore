@@ -77,5 +77,5 @@ monitoring/grafana-data/
 
 generated-diagrams/*
 
-# Helper scripts (local development)
-scripts/*
+# # Helper scripts (local development)
+# scripts/*
