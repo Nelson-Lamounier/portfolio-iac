@@ -196,42 +196,6 @@ jobs:
         if: env.ACTION != 'destroy-all'
         run: make check-monitoring-layered
 
-      # Summary
-      - name: Generate Summary
-        if: always()
-        run: |
-          echo "## Pipeline Monitoring - ${ACTION}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Architecture:** ${ARCHITECTURE}" >> $GITHUB_STEP_SUMMARY
-          echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          echo "### Cross-Account Info Retrieved" >> $GITHUB_STEP_SUMMARY
-          echo "- **Dev VPC ID:** ${DEV_VPC_ID:-NOT_FOUND}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Dev EC2 IP:** ${DEV_NODE_EXPORTER_IP:-NOT_FOUND}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          if [ "${ACTION}" != "destroy-all" ]; then
-            # Get ALB DNS
-            ALB_DNS=$(aws cloudformation describe-stacks \
-              --stack-name MonitoringInfraStack-pipeline \
-              --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerDns`].OutputValue' \
-              --output text 2>/dev/null || \
-              aws cloudformation describe-stacks \
-              --stack-name MonitoringEcsStack-pipeline \
-              --query 'Stacks[0].Outputs[?OutputKey==`MonitoringAlbDns`].OutputValue' \
-              --output text 2>/dev/null || echo "")
-            
-            if [ -n "$ALB_DNS" ]; then
-              echo "### Access URLs" >> $GITHUB_STEP_SUMMARY
-              echo "- **Grafana**: http://${ALB_DNS}/grafana (admin/admin)" >> $GITHUB_STEP_SUMMARY
-              echo "- **Prometheus**: http://${ALB_DNS}/prometheus" >> $GITHUB_STEP_SUMMARY
-              echo "- **Targets**: http://${ALB_DNS}/prometheus/targets" >> $GITHUB_STEP_SUMMARY
-            fi
-          else
-            echo "✓ All monitoring stacks destroyed" >> $GITHUB_STEP_SUMMARY
-          fi
-
   # ============================================================================
   # POST-DEPLOYMENT: Health Checks
   # ============================================================================
