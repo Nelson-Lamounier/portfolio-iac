@@ -47,14 +47,68 @@ jobs:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Sync Monitoring Configuration
+      - name: Get Config Bucket Name
+        id: get-bucket
         run: |
           ENVIRONMENT="${{ github.event.inputs.environment || 'pipeline' }}"
 
-          echo "Syncing monitoring config to $ENVIRONMENT environment..."
+          # Get bucket name from CloudFormation exports
+          BUCKET_NAME=$(aws cloudformation list-exports \
+            --query "Exports[?Name=='${ENVIRONMENT}-monitoring-config-bucket'].Value" \
+            --output text)
 
-          chmod +x ./scripts/monitoring/sync-config.sh
-          ./scripts/monitoring/sync-config.sh --env "$ENVIRONMENT"
+          if [ -z "$BUCKET_NAME" ] || [ "$BUCKET_NAME" == "None" ]; then
+            echo "Error: Config bucket not found for environment: $ENVIRONMENT"
+            echo "Make sure MonitoringInfraStack is deployed with config bucket"
+            exit 1
+          fi
+
+          echo "bucket_name=$BUCKET_NAME" >> $GITHUB_OUTPUT
+          echo "Found config bucket: $BUCKET_NAME"
+
+      - name: Upload Configs to S3
+        run: |
+          BUCKET="${{ steps.get-bucket.outputs.bucket_name }}"
+
+          echo "Uploading monitoring configs to S3..."
+
+          # Upload Prometheus configs
+          aws s3 cp monitoring/prometheus/prometheus.yml "s3://${BUCKET}/prometheus/prometheus.yml"
+          aws s3 cp monitoring/prometheus/alerts.yml "s3://${BUCKET}/prometheus/alerts.yml"
+
+          # Upload Grafana provisioning configs
+          aws s3 sync monitoring/grafana/provisioning/ "s3://${BUCKET}/grafana/provisioning/" \
+            --exclude "*" --include "*.yml"
+
+          # Upload Grafana dashboards
+          aws s3 sync monitoring/grafana/dashboards/ "s3://${BUCKET}/grafana/dashboards/" \
+            --exclude "*" --include "*.json"
+
+          echo "✓ All configs uploaded to S3"
+
+      - name: Trigger Lambda to Sync to EFS
+        run: |
+          ENVIRONMENT="${{ github.event.inputs.environment || 'pipeline' }}"
+
+          # Get Lambda function name
+          FUNCTION_NAME=$(aws lambda list-functions \
+            --query "Functions[?starts_with(FunctionName, '${ENVIRONMENT}')  && contains(FunctionName, 'PrometheusAutoUpdate')].FunctionName" \
+            --output text | head -n1)
+
+          if [ -z "$FUNCTION_NAME" ]; then
+            echo "Warning: Lambda function not found, falling back to direct sync"
+            chmod +x ./scripts/monitoring/sync-config.sh
+            ./scripts/monitoring/sync-config.sh --env "$ENVIRONMENT"
+          else
+            echo "Invoking Lambda: $FUNCTION_NAME"
+            aws lambda invoke \
+              --function-name "$FUNCTION_NAME" \
+              --payload '{"source":"manual"}' \
+              /tmp/lambda-response.json
+            
+            cat /tmp/lambda-response.json
+            echo "✓ Lambda invoked successfully"
+          fi
 
       - name: Generate Summary
         if: always()
