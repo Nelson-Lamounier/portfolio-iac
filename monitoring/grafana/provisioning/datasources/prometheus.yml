@@ -1,20 +1,10 @@
 # @format
-
 apiVersion: 1
-
-# This file is synced to EFS automatically via GitHub Actions
-# Edit this file and commit to update the datasource configuration
-
 datasources:
-  - name: Prometheus
-    type: prometheus
-    uid: prometheus
-    access: proxy
-    # URL is dynamically set by init-config.sh based on host IP
-    # This is a fallback/template
-    url: http://localhost:9090/prometheus
-    isDefault: true
-    editable: true
-    jsonData:
-      timeInterval: "15s"
-      httpMethod: POST
+- name: Prometheus
+  type: prometheus
+  uid: prometheus
+  access: proxy
+  url: http://HOST_IP:9090/prometheus
+  isDefault: true
+  editable: true
