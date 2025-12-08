@@ -41,11 +41,25 @@ export class MonitoringInfraStack extends cdk.Stack {
   public readonly taskLogGroup: logs.LogGroup;
   public readonly eventLogGroup: logs.LogGroup;
   public readonly efsAccessPoint: efs.AccessPoint;
+  public readonly configBucket: MonitoringConfigBucketConstruct;
 
   constructor(scope: Construct, id: string, props: MonitoringInfraStackProps) {
     super(scope, id, props);
 
     const { vpc, envName, allowedIpRanges } = props;
+
+    // ========================================================================
+    // S3 BUCKET (Configuration Storage)
+    // ========================================================================
+    // Stores monitoring configuration files with versioning for rollback
+    this.configBucket = new MonitoringConfigBucketConstruct(
+      this,
+      "ConfigBucket",
+      {
+        envName,
+        enableVersioning: true,
+      }
+    );
 
     // ========================================================================
     // EFS FILE SYSTEM (Persistent Data + Config Storage)

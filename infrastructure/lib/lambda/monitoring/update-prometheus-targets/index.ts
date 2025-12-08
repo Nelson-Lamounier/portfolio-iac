@@ -3,48 +3,70 @@
 import {
   EC2Client,
   DescribeInstancesCommand,
-  DescribeInstancesCommandInput,
-} from '@aws-sdk/client-ec2';
+  type DescribeInstancesCommandInput,
+} from "@aws-sdk/client-ec2";
 import {
   SSMClient,
   SendCommandCommand,
   GetCommandInvocationCommand,
-} from '@aws-sdk/client-ssm';
+} from "@aws-sdk/client-ssm";
+import {
+  S3Client,
+  GetObjectCommand,
+  ListObjectsV2Command,
+} from "@aws-sdk/client-s3";
 
 const ec2Client = new EC2Client({ region: process.env.AWS_REGION });
 const ssmClient = new SSMClient({ region: process.env.AWS_REGION });
+const s3Client = new S3Client({ region: process.env.AWS_REGION });
 
 interface EnvironmentTarget {
   environment: string;
-  accountId: string;
+  accountId: string | undefined;
   ip?: string;
 }
 
 /**
- * Lambda handler triggered by EC2 state change events
- * Automatically updates Prometheus targets when instances start/stop
+ * Lambda handler triggered by:
+ * 1. S3 events (config file updates)
+ * 2. EC2 state change events (instance start/stop)
+ *
+ * Syncs monitoring configuration from S3 to EFS
  */
 export const handler = async (event: any): Promise<void> => {
-  console.log('Event:', JSON.stringify(event, null, 2));
+  console.log("Event:", JSON.stringify(event, null, 2));
 
   const pipelineInstanceId = process.env.PIPELINE_INSTANCE_ID;
+  const configBucket = process.env.CONFIG_BUCKET;
+
   if (!pipelineInstanceId) {
-    throw new Error('PIPELINE_INSTANCE_ID environment variable not set');
+    throw new Error("PIPELINE_INSTANCE_ID environment variable not set");
   }
 
-  // Get current IPs for all environments
-  const targets = await getEnvironmentTargets();
+  if (!configBucket) {
+    throw new Error("CONFIG_BUCKET environment variable not set");
+  }
 
-  // Generate Prometheus config
-  const config = generatePrometheusConfig(targets);
+  // Determine event source
+  const isS3Event = event.Records?.[0]?.eventSource === "aws:s3";
+  const isEC2Event = event.source === "aws.ec2";
 
-  // Upload config to EFS via SSM
-  await uploadConfigToEFS(pipelineInstanceId, config);
+  if (isS3Event) {
+    console.log("S3 event detected - syncing specific file");
+    const s3Key = event.Records[0].s3.object.key;
+    await syncFileFromS3ToEFS(configBucket, s3Key, pipelineInstanceId);
+  } else if (isEC2Event) {
+    console.log("EC2 event detected - updating Prometheus targets");
+    await updatePrometheusTargets(configBucket, pipelineInstanceId);
+  } else {
+    console.log("Manual invocation - syncing all configs");
+    await syncAllConfigsFromS3ToEFS(configBucket, pipelineInstanceId);
+  }
 
   // Reload Prometheus
   await reloadPrometheus(pipelineInstanceId);
 
-  console.log('✓ Prometheus targets updated successfully');
+  console.log("✓ Configuration sync completed successfully");
 };
 
 /**
@@ -228,15 +250,111 @@ async function waitForCommand(
 
     const response = await ssmClient.send(command);
 
-    if (response.Status === 'Success') {
-      console.log('✓ SSM command completed');
+    if (response.Status === "Success") {
+      console.log("✓ SSM command completed");
       return;
     }
 
-    if (response.Status === 'Failed') {
+    if (response.Status === "Failed") {
       throw new Error(`SSM command failed: ${response.StandardErrorContent}`);
     }
   }
 
-  throw new Error('SSM command timed out');
+  throw new Error("SSM command timed out");
+}
+
+/**
+ * Sync a specific file from S3 to EFS
+ */
+async function syncFileFromS3ToEFS(
+  bucket: string,
+  key: string,
+  instanceId: string
+): Promise<void> {
+  console.log(`Syncing ${key} from S3 to EFS...`);
+
+  // Download file from S3
+  const getCommand = new GetObjectCommand({ Bucket: bucket, Key: key });
+  const response = await s3Client.send(getCommand);
+  const content = await response.Body?.transformToString();
+
+  if (!content) {
+    throw new Error(`Failed to read ${key} from S3`);
+  }
+
+  // Determine target path on EFS
+  const efsPath = `/mnt/efs/config/${key}`;
+
+  // Upload to EFS via SSM
+  const uploadCommand = new SendCommandCommand({
+    InstanceIds: [instanceId],
+    DocumentName: "AWS-RunShellScript",
+    Parameters: {
+      commands: [
+        `mkdir -p $(dirname ${efsPath})`,
+        `cat > /tmp/config_file <<'EOFCONFIG'\n${content}\nEOFCONFIG`,
+        `sudo mv /tmp/config_file ${efsPath}`,
+        `sudo chown 65534:65534 ${efsPath}`,
+        `sudo chmod 644 ${efsPath}`,
+        `echo 'File synced: ${key}'`,
+      ],
+    },
+  });
+
+  const uploadResponse = await ssmClient.send(uploadCommand);
+  const commandId = uploadResponse.Command?.CommandId;
+
+  if (!commandId) {
+    throw new Error("Failed to send SSM command");
+  }
+
+  await waitForCommand(commandId, instanceId);
+  console.log(`✓ ${key} synced to EFS`);
+}
+
+/**
+ * Sync all configuration files from S3 to EFS
+ */
+async function syncAllConfigsFromS3ToEFS(
+  bucket: string,
+  instanceId: string
+): Promise<void> {
+  console.log("Syncing all configs from S3 to EFS...");
+
+  // List all objects in the bucket
+  const listCommand = new ListObjectsV2Command({ Bucket: bucket });
+  const listResponse = await s3Client.send(listCommand);
+
+  const files = listResponse.Contents || [];
+  console.log(`Found ${files.length} files to sync`);
+
+  // Sync each file
+  for (const file of files) {
+    if (file.Key) {
+      await syncFileFromS3ToEFS(bucket, file.Key, instanceId);
+    }
+  }
+
+  console.log("✓ All configs synced");
+}
+
+/**
+ * Update Prometheus targets based on EC2 state changes
+ */
+async function updatePrometheusTargets(
+  bucket: string,
+  instanceId: string
+): Promise<void> {
+  console.log("Updating Prometheus targets...");
+
+  // Get current IPs for all environments
+  const targets = await getEnvironmentTargets();
+
+  // Generate updated Prometheus config
+  const config = generatePrometheusConfig(targets);
+
+  // Upload directly to EFS (bypass S3 for dynamic targets)
+  await uploadConfigToEFS(instanceId, config);
+
+  console.log("✓ Prometheus targets updated");
 }

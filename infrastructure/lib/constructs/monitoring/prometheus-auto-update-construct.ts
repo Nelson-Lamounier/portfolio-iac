@@ -17,6 +17,9 @@ export interface PrometheusAutoUpdateConstructProps {
   /** Environment name */
   envName: string;
 
+  /** S3 bucket name for monitoring configs */
+  configBucketName: string;
+
   /** Development account ID */
   devAccountId?: string;
 
@@ -44,6 +47,7 @@ export interface PrometheusAutoUpdateConstructProps {
  * ```typescript
  * new PrometheusAutoUpdateConstruct(this, 'PrometheusAutoUpdate', {
  *   pipelineInstanceId: monitoringStack.instanceId,
+ *   configBucketName: configBucket.bucket.bucketName,
  *   envName: 'pipeline',
  *   devAccountId: '123456789012',
  *   region: 'eu-west-1',
@@ -62,27 +66,28 @@ export class PrometheusAutoUpdateConstruct extends Construct {
     super(scope, id);
 
     // Create Lambda function
-    this.function = new nodejs.NodejsFunction(this, 'Function', {
+    this.function = new nodejs.NodejsFunction(this, "Function", {
       entry: path.join(
         __dirname,
-        '../../lambda/monitoring/update-prometheus-targets/index.ts'
+        "../../lambda/monitoring/update-prometheus-targets/index.ts"
       ),
-      handler: 'handler',
+      handler: "handler",
       runtime: lambda.Runtime.NODEJS_22_X,
       timeout: cdk.Duration.minutes(2),
       memorySize: 256,
       environment: {
         PIPELINE_INSTANCE_ID: props.pipelineInstanceId,
-        DEV_ACCOUNT_ID: props.devAccountId || '',
-        STAGING_ACCOUNT_ID: props.stagingAccountId || '',
-        PROD_ACCOUNT_ID: props.prodAccountId || '',
+        CONFIG_BUCKET: props.configBucketName,
+        DEV_ACCOUNT_ID: props.devAccountId || "",
+        STAGING_ACCOUNT_ID: props.stagingAccountId || "",
+        PROD_ACCOUNT_ID: props.prodAccountId || "",
         AWS_REGION: props.region,
       },
       logRetention: logs.RetentionDays.ONE_WEEK,
       bundling: {
         minify: true,
         sourceMap: true,
-        externalModules: ['@aws-sdk/*'],
+        externalModules: ["@aws-sdk/*"],
       },
     });
 
@@ -112,14 +117,31 @@ export class PrometheusAutoUpdateConstruct extends Construct {
       })
     );
 
+    // Grant permissions to read from S3 config bucket
+    this.function.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          "s3:GetObject",
+          "s3:GetObjectVersion",
+          "s3:ListBucket",
+          "s3:ListBucketVersions",
+        ],
+        resources: [
+          `arn:aws:s3:::${props.configBucketName}`,
+          `arn:aws:s3:::${props.configBucketName}/*`,
+        ],
+      })
+    );
+
     // Create EventBridge rule for EC2 state changes
-    this.rule = new events.Rule(this, 'EC2StateChangeRule', {
-      description: 'Trigger Prometheus target update on EC2 state changes',
+    this.rule = new events.Rule(this, "EC2StateChangeRule", {
+      description: "Trigger Prometheus target update on EC2 state changes",
       eventPattern: {
-        source: ['aws.ec2'],
-        detailType: ['EC2 Instance State-change Notification'],
+        source: ["aws.ec2"],
+        detailType: ["EC2 Instance State-change Notification"],
         detail: {
-          state: ['running', 'stopped', 'terminated'],
+          state: ["running", "stopped", "terminated"],
         },
       },
     });
