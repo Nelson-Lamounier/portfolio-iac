@@ -3,18 +3,18 @@
 name: Deploy Pipeline Monitoring
 
 on:
-  # push:
-  #   branches:
-  #     - feature/monitoring # Specific branch for monitoring work
-  #   paths:
-  #     - "infrastructure/lib/stacks/monitoring/**"
-  #     - "infrastructure/config/**"
-  #     - "infrastructure/bin/app.ts"
-  #     - "monitoring/**"
-  #     - "scripts/monitoring/**"
-  #     - "scripts/deploy/pipeline-monitoring.sh"
-  #     - "Makefile"
-  #     - ".github/workflows/deploy-pipeline-monitoring.yml"
+  push:
+    branches:
+      - feature/monitoring # Specific branch for monitoring work
+    paths:
+      - "infrastructure/lib/stacks/monitoring/**"
+      - "infrastructure/config/**"
+      - "infrastructure/bin/app.ts"
+      - "monitoring/**"
+      - "scripts/monitoring/**"
+      - "scripts/deploy/pipeline-monitoring.sh"
+      - "Makefile"
+      - ".github/workflows/deploy-pipeline-monitoring.yml"
   workflow_dispatch:
     inputs:
       action:
@@ -37,6 +37,16 @@ on:
         options:
           - layered
           - embedded
+      run_health_checks:
+        description: "Run post-deployment health checks"
+        required: false
+        type: boolean
+        default: true
+      fix_grafana:
+        description: "Automatically fix Grafana datasource"
+        required: false
+        type: boolean
+        default: true
 
 env:
   NODE_VERSION: "22"
@@ -254,3 +264,339 @@ jobs:
           else
             echo "✓ All monitoring stacks destroyed" >> $GITHUB_STEP_SUMMARY
           fi
+
+  # ============================================================================
+  # POST-DEPLOYMENT: Health Checks
+  # ============================================================================
+  health-checks:
+    name: Health Checks
+    needs: deploy
+    if: |
+      always() && 
+      needs.deploy.result == 'success' &&
+      github.event.inputs.run_health_checks == 'true' &&
+      github.event.inputs.action != 'destroy-all'
+    runs-on: ubuntu-latest
+    environment: pipeline
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get Stack Outputs
+        id: outputs
+        run: |
+          # Try both stack names (layered vs embedded)
+          ALB_DNS=$(aws cloudformation describe-stacks \
+            --stack-name MonitoringInfraStack-pipeline \
+            --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerDns`].OutputValue' \
+            --output text 2>/dev/null || \
+            aws cloudformation describe-stacks \
+            --stack-name MonitoringEcsStack-pipeline \
+            --query 'Stacks[0].Outputs[?OutputKey==`MonitoringAlbDns`].OutputValue' \
+            --output text 2>/dev/null || echo "")
+          echo "alb_dns=$ALB_DNS" >> $GITHUB_OUTPUT
+
+          INSTANCE_ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Environment,Values=pipeline" \
+                      "Name=tag:Purpose,Values=Monitoring" \
+                      "Name=instance-state-name,Values=running" \
+            --query 'Reservations[0].Instances[0].InstanceId' \
+            --output text 2>/dev/null || echo "")
+          echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
+
+          echo "ALB DNS: $ALB_DNS"
+          echo "Instance ID: $INSTANCE_ID"
+
+      - name: Check Instance Status
+        if: steps.outputs.outputs.instance_id != ''
+        run: |
+          echo "Checking instance ${{ steps.outputs.outputs.instance_id }}..."
+
+          STATUS=$(aws ec2 describe-instances \
+            --instance-ids ${{ steps.outputs.outputs.instance_id }} \
+            --query 'Reservations[0].Instances[0].State.Name' \
+            --output text)
+
+          echo "Instance status: $STATUS"
+
+          if [ "$STATUS" != "running" ]; then
+            echo "::warning::Instance is not running"
+          else
+            echo "✅ Instance is running"
+          fi
+
+      - name: Check ECS Services
+        run: |
+          CLUSTER="pipeline-monitoring-cluster"
+
+          echo "Checking ECS services in $CLUSTER..."
+
+          for SERVICE in pipeline-prometheus pipeline-grafana; do
+            RUNNING=$(aws ecs describe-services \
+              --cluster "$CLUSTER" \
+              --services "$SERVICE" \
+              --query 'services[0].runningCount' \
+              --output text 2>/dev/null || echo "0")
+            
+            DESIRED=$(aws ecs describe-services \
+              --cluster "$CLUSTER" \
+              --services "$SERVICE" \
+              --query 'services[0].desiredCount' \
+              --output text 2>/dev/null || echo "0")
+            
+            echo "$SERVICE: $RUNNING/$DESIRED running"
+            
+            if [ "$RUNNING" = "$DESIRED" ] && [ "$RUNNING" != "0" ]; then
+              echo "✅ $SERVICE is healthy"
+            else
+              echo "::warning::$SERVICE is not healthy ($RUNNING/$DESIRED)"
+            fi
+          done
+
+      - name: Test Prometheus Endpoint
+        if: steps.outputs.outputs.alb_dns != ''
+        continue-on-error: true
+        run: |
+          ALB_DNS="${{ steps.outputs.outputs.alb_dns }}"
+
+          echo "Testing Prometheus at http://${ALB_DNS}/prometheus"
+
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            "http://${ALB_DNS}/prometheus/-/healthy" || echo "000")
+
+          echo "Prometheus health check: HTTP $HTTP_CODE"
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Prometheus is healthy"
+          else
+            echo "::warning::Prometheus health check failed with code $HTTP_CODE"
+          fi
+
+      - name: Test Grafana Endpoint
+        if: steps.outputs.outputs.alb_dns != ''
+        continue-on-error: true
+        run: |
+          ALB_DNS="${{ steps.outputs.outputs.alb_dns }}"
+
+          echo "Testing Grafana at http://${ALB_DNS}/grafana"
+
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            "http://${ALB_DNS}/grafana/api/health" || echo "000")
+
+          echo "Grafana health check: HTTP $HTTP_CODE"
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Grafana is healthy"
+          else
+            echo "::warning::Grafana health check failed with code $HTTP_CODE"
+          fi
+
+      - name: Check Container Status
+        if: steps.outputs.outputs.instance_id != ''
+        continue-on-error: true
+        run: |
+          chmod +x ./scripts/monitoring/check-monitoring-instance.sh
+          ENVIRONMENT=pipeline ./scripts/monitoring/check-monitoring-instance.sh
+
+      - name: Generate Health Report
+        if: always()
+        run: |
+          echo "## 🏥 Health Check Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -n "${{ steps.outputs.outputs.instance_id }}" ]; then
+            echo "- **Instance**: ${{ steps.outputs.outputs.instance_id }} ✅" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ -n "${{ steps.outputs.outputs.alb_dns }}" ]; then
+            echo "- **ALB**: ${{ steps.outputs.outputs.alb_dns }} ✅" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # ============================================================================
+  # POST-DEPLOYMENT: Fix Grafana Datasource
+  # ============================================================================
+  fix-grafana:
+    name: Fix Grafana
+    needs: [deploy, health-checks]
+    if: |
+      always() && 
+      needs.deploy.result == 'success' &&
+      github.event.inputs.fix_grafana == 'true' &&
+      github.event.inputs.action != 'destroy-all'
+    runs-on: ubuntu-latest
+    environment: pipeline
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Diagnose Grafana
+        continue-on-error: true
+        run: |
+          chmod +x ./scripts/monitoring/diagnose-grafana-datasource.sh
+          ENVIRONMENT=pipeline ./scripts/monitoring/diagnose-grafana-datasource.sh
+
+      - name: Fix Grafana Datasource
+        run: |
+          chmod +x ./scripts/monitoring/fix-grafana-datasource.sh
+          ENVIRONMENT=pipeline ./scripts/monitoring/fix-grafana-datasource.sh
+
+      - name: Verify Grafana
+        continue-on-error: true
+        run: |
+          ALB_DNS=$(aws cloudformation describe-stacks \
+            --stack-name MonitoringInfraStack-pipeline \
+            --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerDns`].OutputValue' \
+            --output text 2>/dev/null || \
+            aws cloudformation describe-stacks \
+            --stack-name MonitoringEcsStack-pipeline \
+            --query 'Stacks[0].Outputs[?OutputKey==`MonitoringAlbDns`].OutputValue' \
+            --output text 2>/dev/null || echo "")
+
+          if [ -n "$ALB_DNS" ]; then
+            echo "Testing Grafana after fix..."
+            sleep 5
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+              "http://${ALB_DNS}/grafana/api/health" || echo "000")
+            
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Grafana is responding"
+              echo "## ✅ Grafana Fixed" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "::warning::Grafana still not responding (HTTP $HTTP_CODE)"
+              echo "## ⚠️ Grafana Fix Incomplete" >> $GITHUB_STEP_SUMMARY
+              echo "HTTP Code: $HTTP_CODE" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+  # ============================================================================
+  # POST-DEPLOYMENT: Setup VPC Peering
+  # ============================================================================
+  setup-vpc-peering:
+    name: Setup VPC Peering
+    needs: deploy
+    if: |
+      always() && 
+      needs.deploy.result == 'success' &&
+      github.event.inputs.action == 'deploy-vpc-peering'
+    runs-on: ubuntu-latest
+    environment: pipeline
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install Dependencies
+        run: make install
+
+      - name: Build Infrastructure
+        run: make build-infrastructure
+
+      - name: Configure AWS Credentials (Pipeline)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get Pipeline VPC Info
+        id: pipeline-vpc
+        run: |
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters "Name=tag:Environment,Values=pipeline" \
+            --query 'Vpcs[0].VpcId' \
+            --output text)
+
+          CIDR=$(aws ec2 describe-vpcs \
+            --vpc-ids "$VPC_ID" \
+            --query 'Vpcs[0].CidrBlock' \
+            --output text)
+
+          echo "vpc_id=$VPC_ID" >> $GITHUB_OUTPUT
+          echo "cidr=$CIDR" >> $GITHUB_OUTPUT
+
+          echo "Pipeline VPC: $VPC_ID ($CIDR)"
+
+      - name: Configure AWS Credentials (Development)
+        if: vars.AWS_ACCOUNT_ID_DEV != ''
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/GitHubActionsDeploymentRole
+          aws-region: ${{ env.AWS_REGION }}
+          role-chaining: true
+
+      - name: Get Development VPC Info
+        id: dev-vpc
+        if: vars.AWS_ACCOUNT_ID_DEV != ''
+        continue-on-error: true
+        run: |
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters "Name=tag:Environment,Values=development" \
+            --query 'Vpcs[0].VpcId' \
+            --output text 2>/dev/null || echo "NOT_FOUND")
+
+          if [ "$VPC_ID" != "NOT_FOUND" ] && [ "$VPC_ID" != "None" ]; then
+            CIDR=$(aws ec2 describe-vpcs \
+              --vpc-ids "$VPC_ID" \
+              --query 'Vpcs[0].CidrBlock' \
+              --output text)
+            
+            echo "vpc_id=$VPC_ID" >> $GITHUB_OUTPUT
+            echo "cidr=$CIDR" >> $GITHUB_OUTPUT
+            
+            echo "Development VPC: $VPC_ID ($CIDR)"
+          else
+            echo "vpc_id=NOT_FOUND" >> $GITHUB_OUTPUT
+            echo "Development VPC not found"
+          fi
+
+      - name: Switch Back to Pipeline Account
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy VPC Peering Stack
+        if: steps.dev-vpc.outputs.vpc_id != 'NOT_FOUND'
+        run: make deploy-vpc-peering
+        env:
+          AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
+          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+          DEV_VPC_ID: ${{ steps.dev-vpc.outputs.vpc_id }}
+
+      - name: Verify Peering Connection
+        if: steps.dev-vpc.outputs.vpc_id != 'NOT_FOUND'
+        run: |
+          echo "## VPC Peering Setup" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Pipeline VPC**: ${{ steps.pipeline-vpc.outputs.vpc_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dev VPC**: ${{ steps.dev-vpc.outputs.vpc_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          aws ec2 describe-vpc-peering-connections \
+            --filters "Name=status-code,Values=active,pending-acceptance" \
+            --query 'VpcPeeringConnections[*].{ID:VpcPeeringConnectionId,Status:Status.Code}' \
+            --output table
+
+          echo "✅ VPC Peering configured" >> $GITHUB_STEP_SUMMARY
