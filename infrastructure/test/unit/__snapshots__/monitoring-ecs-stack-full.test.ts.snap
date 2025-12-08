@@ -976,20 +976,28 @@ exports[`MonitoringEcsStack Test Suite Snapshots MonitoringEcsStack matches snap
                 "Value": "false",
               },
               {
-                "Name": "GF_PATH_PROVISIONING",
+                "Name": "GF_PATHS_PROVISIONING",
                 "Value": "/etc/grafana/provisioning",
               },
               {
-                "Name": "GF_INSTALL_PLUGINS",
-                "Value": "cloudwatch",
+                "Name": "GF_PATHS_DATA",
+                "Value": "/var/lib/grafana",
               },
               {
-                "Name": "GF_ANALYTICS_REPORTING_ENABLE",
-                "Value": " false",
+                "Name": "GF_PATHS_PLUGINS",
+                "Value": "/var/lib/grafana/plugins",
+              },
+              {
+                "Name": "GF_PATHS_LOGS",
+                "Value": "/var/log/grafana",
+              },
+              {
+                "Name": "GF_ANALYTICS_REPORTING_ENABLED",
+                "Value": "false",
               },
               {
                 "Name": "GF_METRICS_ENABLED",
-                "Value": " false",
+                "Value": "false",
               },
               {
                 "Name": "AWS_REGION",
@@ -1034,6 +1042,7 @@ exports[`MonitoringEcsStack Test Suite Snapshots MonitoringEcsStack matches snap
                 "Protocol": "tcp",
               },
             ],
+            "User": "472:0",
           },
         ],
         "ExecutionRoleArn": {
@@ -3066,6 +3075,7 @@ chmod -R 755 /mnt/grafana-data /mnt/grafana-provisioning /mnt/grafana-dashboards
                 "Protocol": "tcp",
               },
             ],
+            "User": "65534",
           },
         ],
         "ExecutionRoleArn": {
