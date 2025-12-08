@@ -2,10 +2,38 @@
 
 name: Deploy Monitoring
 
+# #Run these workflows via GitHub Actions:
+
+# Check what's wrong:
+
+# gh workflow run troubleshoot-monitoring.yml \
+#   -f action=check-status \
+#   -f environment=pipeline
+# Diagnose Grafana:
+
+# gh workflow run troubleshoot-monitoring.yml \
+#   -f action=diagnose-grafana \
+#   -f environment=pipeline
+# Fix Grafana datasource:
+
+# gh workflow run troubleshoot-monitoring.yml \
+#   -f action=fix-grafana \
+#   -f environment=pipeline
+# Check VPC peering (for cross-account monitoring):
+
+# gh workflow run troubleshoot-monitoring.yml \
+#   -f action=check-vpc-peering \
+#   -f environment=pipeline
+# Test connectivity to dev:
+
+# gh workflow run troubleshoot-monitoring.yml \
+#   -f action=test-connectivity \
+#   -f environment=pipeline
+
 on:
   push:
     branches:
-      - feature/*
+      - feature/monitoring # Specific branch for monitoring work
   workflow_dispatch:
     inputs:
       target:
@@ -14,18 +42,23 @@ on:
         type: choice
         options:
           - centralised # Deploy to pipeline account
-          - development # Deploy local monitoring to dev
+          - development # Deploy local monitoring to dev (disabled)
           - cross-account # Setup cross-account access
           - vpc-peering # Setup VPC peering
-      include_vpc_peering:
-        description: "Also setup VPC peering (for centralized)"
+      run_health_checks:
+        description: "Run post-deployment health checks"
         required: false
         type: boolean
-        default: false
+        default: true
+      fix_grafana:
+        description: "Automatically fix Grafana datasource"
+        required: false
+        type: boolean
+        default: true
 
 env:
   NODE_VERSION: "22"
-  AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
+  AWS_REGION: eu-west-1
 
 permissions:
   id-token: write
@@ -36,41 +69,66 @@ jobs:
   # DEPLOY CENTRALIZED MONITORING (Pipeline Account)
   # ============================================================================
   deploy-centralized:
-    if: github.event.inputs.target == 'centralized'
+    if: github.event.inputs.target == 'centralised'
     runs-on: ubuntu-latest
     environment: pipeline
-    steps:
-      - uses: actions/checkout@v4
+    concurrency:
+      group: deploy-monitoring-centralized
+      cancel-in-progress: false
 
-      - uses: actions/setup-node@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - run: corepack enable
-      - run: make install
-      - run: make build-infrastructure
+      - name: Enable Corepack
+        run: corepack enable
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Install Dependencies
+        run: make install
+
+      - name: Build Infrastructure
+        run: make build-infrastructure
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Deploy centralized monitoring
-        run: |
-          cd infrastructure
-          ENVIRONMENT=pipeline yarn cdk deploy \
-            NetworkingStack-pipeline \
-            MonitoringStack-pipeline \
-            MonitoringEcsStack-pipeline \
-            --require-approval never
+      - name: Deploy Centralized Monitoring (Layered)
+        run: make deploy-monitoring-layered
+        env:
+          AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
+          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+          AWS_ACCOUNT_ID_STAGING: ${{ vars.AWS_ACCOUNT_ID_STAGING }}
+          AWS_ACCOUNT_ID_PROD: ${{ vars.AWS_ACCOUNT_ID_PROD }}
 
-      - name: Get monitoring URLs
+      - name: Check Monitoring Status
+        run: make check-monitoring-layered
+
+      - name: Generate Summary
+        if: always()
         run: |
-          echo "=== Monitoring URLs ==="
-          aws cloudformation describe-stacks \
+          echo "## Centralized Monitoring Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Get ALB DNS
+          ALB_DNS=$(aws cloudformation describe-stacks \
             --stack-name MonitoringEcsStack-pipeline \
-            --query 'Stacks[0].Outputs[?contains(OutputKey, `Url`)].{Key:OutputKey,Value:OutputValue}' \
-            --output table
+            --query 'Stacks[0].Outputs[?OutputKey==`MonitoringAlbDns`].OutputValue' \
+            --output text 2>/dev/null || echo "")
+
+          if [ -n "$ALB_DNS" ]; then
+            echo "### Access URLs" >> $GITHUB_STEP_SUMMARY
+            echo "- **Grafana**: http://${ALB_DNS}/grafana (admin/admin)" >> $GITHUB_STEP_SUMMARY
+            echo "- **Prometheus**: http://${ALB_DNS}/prometheus" >> $GITHUB_STEP_SUMMARY
+            echo "- **Targets**: http://${ALB_DNS}/prometheus/targets" >> $GITHUB_STEP_SUMMARY
+          fi
 
   # ============================================================================
   # DEPLOY LOCAL MONITORING (Development Account)
@@ -118,39 +176,68 @@ jobs:
     if: github.event.inputs.target == 'cross-account'
     runs-on: ubuntu-latest
     environment: development
-    steps:
-      - uses: actions/checkout@v4
+    concurrency:
+      group: setup-cross-account-monitoring
+      cancel-in-progress: false
 
-      - uses: actions/setup-node@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - run: corepack enable
-      - run: make install
-      - run: make build-infrastructure
+      - name: Enable Corepack
+        run: corepack enable
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Install Dependencies
+        run: make install
+
+      - name: Build Infrastructure
+        run: make build-infrastructure
+
+      - name: Configure AWS Credentials (OIDC - Pipeline Account)
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Update Cross-Account IAM Policy
+        run: ./scripts/aws/update-cross-account-policy.sh
+        continue-on-error: true
+
+      - name: Configure AWS Credentials (Development Account)
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.DEPLOYMENT_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
           role-chaining: true
 
-      - name: Deploy cross-account monitoring access
+      - name: Deploy Cross-Account Monitoring Access
         run: |
           cd infrastructure
           ENVIRONMENT=development yarn cdk deploy \
             CrossAccountMonitoring-development \
             --require-approval never
 
-      - name: Verify IAM role created
+      - name: Verify IAM Role Created
         run: |
-          aws iam get-role --role-name development-PipelineMonitoringAccess \
-            --query 'Role.{Name:RoleName,Arn:Arn}' --output table
+          echo "## Cross-Account Access Setup" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          ROLE_ARN=$(aws iam get-role \
+            --role-name development-PipelineMonitoringAccess \
+            --query 'Role.Arn' \
+            --output text 2>/dev/null || echo "NOT_FOUND")
+
+          if [ "$ROLE_ARN" != "NOT_FOUND" ]; then
+            echo "✅ IAM Role Created Successfully" >> $GITHUB_STEP_SUMMARY
+            echo "- **Role ARN**: $ROLE_ARN" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ IAM Role Not Found" >> $GITHUB_STEP_SUMMARY
+          fi
 
   # ============================================================================
   # SETUP VPC PEERING
@@ -159,144 +246,392 @@ jobs:
     if: github.event.inputs.target == 'vpc-peering'
     runs-on: ubuntu-latest
     environment: pipeline
-    steps:
-      - uses: actions/checkout@v4
+    concurrency:
+      group: setup-vpc-peering
+      cancel-in-progress: false
 
-      - uses: actions/setup-node@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - run: corepack enable
-      - run: make install
-      - run: make build-infrastructure
+      - name: Enable Corepack
+        run: corepack enable
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Install Dependencies
+        run: make install
+
+      - name: Build Infrastructure
+        run: make build-infrastructure
+
+      - name: Configure AWS Credentials (OIDC - Pipeline Account)
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Get VPC IDs
-        id: vpcs
+      - name: Get Pipeline VPC Info
+        id: pipeline-vpc
         run: |
-          # Get pipeline VPC ID
-          PIPELINE_VPC=$(aws ec2 describe-vpcs \
+          VPC_ID=$(aws ec2 describe-vpcs \
             --filters "Name=tag:Environment,Values=pipeline" \
-            --query 'Vpcs[0].VpcId' --output text)
-          echo "pipeline_vpc=$PIPELINE_VPC" >> $GITHUB_OUTPUT
-          echo "Pipeline VPC: $PIPELINE_VPC"
+            --query 'Vpcs[0].VpcId' \
+            --output text)
 
-          # Get pipeline VPC CIDR
-          PIPELINE_CIDR=$(aws ec2 describe-vpcs \
-            --vpc-ids $PIPELINE_VPC \
-            --query 'Vpcs[0].CidrBlock' --output text)
-          echo "pipeline_cidr=$PIPELINE_CIDR" >> $GITHUB_OUTPUT
-          echo "Pipeline CIDR: $PIPELINE_CIDR"
+          CIDR=$(aws ec2 describe-vpcs \
+            --vpc-ids "$VPC_ID" \
+            --query 'Vpcs[0].CidrBlock' \
+            --output text)
 
-      - name: Assume role in development account
+          echo "vpc_id=$VPC_ID" >> $GITHUB_OUTPUT
+          echo "cidr=$CIDR" >> $GITHUB_OUTPUT
+
+          echo "Pipeline VPC: $VPC_ID ($CIDR)"
+
+      - name: Configure AWS Credentials (Development Account)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.DEPLOYMENT_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
           role-chaining: true
 
-      - name: Get development VPC info
-        id: dev-vpc
-        run: |
-          DEV_VPC=$(aws ec2 describe-vpcs \
-            --filters "Name=tag:Environment,Values=development" \
-            --query 'Vpcs[0].VpcId' --output text)
-          echo "dev_vpc=$DEV_VPC" >> $GITHUB_OUTPUT
-          echo "Development VPC: $DEV_VPC"
-
-          DEV_CIDR=$(aws ec2 describe-vpcs \
-            --vpc-ids $DEV_VPC \
-            --query 'Vpcs[0].CidrBlock' --output text)
-          echo "dev_cidr=$DEV_CIDR" >> $GITHUB_OUTPUT
-          echo "Development CIDR: $DEV_CIDR"
-
-      - name: Validate CIDR blocks
-        run: |
-          PIPELINE_CIDR="${{ steps.vpcs.outputs.pipeline_cidr }}"
-          DEV_CIDR="${{ steps.dev-vpc.outputs.dev_cidr }}"
-
-          if [ "$PIPELINE_CIDR" = "$DEV_CIDR" ]; then
-            echo "::error::VPC CIDR blocks overlap! Pipeline: $PIPELINE_CIDR, Development: $DEV_CIDR"
-            echo "::error::VPC peering requires non-overlapping CIDR blocks."
-            echo "::error::Update development VPC to use 10.1.0.0/16"
-            exit 1
-          fi
-
-          echo "✓ CIDR blocks are compatible"
-          echo "  Pipeline: $PIPELINE_CIDR"
-          echo "  Development: $DEV_CIDR"
-
-      - name: Deploy VPC peering (via CDK)
-        run: |
-          cd infrastructure
-
-          # Export VPC info for CDK
-          export DEV_VPC_ID="${{ steps.dev-vpc.outputs.dev_vpc }}"
-          export DEV_VPC_CIDR="${{ steps.dev-vpc.outputs.dev_cidr }}"
-
-          ENVIRONMENT=pipeline yarn cdk deploy \
-            VpcPeeringStack-pipeline \
-            --require-approval never
+      - name: Setup VPC Peering
+        run: ./scripts/monitoring/setup-vpc-peering.sh
         env:
+          PIPELINE_ENV: pipeline
+          DEV_ENV: development
           AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
 
-      - name: Verify peering connection
+      - name: Generate Summary
+        if: always()
         run: |
-          aws ec2 describe-vpc-peering-connections \
+          echo "## VPC Peering Setup" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Pipeline VPC**: ${{ steps.pipeline-vpc.outputs.vpc_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Pipeline CIDR**: ${{ steps.pipeline-vpc.outputs.cidr }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Check peering status
+          PEERING=$(aws ec2 describe-vpc-peering-connections \
             --filters "Name=status-code,Values=active,pending-acceptance" \
-            --query 'VpcPeeringConnections[*].{ID:VpcPeeringConnectionId,Status:Status.Code,Requester:RequesterVpcInfo.CidrBlock,Accepter:AccepterVpcInfo.CidrBlock}' \
-            --output table
+            --query 'VpcPeeringConnections[0].VpcPeeringConnectionId' \
+            --output text 2>/dev/null || echo "NOT_FOUND")
+
+          if [ "$PEERING" != "NOT_FOUND" ] && [ "$PEERING" != "None" ]; then
+            echo "✅ VPC Peering Active: $PEERING" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ VPC Peering Not Found" >> $GITHUB_STEP_SUMMARY
+          fi
 
   # ============================================================================
-  # POST-DEPLOYMENT: Update Prometheus Config
+  # POST-DEPLOYMENT: Update Prometheus Targets
   # ============================================================================
   update-prometheus:
     needs: [deploy-centralized, setup-vpc-peering]
     if: always() && (needs.deploy-centralized.result == 'success' || needs.setup-vpc-peering.result == 'success')
     runs-on: ubuntu-latest
     environment: pipeline
-    steps:
-      - uses: actions/checkout@v4
+    concurrency:
+      group: update-prometheus-targets
+      cancel-in-progress: false
 
-      - uses: aws-actions/configure-aws-credentials@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC - Pipeline Account)
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Get development EC2 IPs for Prometheus
-        id: targets
+      - name: Configure AWS Credentials (Development Account)
+        if: vars.AWS_ACCOUNT_ID_DEV != ''
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/GitHubActionsDeploymentRole
+          aws-region: ${{ env.AWS_REGION }}
+          role-chaining: true
+
+      - name: Fetch Development Monitoring Info
+        id: dev-info
+        if: vars.AWS_ACCOUNT_ID_DEV != ''
+        continue-on-error: true
+        run: make fetch-monitoring-info ENV=development
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+      - name: Switch Back to Pipeline Account
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update Prometheus Targets
+        if: env.DEV_NODE_EXPORTER_IP != ''
+        continue-on-error: true
+        run: make update-prometheus-targets
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+      - name: Generate Summary
+        if: always()
         run: |
-          # Assume role in dev account to get EC2 IPs
-          DEV_ROLE="arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/development-PipelineMonitoringAccess"
+          echo "## Monitoring Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
 
-          CREDS=$(aws sts assume-role --role-arn $DEV_ROLE --role-session-name prometheus-config)
+          # Get ALB DNS
+          ALB_DNS=$(aws cloudformation describe-stacks \
+            --stack-name MonitoringEcsStack-pipeline \
+            --query 'Stacks[0].Outputs[?OutputKey==`MonitoringAlbDns`].OutputValue' \
+            --output text 2>/dev/null || echo "")
 
-          export AWS_ACCESS_KEY_ID=$(echo $CREDS | jq -r '.Credentials.AccessKeyId')
-          export AWS_SECRET_ACCESS_KEY=$(echo $CREDS | jq -r '.Credentials.SecretAccessKey')
-          export AWS_SESSION_TOKEN=$(echo $CREDS | jq -r '.Credentials.SessionToken')
+          if [ -n "$ALB_DNS" ]; then
+            echo "### Access URLs" >> $GITHUB_STEP_SUMMARY
+            echo "- **Grafana**: http://${ALB_DNS}/grafana (admin/admin)" >> $GITHUB_STEP_SUMMARY
+            echo "- **Prometheus**: http://${ALB_DNS}/prometheus" >> $GITHUB_STEP_SUMMARY
+            echo "- **Targets**: http://${ALB_DNS}/prometheus/targets" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
 
-          # Get Node Exporter targets (EC2 private IPs)
-          TARGETS=$(aws ec2 describe-instances \
-            --filters "Name=tag:Environment,Values=development" "Name=instance-state-name,Values=running" \
-            --query 'Reservations[*].Instances[*].PrivateIpAddress' \
-            --output text | tr '\t' '\n' | sed 's/$/:9100/' | tr '\n' ',' | sed 's/,$//')
+          echo "### Cross-Account Monitoring" >> $GITHUB_STEP_SUMMARY
+          if [ -n "$DEV_NODE_EXPORTER_IP" ]; then
+            echo "- **Dev Node Exporter**: $DEV_NODE_EXPORTER_IP:9100" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ⚠️ Development targets not configured yet" >> $GITHUB_STEP_SUMMARY
+            echo "- Run \`make update-prometheus-targets\` after dev deployment" >> $GITHUB_STEP_SUMMARY
+          fi
 
-          echo "targets=$TARGETS" >> $GITHUB_OUTPUT
-          echo "Development Node Exporter targets: $TARGETS"
+  # ============================================================================
+  # POST-DEPLOYMENT: Health Checks
+  # ============================================================================
+  health-checks:
+    needs: [deploy-centralized]
+    if: |
+      always() && 
+      needs.deploy-centralized.result == 'success' &&
+      github.event.inputs.run_health_checks == 'true'
+    runs-on: ubuntu-latest
+    environment: pipeline
 
-      - name: Summary
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get Stack Outputs
+        id: outputs
         run: |
-          echo "=== Monitoring Deployment Complete ==="
-          echo ""
-          echo "Prometheus targets to add:"
-          echo "  ${{ steps.targets.outputs.targets }}"
-          echo ""
-          echo "Next steps:"
-          echo "  1. SSH to monitoring EC2 or use ECS Exec"
-          echo "  2. Update /mnt/prometheus-config/prometheus.yml"
-          echo "  3. Add static targets for cross-account scraping"
-          echo "  4. Reload Prometheus: curl -X POST http://localhost:9090/-/reload"
+          ALB_DNS=$(aws cloudformation describe-stacks \
+            --stack-name MonitoringEcsStack-pipeline \
+            --query 'Stacks[0].Outputs[?OutputKey==`MonitoringAlbDns`].OutputValue' \
+            --output text 2>/dev/null || echo "")
+          echo "alb_dns=$ALB_DNS" >> $GITHUB_OUTPUT
+
+          INSTANCE_ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Environment,Values=pipeline" \
+                      "Name=tag:Purpose,Values=Monitoring" \
+                      "Name=instance-state-name,Values=running" \
+            --query 'Reservations[0].Instances[0].InstanceId' \
+            --output text 2>/dev/null || echo "")
+          echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
+
+      - name: Check Instance Status
+        if: steps.outputs.outputs.instance_id != ''
+        run: |
+          echo "Checking instance ${{ steps.outputs.outputs.instance_id }}..."
+
+          STATUS=$(aws ec2 describe-instances \
+            --instance-ids ${{ steps.outputs.outputs.instance_id }} \
+            --query 'Reservations[0].Instances[0].State.Name' \
+            --output text)
+
+          echo "Instance status: $STATUS"
+
+          if [ "$STATUS" != "running" ]; then
+            echo "::warning::Instance is not running"
+          fi
+
+      - name: Check ECS Services
+        run: |
+          CLUSTER="pipeline-monitoring-cluster"
+
+          echo "Checking ECS services in $CLUSTER..."
+
+          for SERVICE in pipeline-prometheus pipeline-grafana; do
+            RUNNING=$(aws ecs describe-services \
+              --cluster "$CLUSTER" \
+              --services "$SERVICE" \
+              --query 'services[0].runningCount' \
+              --output text 2>/dev/null || echo "0")
+            
+            DESIRED=$(aws ecs describe-services \
+              --cluster "$CLUSTER" \
+              --services "$SERVICE" \
+              --query 'services[0].desiredCount' \
+              --output text 2>/dev/null || echo "0")
+            
+            echo "$SERVICE: $RUNNING/$DESIRED running"
+          done
+
+      - name: Test Prometheus Endpoint
+        if: steps.outputs.outputs.alb_dns != ''
+        continue-on-error: true
+        run: |
+          ALB_DNS="${{ steps.outputs.outputs.alb_dns }}"
+
+          echo "Testing Prometheus at http://${ALB_DNS}/prometheus"
+
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            "http://${ALB_DNS}/prometheus/-/healthy" || echo "000")
+
+          echo "Prometheus health check: $HTTP_CODE"
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Prometheus is healthy"
+          else
+            echo "::warning::Prometheus health check failed with code $HTTP_CODE"
+          fi
+
+      - name: Test Grafana Endpoint
+        if: steps.outputs.outputs.alb_dns != ''
+        continue-on-error: true
+        run: |
+          ALB_DNS="${{ steps.outputs.outputs.alb_dns }}"
+
+          echo "Testing Grafana at http://${ALB_DNS}/grafana"
+
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            "http://${ALB_DNS}/grafana/api/health" || echo "000")
+
+          echo "Grafana health check: $HTTP_CODE"
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Grafana is healthy"
+          else
+            echo "::warning::Grafana health check failed with code $HTTP_CODE"
+          fi
+
+      - name: Check Container Logs
+        if: steps.outputs.outputs.instance_id != ''
+        continue-on-error: true
+        run: |
+          chmod +x ./scripts/monitoring/check-monitoring-instance.sh
+          ENVIRONMENT=pipeline ./scripts/monitoring/check-monitoring-instance.sh
+
+  # ============================================================================
+  # POST-DEPLOYMENT: Fix Grafana Datasource
+  # ============================================================================
+  fix-grafana:
+    needs: [deploy-centralized, health-checks]
+    if: |
+      always() && 
+      needs.deploy-centralized.result == 'success' &&
+      github.event.inputs.fix_grafana == 'true'
+    runs-on: ubuntu-latest
+    environment: pipeline
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Fix Grafana Datasource
+        run: |
+          chmod +x ./scripts/monitoring/fix-grafana-datasource.sh
+          ENVIRONMENT=pipeline ./scripts/monitoring/fix-grafana-datasource.sh
+
+      - name: Verify Grafana
+        continue-on-error: true
+        run: |
+          ALB_DNS=$(aws cloudformation describe-stacks \
+            --stack-name MonitoringEcsStack-pipeline \
+            --query 'Stacks[0].Outputs[?OutputKey==`MonitoringAlbDns`].OutputValue' \
+            --output text 2>/dev/null || echo "")
+
+          if [ -n "$ALB_DNS" ]; then
+            echo "Testing Grafana after fix..."
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+              "http://${ALB_DNS}/grafana/api/health" || echo "000")
+            
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Grafana is responding"
+            else
+              echo "::warning::Grafana still not responding (HTTP $HTTP_CODE)"
+            fi
+          fi
+
+  # ============================================================================
+  # FINAL: Deployment Summary
+  # ============================================================================
+  summary:
+    needs: [deploy-centralized, health-checks, fix-grafana, update-prometheus]
+    if: always()
+    runs-on: ubuntu-latest
+    environment: pipeline
+
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Generate Final Summary
+        run: |
+          echo "# 🎉 Monitoring Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Get ALB DNS
+          ALB_DNS=$(aws cloudformation describe-stacks \
+            --stack-name MonitoringEcsStack-pipeline \
+            --query 'Stacks[0].Outputs[?OutputKey==`MonitoringAlbDns`].OutputValue' \
+            --output text 2>/dev/null || echo "")
+
+          if [ -n "$ALB_DNS" ]; then
+            echo "## Access URLs" >> $GITHUB_STEP_SUMMARY
+            echo "- **Grafana**: http://${ALB_DNS}/grafana (admin/admin)" >> $GITHUB_STEP_SUMMARY
+            echo "- **Prometheus**: http://${ALB_DNS}/prometheus" >> $GITHUB_STEP_SUMMARY
+            echo "- **Targets**: http://${ALB_DNS}/prometheus/targets" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "## Deployment Steps" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Infrastructure deployed" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.health-checks.result }}" = "success" ]; then
+            echo "- ✅ Health checks passed" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ github.event.inputs.run_health_checks }}" = "true" ]; then
+            echo "- ⚠️ Health checks had issues" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ needs.fix-grafana.result }}" = "success" ]; then
+            echo "- ✅ Grafana datasource fixed" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ github.event.inputs.fix_grafana }}" = "true" ]; then
+            echo "- ⚠️ Grafana fix had issues" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ needs.update-prometheus.result }}" = "success" ]; then
+            echo "- ✅ Prometheus targets updated" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Open Grafana and verify datasource is working" >> $GITHUB_STEP_SUMMARY
+          echo "2. Import Node Exporter dashboard (ID: 1860)" >> $GITHUB_STEP_SUMMARY
+          echo "3. Setup VPC peering if not done: \`gh workflow run deploy-monitoring.yml -f target=vpc-peering\`" >> $GITHUB_STEP_SUMMARY
