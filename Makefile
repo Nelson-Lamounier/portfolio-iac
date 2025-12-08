@@ -315,24 +315,7 @@ setup-vpc-peering:
 	@chmod +x ./scripts/monitoring/setup-vpc-peering.sh
 	@./scripts/monitoring/setup-vpc-peering.sh
 
-# Deploy VPC peering stack via CDK
-deploy-vpc-peering:
-	@echo "========================================="
-	@echo "Deploying VPC Peering Stack"
-	@echo "========================================="
-	@echo ""
-	@echo "Environment: pipeline"
-	@echo "Peer accounts: $(or $(AWS_ACCOUNT_ID_DEV),NOT_SET)"
-	@echo ""
-	@if [ -z "$(DEV_VPC_ID)" ]; then \
-		echo "ERROR: DEV_VPC_ID not set"; \
-		echo "Run: make fetch-monitoring-info ENV=development"; \
-		exit 1; \
-	fi
-	@cd infrastructure && ENVIRONMENT=pipeline yarn cdk deploy VpcPeeringStack-pipeline --require-approval never
-	@echo ""
-	@echo "✓ VPC Peering deployed"
-	@echo ""
+# Note: deploy-vpc-peering is defined below (line ~433)
 	@echo "Verify peering connection:"
 	@aws ec2 describe-vpc-peering-connections \
 		--filters "Name=status-code,Values=active,pending-acceptance" \

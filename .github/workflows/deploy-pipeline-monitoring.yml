@@ -426,9 +426,15 @@ jobs:
           fi
 
   # ============================================================================
-  # POST-DEPLOYMENT: Setup VPC Peering
+  # POST-DEPLOYMENT: Setup VPC Peering (DISABLED - handled by CDK)
   # ============================================================================
-  setup-vpc-peering:
+  # VpcPeeringStack is automatically created by CDK when DEV_VPC_ID is set
+  # See infrastructure/bin/app.ts lines 730-760
+  #
+  # To manually deploy VPC peering only:
+  # ENVIRONMENT=pipeline DEV_VPC_ID=vpc-xxx AWS_ACCOUNT_ID_DEV=xxx make deploy-vpc-peering
+  #
+  setup-vpc-peering-disabled:
     name: Setup VPC Peering
     needs: deploy
     if: |
@@ -446,15 +452,29 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: "yarn"
 
       - name: Enable Corepack
         run: corepack enable
 
+      - name: Restore Dependencies Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            infrastructure/node_modules
+            **/node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
       - name: Install Dependencies
         run: make install
+        timeout-minutes: 5
 
       - name: Build Infrastructure
         run: make build-infrastructure
+        timeout-minutes: 5
 
       - name: Configure AWS Credentials (Pipeline)
         uses: aws-actions/configure-aws-credentials@v4
