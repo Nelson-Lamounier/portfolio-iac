@@ -21,7 +21,7 @@ export interface EcsClusterConstructProps {
 
 /**
  * Reusable construct for creating an ECS Cluster with EC2 capacity
- * Handles cluster creation and Auto Scaling Group configuration
+ * Handles cluster creation and Auto Scaling Group configuration // Testing
  */
 export class EcsClusterConstruct extends Construct {
   public readonly cluster: ecs.Cluster;
