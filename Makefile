@@ -297,6 +297,48 @@ check-monitoring-layered:
 		--query 'Stacks[0].Outputs[?OutputKey==`GrafanaUrl` || OutputKey==`PrometheusUrl`].{Service:OutputKey,URL:OutputValue}' \
 		--output table 2>/dev/null || echo "No outputs found"
 
+# Diagnose Grafana datasource issues
+diagnose-grafana-datasource:
+	@echo "Diagnosing Grafana datasource connectivity..."
+	@chmod +x ./scripts/monitoring/diagnose-grafana-datasource.sh
+	@./scripts/monitoring/diagnose-grafana-datasource.sh
+
+# Fix Grafana datasource configuration
+fix-grafana-datasource:
+	@echo "Fixing Grafana datasource configuration..."
+	@chmod +x ./scripts/monitoring/fix-grafana-datasource.sh
+	@./scripts/monitoring/fix-grafana-datasource.sh
+
+# Setup VPC peering between pipeline and dev accounts
+setup-vpc-peering:
+	@echo "Setting up VPC peering..."
+	@chmod +x ./scripts/monitoring/setup-vpc-peering.sh
+	@./scripts/monitoring/setup-vpc-peering.sh
+
+# Deploy VPC peering stack via CDK
+deploy-vpc-peering:
+	@echo "========================================="
+	@echo "Deploying VPC Peering Stack"
+	@echo "========================================="
+	@echo ""
+	@echo "Environment: pipeline"
+	@echo "Peer accounts: $(or $(AWS_ACCOUNT_ID_DEV),NOT_SET)"
+	@echo ""
+	@if [ -z "$(DEV_VPC_ID)" ]; then \
+		echo "ERROR: DEV_VPC_ID not set"; \
+		echo "Run: make fetch-monitoring-info ENV=development"; \
+		exit 1; \
+	fi
+	@cd infrastructure && ENVIRONMENT=pipeline yarn cdk deploy VpcPeeringStack-pipeline --require-approval never
+	@echo ""
+	@echo "✓ VPC Peering deployed"
+	@echo ""
+	@echo "Verify peering connection:"
+	@aws ec2 describe-vpc-peering-connections \
+		--filters "Name=status-code,Values=active,pending-acceptance" \
+		--query 'VpcPeeringConnections[*].{ID:VpcPeeringConnectionId,Status:Status.Code,Requester:RequesterVpcInfo.VpcId,Accepter:AccepterVpcInfo.VpcId}' \
+		--output table || echo "No peering connections found"
+
 # Destroy layered monitoring
 destroy-monitoring-layered:
 	@echo "Destroying layered monitoring stacks..."

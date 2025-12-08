@@ -1,0 +1,520 @@
+# @format
+
+name: Troubleshoot Monitoring
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Troubleshooting action"
+        required: true
+        type: choice
+        options:
+          - check-status # Check overall monitoring status
+          - diagnose-grafana # Diagnose Grafana datasource issues
+          - fix-grafana # Fix Grafana datasource configuration
+          - check-prometheus # Check Prometheus health and targets
+          - check-containers # Check Docker containers status
+          - check-vpc-peering # Check VPC peering connection
+          - test-connectivity # Test cross-account connectivity
+          - view-logs # View container logs
+          - restart-services # Restart monitoring services
+      environment:
+        description: "Target environment"
+        required: true
+        default: "pipeline"
+        type: choice
+        options:
+          - pipeline
+          - development
+          - staging
+          - production
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: eu-west-1
+  NODE_VERSION: "22"
+
+jobs:
+  # ============================================================================
+  # CHECK OVERALL STATUS
+  # ============================================================================
+  check-status:
+    if: github.event.inputs.action == 'check-status'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check Monitoring Status
+        run: |
+          ENV="${{ github.event.inputs.environment }}"
+
+          echo "========================================="
+          echo "Monitoring Status Check - $ENV"
+          echo "========================================="
+          echo ""
+
+          # Check CloudFormation stacks
+          echo "CloudFormation Stacks:"
+          aws cloudformation describe-stacks \
+            --stack-name MonitoringEcsStack-$ENV \
+            --query 'Stacks[0].{Status:StackStatus,Created:CreationTime}' \
+            --output table 2>/dev/null || echo "Stack not found"
+          echo ""
+
+          # Check ECS cluster
+          echo "ECS Cluster:"
+          aws ecs describe-clusters \
+            --clusters ${ENV}-monitoring-cluster \
+            --query 'clusters[0].{Name:clusterName,Status:status,Instances:registeredContainerInstancesCount,Tasks:runningTasksCount}' \
+            --output table 2>/dev/null || echo "Cluster not found"
+          echo ""
+
+          # Check ECS services
+          echo "ECS Services:"
+          aws ecs list-services \
+            --cluster ${ENV}-monitoring-cluster \
+            --query 'serviceArns' \
+            --output text 2>/dev/null | xargs -I {} aws ecs describe-services \
+            --cluster ${ENV}-monitoring-cluster \
+            --services {} \
+            --query 'services[*].{Name:serviceName,Status:status,Desired:desiredCount,Running:runningCount}' \
+            --output table || echo "No services found"
+          echo ""
+
+          # Get ALB DNS
+          echo "Access URLs:"
+          ALB_DNS=$(aws cloudformation describe-stacks \
+            --stack-name MonitoringEcsStack-$ENV \
+            --query 'Stacks[0].Outputs[?OutputKey==`MonitoringAlbDns`].OutputValue' \
+            --output text 2>/dev/null)
+
+          if [ -n "$ALB_DNS" ]; then
+            echo "  Grafana:    http://${ALB_DNS}/grafana"
+            echo "  Prometheus: http://${ALB_DNS}/prometheus"
+            echo "  Targets:    http://${ALB_DNS}/prometheus/targets"
+          else
+            echo "  ALB DNS not found"
+          fi
+
+      - name: Check Instance Status
+        run: |
+          ENV="${{ github.event.inputs.environment }}"
+          chmod +x ./scripts/monitoring/check-monitoring-instance.sh
+          ENVIRONMENT=$ENV ./scripts/monitoring/check-monitoring-instance.sh
+
+  # ============================================================================
+  # DIAGNOSE GRAFANA
+  # ============================================================================
+  diagnose-grafana:
+    if: github.event.inputs.action == 'diagnose-grafana'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Diagnose Grafana Datasource
+        run: |
+          ENV="${{ github.event.inputs.environment }}"
+          chmod +x ./scripts/monitoring/diagnose-grafana-datasource.sh
+          ENVIRONMENT=$ENV ./scripts/monitoring/diagnose-grafana-datasource.sh
+
+  # ============================================================================
+  # FIX GRAFANA
+  # ============================================================================
+  fix-grafana:
+    if: github.event.inputs.action == 'fix-grafana'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Fix Grafana Datasource
+        run: |
+          ENV="${{ github.event.inputs.environment }}"
+          chmod +x ./scripts/monitoring/fix-grafana-datasource.sh
+          ENVIRONMENT=$ENV ./scripts/monitoring/fix-grafana-datasource.sh
+
+  # ============================================================================
+  # CHECK PROMETHEUS
+  # ============================================================================
+  check-prometheus:
+    if: github.event.inputs.action == 'check-prometheus'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check Prometheus Health
+        run: |
+          ENV="${{ github.event.inputs.environment }}"
+
+          # Get instance ID
+          INSTANCE_ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Environment,Values=$ENV" \
+                      "Name=tag:Purpose,Values=Monitoring" \
+                      "Name=instance-state-name,Values=running" \
+            --query 'Reservations[0].Instances[0].InstanceId' \
+            --output text)
+
+          echo "Instance ID: $INSTANCE_ID"
+          echo ""
+
+          # Check Prometheus
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=[
+              "echo \"=== Prometheus Health ===\"",
+              "curl -s http://localhost:9090/prometheus/-/healthy || echo \"Prometheus not responding\"",
+              "echo \"\"",
+              "",
+              "echo \"=== Prometheus Config ===\"",
+              "curl -s http://localhost:9090/prometheus/api/v1/status/config | python3 -m json.tool | head -50 || echo \"Cannot get config\"",
+              "echo \"\"",
+              "",
+              "echo \"=== Prometheus Targets ===\"",
+              "curl -s http://localhost:9090/prometheus/api/v1/targets | python3 -m json.tool || echo \"Cannot get targets\"",
+              "echo \"\"",
+              "",
+              "echo \"=== Prometheus Container ===\"",
+              "docker ps -f name=prometheus --format \"table {{.Names}}\t{{.Status}}\t{{.Ports}}\"",
+              "echo \"\"",
+              "",
+              "echo \"=== Prometheus Logs (last 30 lines) ===\"",
+              "docker logs prometheus --tail 30 2>&1"
+            ]' \
+            --query 'Command.CommandId' \
+            --output text)
+
+          sleep 5
+
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query 'StandardOutputContent' \
+            --output text
+
+  # ============================================================================
+  # CHECK CONTAINERS
+  # ============================================================================
+  check-containers:
+    if: github.event.inputs.action == 'check-containers'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check Docker Containers
+        run: |
+          ENV="${{ github.event.inputs.environment }}"
+
+          INSTANCE_ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Environment,Values=$ENV" \
+                      "Name=tag:Purpose,Values=Monitoring" \
+                      "Name=instance-state-name,Values=running" \
+            --query 'Reservations[0].Instances[0].InstanceId' \
+            --output text)
+
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=[
+              "echo \"=== Running Containers ===\"",
+              "docker ps --format \"table {{.Names}}\t{{.Status}}\t{{.Ports}}\"",
+              "echo \"\"",
+              "",
+              "echo \"=== All Containers (including stopped) ===\"",
+              "docker ps -a --format \"table {{.Names}}\t{{.Status}}\"",
+              "echo \"\"",
+              "",
+              "echo \"=== Container Resource Usage ===\"",
+              "docker stats --no-stream --format \"table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\"",
+              "echo \"\"",
+              "",
+              "echo \"=== ECS Tasks ===\"",
+              "curl -s http://localhost:51678/v1/tasks | python3 -m json.tool || echo \"ECS agent not responding\""
+            ]' \
+            --query 'Command.CommandId' \
+            --output text)
+
+          sleep 5
+
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query 'StandardOutputContent' \
+            --output text
+
+  # ============================================================================
+  # CHECK VPC PEERING
+  # ============================================================================
+  check-vpc-peering:
+    if: github.event.inputs.action == 'check-vpc-peering'
+    runs-on: ubuntu-latest
+    environment: pipeline
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (Pipeline)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check VPC Peering Status
+        run: |
+          echo "========================================="
+          echo "VPC Peering Status"
+          echo "========================================="
+          echo ""
+
+          # Get pipeline VPC
+          PIPELINE_VPC=$(aws ec2 describe-vpcs \
+            --filters "Name=tag:Environment,Values=pipeline" \
+            --query 'Vpcs[0].{ID:VpcId,CIDR:CidrBlock}' \
+            --output text)
+
+          echo "Pipeline VPC: $PIPELINE_VPC"
+          echo ""
+
+          # Check peering connections
+          echo "VPC Peering Connections:"
+          aws ec2 describe-vpc-peering-connections \
+            --filters "Name=status-code,Values=active,pending-acceptance,provisioning" \
+            --query 'VpcPeeringConnections[*].{ID:VpcPeeringConnectionId,Status:Status.Code,RequesterVPC:RequesterVpcInfo.VpcId,RequesterCIDR:RequesterVpcInfo.CidrBlock,AccepterVPC:AccepterVpcInfo.VpcId,AccepterCIDR:AccepterVpcInfo.CidrBlock}' \
+            --output table || echo "No peering connections found"
+          echo ""
+
+          # Check route tables
+          echo "Route Tables with Peering Routes:"
+          aws ec2 describe-route-tables \
+            --filters "Name=vpc-id,Values=$(echo $PIPELINE_VPC | awk '{print $1}')" \
+            --query 'RouteTables[*].Routes[?VpcPeeringConnectionId!=`null`].{Destination:DestinationCidrBlock,PeeringConnection:VpcPeeringConnectionId,State:State}' \
+            --output table || echo "No peering routes found"
+
+  # ============================================================================
+  # TEST CONNECTIVITY
+  # ============================================================================
+  test-connectivity:
+    if: github.event.inputs.action == 'test-connectivity'
+    runs-on: ubuntu-latest
+    environment: pipeline
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (Pipeline)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get Development Instance IP
+        id: dev-ip
+        continue-on-error: true
+        run: |
+          # Try to assume role in dev account
+          if [ -n "${{ vars.AWS_ACCOUNT_ID_DEV }}" ]; then
+            DEV_IP=$(aws ec2 describe-instances \
+              --filters "Name=tag:Environment,Values=development" \
+                        "Name=instance-state-name,Values=running" \
+              --query 'Reservations[0].Instances[0].PrivateIpAddress' \
+              --output text 2>/dev/null || echo "NOT_FOUND")
+            
+            echo "dev_ip=$DEV_IP" >> $GITHUB_OUTPUT
+            echo "Development Instance IP: $DEV_IP"
+          else
+            echo "dev_ip=NOT_FOUND" >> $GITHUB_OUTPUT
+            echo "Development account ID not configured"
+          fi
+
+      - name: Test Connectivity from Pipeline to Dev
+        if: steps.dev-ip.outputs.dev_ip != 'NOT_FOUND'
+        run: |
+          DEV_IP="${{ steps.dev-ip.outputs.dev_ip }}"
+
+          # Get pipeline monitoring instance
+          INSTANCE_ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Environment,Values=pipeline" \
+                      "Name=tag:Purpose,Values=Monitoring" \
+                      "Name=instance-state-name,Values=running" \
+            --query 'Reservations[0].Instances[0].InstanceId' \
+            --output text)
+
+          echo "Testing connectivity from pipeline to dev ($DEV_IP)..."
+
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters "commands=[
+              \"echo '=== Ping Test ==='\",
+              \"ping -c 3 $DEV_IP || echo 'Ping failed'\",
+              \"echo ''\",
+              \"\",
+              \"echo '=== Node Exporter Test ==='\",
+              \"curl -s -m 5 http://$DEV_IP:9100/metrics | head -10 || echo 'Cannot reach Node Exporter'\",
+              \"echo ''\",
+              \"\",
+              \"echo '=== Traceroute ==='\",
+              \"traceroute -m 10 $DEV_IP || echo 'Traceroute failed'\"
+            ]" \
+            --query 'Command.CommandId' \
+            --output text)
+
+          sleep 8
+
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query 'StandardOutputContent' \
+            --output text
+
+  # ============================================================================
+  # VIEW LOGS
+  # ============================================================================
+  view-logs:
+    if: github.event.inputs.action == 'view-logs'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: View Container Logs
+        run: |
+          ENV="${{ github.event.inputs.environment }}"
+
+          INSTANCE_ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Environment,Values=$ENV" \
+                      "Name=tag:Purpose,Values=Monitoring" \
+                      "Name=instance-state-name,Values=running" \
+            --query 'Reservations[0].Instances[0].InstanceId' \
+            --output text)
+
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=[
+              "echo \"=== Prometheus Logs (last 50 lines) ===\"",
+              "docker logs prometheus --tail 50 2>&1",
+              "echo \"\"",
+              "",
+              "echo \"=== Grafana Logs (last 50 lines) ===\"",
+              "docker logs grafana --tail 50 2>&1",
+              "echo \"\"",
+              "",
+              "echo \"=== Node Exporter Logs (last 30 lines) ===\"",
+              "docker logs node-exporter --tail 30 2>&1 || echo \"Node Exporter not running\"",
+              "echo \"\"",
+              "",
+              "echo \"=== ECS Agent Logs (last 30 lines) ===\"",
+              "journalctl -u ecs -n 30 --no-pager",
+              "echo \"\"",
+              "",
+              "echo \"=== Setup Log (last 50 lines) ===\"",
+              "tail -50 /var/log/monitoring-setup.log 2>/dev/null || echo \"Setup log not found\""
+            ]' \
+            --query 'Command.CommandId' \
+            --output text)
+
+          sleep 8
+
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query 'StandardOutputContent' \
+            --output text
+
+  # ============================================================================
+  # RESTART SERVICES
+  # ============================================================================
+  restart-services:
+    if: github.event.inputs.action == 'restart-services'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Restart Monitoring Services
+        run: |
+          ENV="${{ github.event.inputs.environment }}"
+
+          echo "Restarting monitoring services in $ENV..."
+
+          # Force new deployment for all services
+          CLUSTER="${ENV}-monitoring-cluster"
+
+          for SERVICE in ${ENV}-prometheus ${ENV}-grafana ${ENV}-monitoring-node-exporter; do
+            echo "Restarting service: $SERVICE"
+            aws ecs update-service \
+              --cluster "$CLUSTER" \
+              --service "$SERVICE" \
+              --force-new-deployment \
+              --no-cli-pager 2>/dev/null || echo "Service $SERVICE not found"
+          done
+
+          echo ""
+          echo "Services restart initiated. Check status in a few minutes."

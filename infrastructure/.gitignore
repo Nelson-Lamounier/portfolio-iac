@@ -12,6 +12,7 @@ cdk.out
 
 # Infrastructure-specific documentation
 docs/*
+.github/workflows/monitoring/docs/*
 
 # Helper scripts (local development)
 scripts/*
