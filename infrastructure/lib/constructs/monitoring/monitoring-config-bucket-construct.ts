@@ -50,6 +50,7 @@ export class MonitoringConfigBucketConstruct extends Construct {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
       autoDeleteObjects: false,
+      enforceSSL: true,
       lifecycleRules: [
         {
           id: "DeleteOldVersions",
@@ -59,6 +60,22 @@ export class MonitoringConfigBucketConstruct extends Construct {
         },
       ],
     });
+
+    // Add bucket policy to enforce SSL/TLS
+    this.bucket.addToResourcePolicy(
+      new iam.PolicyStatement({
+        sid: "EnforceSSLOnly",
+        effect: iam.Effect.DENY,
+        principals: [new iam.AnyPrincipal()],
+        actions: ["s3:*"],
+        resources: [this.bucket.bucketArn, this.bucket.arnForObjects("*")],
+        conditions: {
+          Bool: {
+            "aws:SecureTransport": "false",
+          },
+        },
+      })
+    );
 
     // Output bucket name
     new cdk.CfnOutput(this, "BucketName", {

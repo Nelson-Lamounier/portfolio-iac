@@ -6,7 +6,7 @@ on:
   push:
     branches:
       - main
-      - feature/monitoring
+      - feature/monitoring/
     paths:
       - "monitoring/**"
       - ".github/workflows/sync-monitoring-config.yml"
