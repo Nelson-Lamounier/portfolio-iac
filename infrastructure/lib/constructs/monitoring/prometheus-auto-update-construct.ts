@@ -1,14 +1,14 @@
 /** @format */
 
-import * as cdk from 'aws-cdk-lib';
-import * as lambda from 'aws-cdk-lib/aws-lambda';
-import * as nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
-import * as events from 'aws-cdk-lib/aws-events';
-import * as targets from 'aws-cdk-lib/aws-events-targets';
-import * as iam from 'aws-cdk-lib/aws-iam';
-import * as logs from 'aws-cdk-lib/aws-logs';
-import { Construct } from 'constructs';
-import * as path from 'path';
+import * as cdk from "aws-cdk-lib";
+import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as nodejs from "aws-cdk-lib/aws-lambda-nodejs";
+import * as events from "aws-cdk-lib/aws-events";
+import * as targets from "aws-cdk-lib/aws-events-targets";
+import * as iam from "aws-cdk-lib/aws-iam";
+import * as logs from "aws-cdk-lib/aws-logs";
+import { Construct } from "constructs";
+import * as path from "path";
 
 export interface PrometheusAutoUpdateConstructProps {
   /** Pipeline EC2 instance ID where Prometheus runs */
@@ -95,8 +95,8 @@ export class PrometheusAutoUpdateConstruct extends Construct {
     this.function.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
-        actions: ['ec2:DescribeInstances'],
-        resources: ['*'],
+        actions: ["ec2:DescribeInstances"],
+        resources: ["*"],
       })
     );
 
@@ -105,9 +105,9 @@ export class PrometheusAutoUpdateConstruct extends Construct {
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         actions: [
-          'ssm:SendCommand',
-          'ssm:GetCommandInvocation',
-          'ssm:ListCommandInvocations',
+          "ssm:SendCommand",
+          "ssm:GetCommandInvocation",
+          "ssm:ListCommandInvocations",
         ],
         resources: [
           `arn:aws:ec2:${props.region}:${cdk.Stack.of(this).account}:instance/${props.pipelineInstanceId}`,
@@ -154,19 +154,19 @@ export class PrometheusAutoUpdateConstruct extends Construct {
     );
 
     // Outputs
-    new cdk.CfnOutput(this, 'FunctionName', {
+    new cdk.CfnOutput(this, "FunctionName", {
       value: this.function.functionName,
-      description: 'Prometheus auto-update Lambda function name',
+      description: "Prometheus auto-update Lambda function name",
     });
 
-    new cdk.CfnOutput(this, 'RuleName', {
+    new cdk.CfnOutput(this, "RuleName", {
       value: this.rule.ruleName,
-      description: 'EventBridge rule name',
+      description: "EventBridge rule name",
     });
 
     // Tags
-    cdk.Tags.of(this).add('Component', 'Monitoring');
-    cdk.Tags.of(this).add('Purpose', 'PrometheusAutoUpdate');
+    cdk.Tags.of(this).add("Component", "Monitoring");
+    cdk.Tags.of(this).add("Purpose", "PrometheusAutoUpdate");
   }
 
   /**

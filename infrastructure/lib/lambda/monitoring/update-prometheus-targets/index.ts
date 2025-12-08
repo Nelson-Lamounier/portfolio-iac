@@ -74,9 +74,9 @@ export const handler = async (event: any): Promise<void> => {
  */
 async function getEnvironmentTargets(): Promise<EnvironmentTarget[]> {
   const environments = [
-    { environment: 'development', accountId: process.env.DEV_ACCOUNT_ID },
-    { environment: 'staging', accountId: process.env.STAGING_ACCOUNT_ID },
-    { environment: 'production', accountId: process.env.PROD_ACCOUNT_ID },
+    { environment: "development", accountId: process.env.DEV_ACCOUNT_ID },
+    { environment: "staging", accountId: process.env.STAGING_ACCOUNT_ID },
+    { environment: "production", accountId: process.env.PROD_ACCOUNT_ID },
   ];
 
   const targets: EnvironmentTarget[] = [];
@@ -104,8 +104,8 @@ async function getEnvironmentTargets(): Promise<EnvironmentTarget[]> {
 async function getInstanceIp(environment: string): Promise<string | null> {
   const params: DescribeInstancesCommandInput = {
     Filters: [
-      { Name: 'tag:Environment', Values: [environment] },
-      { Name: 'instance-state-name', Values: ['running'] },
+      { Name: "tag:Environment", Values: [environment] },
+      { Name: "instance-state-name", Values: ["running"] },
     ],
   };
 
@@ -189,17 +189,15 @@ async function uploadConfigToEFS(
   instanceId: string,
   config: string
 ): Promise<void> {
-  const escapedConfig = config.replace(/'/g, "'\\''");
-
   const command = new SendCommandCommand({
     InstanceIds: [instanceId],
-    DocumentName: 'AWS-RunShellScript',
+    DocumentName: "AWS-RunShellScript",
     Parameters: {
       commands: [
         `cat > /tmp/prometheus.yml <<'EOFCONFIG'\n${config}\nEOFCONFIG`,
-        'sudo mv /tmp/prometheus.yml /mnt/efs/config/prometheus/prometheus.yml',
-        'sudo chown 65534:65534 /mnt/efs/config/prometheus/prometheus.yml',
-        'sudo chmod 644 /mnt/efs/config/prometheus/prometheus.yml',
+        "sudo mv /tmp/prometheus.yml /mnt/efs/config/prometheus/prometheus.yml",
+        "sudo chown 65534:65534 /mnt/efs/config/prometheus/prometheus.yml",
+        "sudo chmod 644 /mnt/efs/config/prometheus/prometheus.yml",
         "echo 'Config updated'",
       ],
     },
@@ -209,7 +207,7 @@ async function uploadConfigToEFS(
   const commandId = response.Command?.CommandId;
 
   if (!commandId) {
-    throw new Error('Failed to send SSM command');
+    throw new Error("Failed to send SSM command");
   }
 
   // Wait for command to complete
@@ -222,14 +220,14 @@ async function uploadConfigToEFS(
 async function reloadPrometheus(instanceId: string): Promise<void> {
   const command = new SendCommandCommand({
     InstanceIds: [instanceId],
-    DocumentName: 'AWS-RunShellScript',
+    DocumentName: "AWS-RunShellScript",
     Parameters: {
-      commands: ['curl -X POST http://localhost:9090/prometheus/-/reload'],
+      commands: ["curl -X POST http://localhost:9090/prometheus/-/reload"],
     },
   });
 
   await ssmClient.send(command);
-  console.log('✓ Prometheus reload triggered');
+  console.log("✓ Prometheus reload triggered");
 }
 
 /**
