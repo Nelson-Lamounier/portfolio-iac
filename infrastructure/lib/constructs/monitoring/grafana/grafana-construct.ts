@@ -188,7 +188,7 @@ export class GrafanaConstruct extends Construct {
       healthCheckGracePeriod: cdk.Duration.seconds(60),
 
       // Enable circuit breaker
-      enableCircuitBreaker: true,
+      enableCircuitBreaker: false,
 
       // Enable ECS Exec
       enableExecuteCommand: props.enableExecuteCommand,
