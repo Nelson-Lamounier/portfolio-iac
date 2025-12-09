@@ -29,14 +29,6 @@ on:
           - deploy-vpc-peering
           - sync-config-only
           - destroy-all
-      architecture:
-        description: "Monitoring architecture"
-        required: true
-        type: choice
-        default: "layered"
-        options:
-          - layered
-          - embedded
       run_health_checks:
         description: "Run post-deployment health checks"
         required: false
@@ -58,7 +50,7 @@ permissions:
 
 jobs:
   deploy:
-    name: ${{ github.event.inputs.action || 'deploy-all' }} (${{ github.event.inputs.architecture || 'layered' }})
+    name: ${{ github.event.inputs.action || 'deploy-all' }} (Layered Architecture)
     runs-on: ubuntu-latest
     environment: pipeline
     concurrency:
@@ -68,7 +60,6 @@ jobs:
     env:
       # Default values for push triggers (workflow_dispatch will override via inputs)
       ACTION: ${{ github.event.inputs.action || 'deploy-all' }}
-      ARCHITECTURE: ${{ github.event.inputs.architecture || 'layered' }}
 
     steps:
       - name: Checkout
@@ -260,7 +251,7 @@ jobs:
           if [ "$STATUS" != "running" ]; then
             echo "::warning::Instance is not running"
           else
-            echo "✅ Instance is running"
+            echo "Instance is running"
           fi
 
       - name: Check ECS Services
@@ -285,7 +276,7 @@ jobs:
             echo "$SERVICE: $RUNNING/$DESIRED running"
             
             if [ "$RUNNING" = "$DESIRED" ] && [ "$RUNNING" != "0" ]; then
-              echo "✅ $SERVICE is healthy"
+              echo "$SERVICE is healthy"
             else
               echo "::warning::$SERVICE is not healthy ($RUNNING/$DESIRED)"
             fi
@@ -305,7 +296,7 @@ jobs:
           echo "Prometheus health check: HTTP $HTTP_CODE"
 
           if [ "$HTTP_CODE" = "200" ]; then
-            echo "✅ Prometheus is healthy"
+            echo "Prometheus is healthy"
           else
             echo "::warning::Prometheus health check failed with code $HTTP_CODE"
           fi
@@ -358,7 +349,7 @@ jobs:
         run: |
           echo "## Pipeline Monitoring - ${ACTION}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Architecture:** ${ARCHITECTURE}" >> $GITHUB_STEP_SUMMARY
+          echo "**Architecture:** Layered (Infrastructure + Services)" >> $GITHUB_STEP_SUMMARY
           echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
