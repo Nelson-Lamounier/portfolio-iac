@@ -269,6 +269,31 @@ ENVIRONMENT=development yarn workspace infrastructure cdk diff
 ENVIRONMENT=development yarn infra:deploy
 ```
 
+### Local Load Balancer Testing
+
+Test the Application Load Balancer locally before production deployment:
+
+```bash
+# 1. Login to AWS SSO (required first)
+aws sso login --profile github-actions
+
+# 2. Quick HTTP-only deployment (fastest)
+make deploy-lb-http ENV=development
+
+# 3. Full deployment with HTTPS (requires domain)
+make deploy-lb-local ENV=development
+
+# 4. Test the load balancer
+curl -I http://<ALB-DNS-NAME>
+
+# 5. Clean up after testing
+make delete-stacks ENV=development
+```
+
+**Note:** Scripts use the `github-actions` AWS profile (same permissions as CI/CD).
+
+See [docs/LOCAL_LB_TESTING.md](docs/LOCAL_LB_TESTING.md) for detailed testing guide and [docs/AWS_PROFILE_SETUP.md](docs/AWS_PROFILE_SETUP.md) for profile configuration.
+
 ### Working with Docker
 
 ```bash
@@ -689,7 +714,6 @@ git push origin develop  # CI validates
    ```
 
 2. **Make your changes**
-
    - Write code
    - Add tests
    - Update documentation
@@ -710,7 +734,6 @@ git push origin develop  # CI validates
    ```
 
 5. **Create pull request**
-
    - Target: `develop` branch
    - Wait for CI to pass
    - Review CDK diff (if infrastructure changed)
@@ -791,7 +814,19 @@ This project uses:
 
 ### Common Issues
 
-See [infrastructure/docs/TROUBLESHOOTING.md](infrastructure/docs/TROUBLESHOOTING.md) for common issues and solutions.
+#### Stack Management
+
+- **Stack stuck in rollback**: `make fix-rollback ENV=development`
+- **Cannot delete export error**: `make delete-stacks ENV=development`
+- **Fresh start needed**: `make delete-stacks ENV=development && make cdk-deploy ENV=development`
+
+See [docs/STACK_RECOVERY_QUICK_REFERENCE.md](docs/STACK_RECOVERY_QUICK_REFERENCE.md) for quick solutions.
+
+#### Detailed Guides
+
+- [Stack Management Guide](docs/STACK_MANAGEMENT_GUIDE.md) - Complete troubleshooting guide
+- [SSM Parameter Configuration](docs/SSM_PARAMETER_CONFIGURATION.md) - Parameter Store setup
+- [Domain Setup Guide](docs/DOMAIN_SETUP_GUIDE.md) - HTTPS configuration
 
 ---
 

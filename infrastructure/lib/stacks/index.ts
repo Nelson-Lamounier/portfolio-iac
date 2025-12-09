@@ -2,12 +2,22 @@
 
 // Networking stacks
 export * from "./networking/networking-stack";
+export * from "./networking/vpc-peering-stack";
 
 // Storage stacks
 export * from "./storage/storage-stack";
 
 // Compute stacks
 export * from "./compute/compute-stack";
+export * from "./compute/lambda-stack";
 
 // Monitoring stacks
 export * from "./monitoring/monitoring-stack";
+export * from "./monitoring/monitoring-ecs-stack";
+export * from "./monitoring/cross-account-monitoring-stack";
+// Layered monitoring stacks (recommended for production)
+export * from "./monitoring/monitoring-infra-stack";
+export * from "./monitoring/monitoring-service-stack";
+
+// Load Balancer stacks
+export * from "./load-balancer/load-balancer-stack";

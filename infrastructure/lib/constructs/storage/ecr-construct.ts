@@ -28,7 +28,7 @@ export class EcrConstruct extends Construct {
         props.imageTagMutability || ecr.TagMutability.IMMUTABLE,
 
       // RETAIN prevents accidental data loss when stack is deleted
-      removalPolicy: RemovalPolicy.RETAIN,
+      // removalPolicy: RemovalPolicy.RETAIN,  Enable for production only
 
       // Automatically detects vulnerabilities before deployment
       imageScanOnPush: true,

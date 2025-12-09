@@ -1,0 +1,219 @@
+# @format
+
+name: Deploy Pipeline Monitoring
+
+on:
+  push:
+    branches:
+      - feature/*
+    paths:
+      - "infrastructure/lib/stacks/monitoring/**"
+      - "monitoring/**"
+      - ".github/workflows/deploy-pipeline-monitoring.yml"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Action to perform"
+        required: true
+        type: choice
+        default: "deploy-all"
+        options:
+          - deploy-all
+          - deploy-infra-only
+          - deploy-services-only
+          - sync-config-only
+          - destroy-all
+      architecture:
+        description: "Monitoring architecture"
+        required: true
+        type: choice
+        default: "layered"
+        options:
+          - layered
+          - embedded
+
+env:
+  NODE_VERSION: "22"
+  AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    name: ${{ github.event.inputs.action || 'deploy-all' }} (${{ github.event.inputs.architecture || 'layered' }})
+    runs-on: ubuntu-latest
+    environment: pipeline
+    concurrency:
+      group: deploy-pipeline-monitoring
+      cancel-in-progress: false
+
+    env:
+      # Default values for push triggers (workflow_dispatch will override via inputs)
+      ACTION: ${{ github.event.inputs.action || 'deploy-all' }}
+      ARCHITECTURE: ${{ github.event.inputs.architecture || 'layered' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install Dependencies
+        run: make install
+
+      - name: Build Infrastructure
+        run: make build-infrastructure
+
+      - name: Configure AWS Credentials (OIDC - Pipeline Account)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Assume role in dev account to fetch monitoring info
+      - name: Configure AWS Credentials (Dev Account)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.DEPLOYMENT_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-chaining: true
+          role-session-name: GitHubActions-FetchDevInfo
+
+      # Fetch Dev Account Info using Makefile
+      # Note: This may return NOT_FOUND if dev infrastructure isn't deployed yet
+      # That's OK - monitoring can be deployed without cross-account access initially
+      - name: Fetch Dev Account Monitoring Info
+        id: dev-info
+        continue-on-error: true
+        run: |
+          echo "::notice::Fetching dev account info (may be empty if not deployed yet)"
+          echo "Current AWS Account:"
+          aws sts get-caller-identity
+          echo ""
+          echo "Testing SSM access:"
+          aws ssm get-parameter --name /networking/development/vpc-id --query 'Parameter.Value' --output text || echo "Cannot access SSM parameter"
+          echo ""
+          make fetch-monitoring-info ENV=development
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+      # Switch back to pipeline account for deployment
+      - name: Configure AWS Credentials (Pipeline Account)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Fetch Staging Account Info (if needed)
+      - name: Configure AWS Credentials (Staging Account)
+        if: vars.AWS_ACCOUNT_ID_STAGING != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_STAGING }}:role/GitHubActionsDeploymentRole
+          aws-region: ${{ env.AWS_REGION }}
+          role-chaining: true
+
+      - name: Fetch Staging Account Monitoring Info
+        id: staging-info
+        continue-on-error: true
+        if: vars.AWS_ACCOUNT_ID_STAGING != ''
+        run: make fetch-monitoring-info ENV=staging
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+      # Switch back to pipeline account for deployment
+      - name: Configure AWS Credentials (Pipeline Account - Final)
+        if: vars.AWS_ACCOUNT_ID_STAGING != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Deploy All
+      - name: Deploy All (Layered)
+        if: env.ACTION == 'deploy-all' && env.ARCHITECTURE == 'layered'
+        run: make deploy-monitoring-layered
+        env:
+          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+          DEV_VPC_ID: ${{ env.DEV_VPC_ID }}
+          DEV_NODE_EXPORTER_IP: ${{ env.DEV_NODE_EXPORTER_IP }}
+
+      - name: Deploy All (Embedded)
+        if: env.ACTION == 'deploy-all' && env.ARCHITECTURE == 'embedded'
+        run: make deploy-monitoring-embedded
+        env:
+          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+          DEV_VPC_ID: ${{ env.DEV_VPC_ID }}
+          DEV_NODE_EXPORTER_IP: ${{ env.DEV_NODE_EXPORTER_IP }}
+
+      # Deploy Infrastructure Only
+      - name: Deploy Infrastructure Only
+        if: env.ACTION == 'deploy-infra-only'
+        run: make deploy-monitoring-infra
+        env:
+          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+          DEV_VPC_ID: ${{ env.DEV_VPC_ID }}
+
+      # Deploy Services Only
+      - name: Deploy Services Only
+        if: env.ACTION == 'deploy-services-only'
+        run: make deploy-monitoring-services
+
+      # Sync Config Only
+      - name: Sync Config Only
+        if: env.ACTION == 'sync-config-only'
+        run: make sync-monitoring-config
+
+      # Destroy All
+      - name: Destroy All
+        if: env.ACTION == 'destroy-all'
+        run: make destroy-monitoring-layered
+
+      # Check Status
+      - name: Check Monitoring Status
+        if: env.ACTION != 'destroy-all'
+        run: make check-monitoring-layered
+
+      # Summary
+      - name: Generate Summary
+        if: always()
+        run: |
+          echo "## Pipeline Monitoring - ${ACTION}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Architecture:** ${ARCHITECTURE}" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### Cross-Account Info Retrieved" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dev VPC ID:** ${DEV_VPC_ID:-NOT_FOUND}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dev EC2 IP:** ${DEV_NODE_EXPORTER_IP:-NOT_FOUND}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${ACTION}" != "destroy-all" ]; then
+            # Get ALB DNS
+            ALB_DNS=$(aws cloudformation describe-stacks \
+              --stack-name MonitoringInfraStack-pipeline \
+              --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerDns`].OutputValue' \
+              --output text 2>/dev/null || \
+              aws cloudformation describe-stacks \
+              --stack-name MonitoringEcsStack-pipeline \
+              --query 'Stacks[0].Outputs[?OutputKey==`MonitoringAlbDns`].OutputValue' \
+              --output text 2>/dev/null || echo "")
+            
+            if [ -n "$ALB_DNS" ]; then
+              echo "### Access URLs" >> $GITHUB_STEP_SUMMARY
+              echo "- **Grafana**: http://${ALB_DNS}/grafana (admin/admin)" >> $GITHUB_STEP_SUMMARY
+              echo "- **Prometheus**: http://${ALB_DNS}/prometheus" >> $GITHUB_STEP_SUMMARY
+              echo "- **Targets**: http://${ALB_DNS}/prometheus/targets" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "✓ All monitoring stacks destroyed" >> $GITHUB_STEP_SUMMARY
+          fi

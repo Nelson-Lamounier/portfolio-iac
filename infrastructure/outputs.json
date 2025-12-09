@@ -1,0 +1,25 @@
+{
+  "NetworkingStack-development": {
+    "ExportsOutputRefVpcPublicSubnet1Subnet8E8DEDC0785EBA99": "subnet-0e40dd6ef74e0cbce",
+    "VpcId": "vpc-02c65baaaa286c8e1",
+    "VpcCidr": "10.0.0.0/16",
+    "PublicSubnet1Id": "subnet-0e40dd6ef74e0cbce",
+    "PublicSubnet2Id": "subnet-08c924883bd1794ea",
+    "AvailabilityZones": "eu-west-1a,eu-west-1b",
+    "ExportsOutputRefVpcC302751171D26A23": "vpc-02c65baaaa286c8e1",
+    "PrivateSubnet2Id": "subnet-09eda646860aad6c5",
+    "ExportsOutputRefVpcPublicSubnet2SubnetA811849C19D90E96": "subnet-08c924883bd1794ea",
+    "PrivateSubnet1Id": "subnet-014319b22048ec748",
+    "FlowLogsLogGroup": "/aws/vpc/flowlogs/development"
+  },
+  "LoadBalancerStack-development": {
+    "TargetGroupArndevelopmentecsservice": "arn:aws:elasticloadbalancing:eu-west-1:771826808455:targetgroup/development-ecs-service/d6051f05d472dc50",
+    "ExportsOutputRefTGdevelopmentecsserviceTargetGroupFBB0A4CC4D7A80CF": "arn:aws:elasticloadbalancing:eu-west-1:771826808455:targetgroup/development-ecs-service/d6051f05d472dc50",
+    "ExportsOutputFnGetAttALBSecurityGroup8B8624F8GroupId12026B96": "sg-050f4c381b00ad6fb",
+    "HttpListenerArn": "arn:aws:elasticloadbalancing:eu-west-1:771826808455:listener/app/development-alb/53658d3ab094a779/0e755330738ed17c",
+    "LoadBalancerArn": "arn:aws:elasticloadbalancing:eu-west-1:771826808455:loadbalancer/app/development-alb/53658d3ab094a779",
+    "HttpsListenerArn": "arn:aws:elasticloadbalancing:eu-west-1:771826808455:listener/app/development-alb/53658d3ab094a779/e19fe1e8ed3ed217",
+    "SecurityGroupId": "sg-050f4c381b00ad6fb",
+    "LoadBalancerDnsName": "development-alb-1368452532.eu-west-1.elb.amazonaws.com"
+  }
+}
