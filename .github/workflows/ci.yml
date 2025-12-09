@@ -30,7 +30,23 @@ jobs:
       - name: Install dependencies
         run: make install
 
+
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./frontend/Dockerfile
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: portfolio-frontend:validation
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test container starts
+      
       - name: Check formatting
+
         run: |
           echo "::group::Checking code formatting"
           # Add your formatting check command here
