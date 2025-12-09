@@ -244,24 +244,20 @@ logs-monitoring-ecs:
 .PHONY: sync-monitoring-config init-monitoring-config destroy-monitoring-layered
 
 # Deploy full layered monitoring stack (uses script)
+# Pipeline account ALWAYS uses layered architecture (no --layered flag needed)
 deploy-monitoring-layered:
 	@chmod +x ./scripts/deploy/pipeline-monitoring.sh
-	@./scripts/deploy/pipeline-monitoring.sh deploy-all --layered
-
-# Deploy full monitoring stack with embedded architecture (legacy)
-deploy-monitoring-embedded:
-	@chmod +x ./scripts/deploy/pipeline-monitoring.sh
-	@./scripts/deploy/pipeline-monitoring.sh deploy-all --embedded
+	@./scripts/deploy/pipeline-monitoring.sh deploy-all
 
 # Deploy only Layer 1: Infrastructure
 deploy-monitoring-infra:
 	@chmod +x ./scripts/deploy/pipeline-monitoring.sh
-	@./scripts/deploy/pipeline-monitoring.sh deploy-infra --layered
+	@./scripts/deploy/pipeline-monitoring.sh deploy-infra
 
 # Deploy only Layer 2: Services
 deploy-monitoring-services:
 	@chmod +x ./scripts/deploy/pipeline-monitoring.sh
-	@./scripts/deploy/pipeline-monitoring.sh deploy-services --layered
+	@./scripts/deploy/pipeline-monitoring.sh deploy-services
 
 # Initialize config on EFS (run once after infra deploy)
 init-monitoring-config:
