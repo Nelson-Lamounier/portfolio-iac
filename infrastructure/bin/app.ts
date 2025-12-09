@@ -459,6 +459,8 @@ if (config.enableMonitoring) {
         ...stackProps,
         envName: config.envName,
         vpc: monitoringVpc.vpc,
+        certificateArn: monitoringCertificateArn,
+        enableHttps: !!monitoringCertificateArn,
         crossAccountTargets:
           crossAccountTargets.length > 0 ? crossAccountTargets : undefined,
       }
