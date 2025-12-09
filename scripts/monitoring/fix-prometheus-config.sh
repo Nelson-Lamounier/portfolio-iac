@@ -1,111 +1,115 @@
 #!/bin/bash
-# Manually create Prometheus config on existing instance (temporary fix)
-# This script should be run via SSM on the EC2 instance
+# =============================================================================
+# Fix Prometheus Config Issue
+# =============================================================================
+# This script fixes the "prometheus.yml not found" issue by:
+# 1. Deploying the stack (uploads assets to S3)
+# 2. Terminating the old EC2 instance
+# 3. Waiting for new instance with correct config
+# =============================================================================
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
 echo "========================================="
-echo "Creating Prometheus Configuration"
+echo "Fix Prometheus Config Issue"
 echo "========================================="
 echo ""
 
-# Get environment name from instance tags
-ENVIRONMENT=$(aws ec2 describe-tags \
-  --filters "Name=resource-id,Values=$(ec2-metadata --instance-id | cut -d ' ' -f 2)" \
-            "Name=key,Values=Environment" \
-  --query 'Tags[0].Value' \
-  --output text 2>/dev/null || echo "pipeline")
+# Step 1: Deploy stack
+echo "Step 1: Deploying MonitoringEcsStack-pipeline..."
+echo "This will upload config assets to S3"
+echo ""
+cd "$PROJECT_ROOT/infrastructure"
+yarn build
+ENVIRONMENT=pipeline yarn cdk deploy MonitoringEcsStack-pipeline --exclusively --require-approval never
 
-echo "Environment: $ENVIRONMENT"
+echo ""
+echo "✓ Deployment complete"
 echo ""
 
-# Create directory if it doesn't exist
-mkdir -p /mnt/prometheus-config
+# Step 2: Find and terminate old instance
+echo "Step 2: Finding EC2 instance..."
+INSTANCE_ID=$(aws ec2 describe-instances \
+  --filters "Name=tag:aws:autoscaling:groupName,Values=*pipeline-monitoring*MonitoringCapacity*" \
+  "Name=instance-state-name,Values=running" \
+  --query 'Reservations[0].Instances[0].InstanceId' \
+  --output text 2>/dev/null || echo "")
 
-# Create Prometheus configuration
-cat > /mnt/prometheus-config/prometheus.yml << EOF
-global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
-  external_labels:
-    environment: '$ENVIRONMENT'
+if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" == "None" ]; then
+  echo "No running instance found. Auto Scaling will create one."
+else
+  echo "Found instance: $INSTANCE_ID"
+  echo "Terminating instance to force new launch with updated UserData..."
+  aws ec2 terminate-instances --instance-ids $INSTANCE_ID
+  echo "✓ Instance terminated"
+fi
 
-scrape_configs:
-  # Prometheus itself
-  - job_name: 'prometheus'
-    static_configs:
-      - targets: ['localhost:9090']
+echo ""
+echo "Step 3: Waiting for new instance to launch..."
+echo "This takes about 2-3 minutes..."
+sleep 120
 
-  # Node Exporter - EC2 Service Discovery (All Clusters)
-  - job_name: 'node-exporter'
-    ec2_sd_configs:
-      - region: ${AWS_REGION:-eu-west-1}
-        port: 9100
-        filters:
-          # Filter by environment tag to get all clusters in this environment
-          - name: tag:Environment
-            values: ['$ENVIRONMENT']
-          - name: instance-state-name
-            values: ['running']
-    relabel_configs:
-      # Use private IP
-      - source_labels: [__meta_ec2_private_ip]
-        target_label: __address__
-        replacement: '\$1:9100'
-      # Add instance ID as label
-      - source_labels: [__meta_ec2_instance_id]
-        target_label: instance_id
-      # Add availability zone
-      - source_labels: [__meta_ec2_availability_zone]
-        target_label: availability_zone
-      # Add cluster name from Purpose tag (Monitoring vs Application)
-      - source_labels: [__meta_ec2_tag_Purpose]
-        target_label: cluster
-        replacement: '\$1'
-      # If no Purpose tag, derive from Name tag
-      - source_labels: [__meta_ec2_tag_Name]
-        regex: '.*monitoring.*'
-        target_label: cluster
-        replacement: 'Monitoring'
-      # Default to Application cluster if not monitoring
-      - source_labels: [__meta_ec2_tag_Name, cluster]
-        regex: '.*;'
-        target_label: cluster
-        replacement: 'Application'
-      # Use instance name tag as instance label
-      - source_labels: [__meta_ec2_tag_Name]
-        target_label: instance
-EOF
+# Step 3: Wait for new instance
+for i in {1..10}; do
+  NEW_INSTANCE_ID=$(aws ec2 describe-instances \
+    --filters "Name=tag:aws:autoscaling:groupName,Values=*pipeline-monitoring*MonitoringCapacity*" \
+    "Name=instance-state-name,Values=running" \
+    --query 'Reservations[0].Instances[0].InstanceId' \
+    --output text 2>/dev/null || echo "")
+  
+  if [ -n "$NEW_INSTANCE_ID" ] && [ "$NEW_INSTANCE_ID" != "None" ]; then
+    echo "✓ New instance launched: $NEW_INSTANCE_ID"
+    break
+  fi
+  
+  echo "Waiting... (attempt $i/10)"
+  sleep 30
+done
 
-# Set permissions
-chown -R 65534:65534 /mnt/prometheus-config
-chmod -R 755 /mnt/prometheus-config
-
-# Verify file was created
-if [ ! -f /mnt/prometheus-config/prometheus.yml ]; then
-  echo "ERROR: Failed to create prometheus.yml"
+if [ -z "$NEW_INSTANCE_ID" ] || [ "$NEW_INSTANCE_ID" == "None" ]; then
+  echo "ERROR: New instance not found after 5 minutes"
+  echo "Check Auto Scaling Group manually"
   exit 1
 fi
 
 echo ""
-echo "✓ Prometheus config created successfully"
-echo ""
-echo "File location: /mnt/prometheus-config/prometheus.yml"
-echo "File size: $(stat -c%s /mnt/prometheus-config/prometheus.yml) bytes"
-echo ""
-echo "Content preview:"
-head -20 /mnt/prometheus-config/prometheus.yml
+echo "Step 4: Waiting for UserData script to complete..."
+echo "This takes about 3-5 minutes..."
+sleep 180
+
 echo ""
 echo "========================================="
-echo "Next Steps"
+echo "✓ Fix Complete!"
 echo "========================================="
 echo ""
-echo "1. Restart Prometheus task:"
-echo "   aws ecs update-service \\"
-echo "     --cluster $ENVIRONMENT-monitoring-cluster \\"
-echo "     --service $ENVIRONMENT-prometheus \\"
-echo "     --force-new-deployment"
+echo "New Instance ID: $NEW_INSTANCE_ID"
 echo ""
-echo "2. Or restart the container manually:"
-echo "   docker restart \$(docker ps -q -f name=prometheus)"
+echo "To verify:"
+echo "  1. Connect to instance:"
+echo "     aws ssm start-session --target $NEW_INSTANCE_ID"
+echo ""
+echo "  2. Check UserData log:"
+echo "     sudo tail -f /var/log/monitoring-setup.log"
+echo ""
+echo "  3. Verify config files:"
+echo "     ls -la /mnt/prometheus-config/"
+echo ""
+echo "  4. Check ECS tasks:"
+echo "     docker ps"
+echo ""
+echo "  5. Get ALB DNS:"
+ALB_DNS=$(aws elbv2 describe-load-balancers \
+  --query 'LoadBalancers[?contains(LoadBalancerName, `pipeline-monitoring`)].DNSName' \
+  --output text 2>/dev/null || echo "")
+
+if [ -n "$ALB_DNS" ]; then
+  echo "     http://$ALB_DNS/grafana (admin/admin)"
+  echo "     http://$ALB_DNS/prometheus"
+else
+  echo "     (ALB DNS not found - check AWS console)"
+fi
+
 echo ""

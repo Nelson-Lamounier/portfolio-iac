@@ -72,21 +72,20 @@ export class GrafanaConstruct extends Construct {
     super(scope, id);
 
     const logGroupName = `/ecs/${props.envName}-grafana`;
-    // TODO: Add log group creation and logging configuration later with proper IAM permissions
-    // this.logGroup = new logs.LogGroup(this, "LogGroup", {
-    //   logGroupName: logGroupName,
-    //   retention: props.logRetention || logs.RetentionDays.ONE_WEEK,
-    //   removalPolicy: cdk.RemovalPolicy.DESTROY,
-    // });
+    this.logGroup = new logs.LogGroup(this, "LogGroup", {
+      logGroupName: logGroupName,
+      retention: props.logRetention || logs.RetentionDays.ONE_WEEK,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
 
     // Build environment varibles
     const environment = this.buildEnvironment(props);
 
     // Create a minimal task role without any permissions
-    // TODO: Add permissions later as needed
+    // CloudWatch permissions will be added if enableCloudWatch is true
     const taskRole = new iam.Role(this, "TaskRole", {
       assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
-      description: "Minimal task role for Grafana",
+      description: "Task role for Grafana",
     });
 
     // ========================================================================
@@ -100,13 +99,7 @@ export class GrafanaConstruct extends Construct {
         networkMode: ecs.NetworkMode.BRIDGE,
         grantEcrReadAccess: false,
         taskRole: taskRole,
-        // Disable CloudWatch Logs in execution role for now
-        // TODO: Re-enable with proper IAM permissions
-        executionRole: new iam.Role(this, "ExecutionRole", {
-          assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
-          description:
-            "Minimal execution role without CloudWatch Logs permissions",
-        }),
+        // Let EcsTaskDefinitionConstruct create execution role with CloudWatch Logs permissions
 
         // Volume
         volumes: [
@@ -137,9 +130,7 @@ export class GrafanaConstruct extends Construct {
             containerPort: 3000,
             memoryReservationMiB: props.memoryReservationMiB || 256,
             cpu: props.cpu,
-            // TODO: Add CloudWatch Logs logging driver with proper IAM permissions
-            // logStreamPrefix: "grafana",
-            // logGroup: this.logGroup,
+            logStreamPrefix: "grafana", // Enable CloudWatch Logs
             environment: environment,
             user: "472:0", // Run as grafana user (472) with root group (0) for write access
           },

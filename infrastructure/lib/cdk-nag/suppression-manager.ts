@@ -129,6 +129,44 @@ export class SuppressionManager {
   }
 
   /**
+   * S3 Asset Permissions
+   * For EC2 instances that need to download CDK assets from S3
+   */
+  static getS3AssetPermissions(): NagPackSuppression[] {
+    return [
+      {
+        id: "AwsSolutions-IAM5",
+        reason:
+          "S3 GetBucket* permissions are required for EC2 instances to download CDK assets (config files) from the CDK staging bucket. These are read-only operations scoped to the CDK asset bucket and are necessary for bootstrapping instances with configuration files.",
+        appliesTo: ["Action::s3:GetBucket*"],
+      },
+      {
+        id: "AwsSolutions-IAM5",
+        reason:
+          "S3 GetObject* permissions are required for EC2 instances to download CDK assets (config files) from the CDK staging bucket. These are read-only operations scoped to the CDK asset bucket and are necessary for bootstrapping instances with configuration files.",
+        appliesTo: ["Action::s3:GetObject*"],
+      },
+      {
+        id: "AwsSolutions-IAM5",
+        reason:
+          "S3 List* permissions are required for EC2 instances to list objects in the CDK staging bucket when downloading assets. These are read-only operations scoped to the CDK asset bucket and are necessary for bootstrapping instances with configuration files.",
+        appliesTo: ["Action::s3:List*"],
+      },
+      {
+        id: "AwsSolutions-IAM5",
+        reason:
+          "CDK asset bucket permissions use wildcard for objects within the CDK staging bucket. This is automatically created by CDK and scoped to the specific account and region. The bucket only contains CDK deployment assets (config files, Lambda code, etc.) and permissions are read-only.",
+        appliesTo: [
+          {
+            regex:
+              "/^Resource::arn:aws:s3:::cdk-[a-z0-9]+-assets-.*-.*\\/\\*$/",
+          },
+        ],
+      },
+    ];
+  }
+
+  /**
    * CloudWatch Logs Permissions
    * For services that need to write logs
    */
@@ -323,6 +361,7 @@ export class SuppressionManager {
         suppressions.push(...this.getAutoScalingSuppressions());
         suppressions.push(...this.getPublicAccessSuppressions());
         suppressions.push(...this.getLoadBalancerSuppressions());
+        suppressions.push(...this.getS3AssetPermissions());
         if (envName) {
           suppressions.push(...this.getCloudWatchLogsSuppressions(envName));
         }

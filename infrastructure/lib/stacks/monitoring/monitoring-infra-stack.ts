@@ -39,6 +39,13 @@ export interface MonitoringInfraStackProps extends cdk.StackProps {
   certificateArn?: string;
   enableHttps?: boolean;
   enableAccessLogs?: boolean;
+  crossAccountTargets?: Array<{
+    envName: string;
+    privateIp: string;
+    port?: number;
+    targetType?: "node-exporter" | "application";
+    metricsPath?: string;
+  }>;
 }
 
 export class MonitoringInfraStack extends cdk.Stack {
@@ -53,6 +60,7 @@ export class MonitoringInfraStack extends cdk.Stack {
   public readonly configBucket: MonitoringConfigBucketConstruct;
   public readonly alb: AlbConstruct;
   public readonly listeners: AlbListenerConstruct;
+  public readonly efsAvailabilityZone: string;
 
   constructor(scope: Construct, id: string, props: MonitoringInfraStackProps) {
     super(scope, id, props);
@@ -82,7 +90,9 @@ export class MonitoringInfraStack extends cdk.Stack {
     // ========================================================================
     // EFS FILE SYSTEM (Persistent Data + Config Storage)
     // ========================================================================
-    this.fileSystem = this.createEfsFileSystem(vpc, envName);
+    const efsResult = this.createEfsFileSystem(vpc, envName);
+    this.fileSystem = efsResult.fileSystem;
+    this.efsAvailabilityZone = efsResult.availabilityZone;
     this.efsAccessPoint = this.createEfsAccessPoint(this.fileSystem);
 
     // ========================================================================
@@ -105,10 +115,12 @@ export class MonitoringInfraStack extends cdk.Stack {
     // ========================================================================
     // EC2 AUTO SCALING GROUP
     // ========================================================================
+    // CRITICAL: ASG must be in same AZ as EFS One Zone mount target
     this.autoScalingGroup = this.createAutoScalingGroup(
       vpc,
       envName,
-      this.fileSystem
+      this.fileSystem,
+      this.efsAvailabilityZone
     );
 
     // ========================================================================
@@ -207,8 +219,14 @@ export class MonitoringInfraStack extends cdk.Stack {
   /**
    * Create EFS file system for persistent monitoring data AND configuration
    * Uses One Zone storage class for cost optimization (~47% cheaper)
+   *
+   * IMPORTANT: Returns both the file system AND the availability zone it's in
+   * so that the ASG can be constrained to the same AZ
    */
-  private createEfsFileSystem(vpc: ec2.IVpc, envName: string): efs.FileSystem {
+  private createEfsFileSystem(
+    vpc: ec2.IVpc,
+    envName: string
+  ): { fileSystem: efs.FileSystem; availabilityZone: string } {
     const publicSubnets = vpc.selectSubnets({
       subnetType: ec2.SubnetType.PUBLIC,
     });
@@ -236,8 +254,9 @@ export class MonitoringInfraStack extends cdk.Stack {
     cdk.Tags.of(fileSystem).add("Name", `${envName}-monitoring-efs`);
     cdk.Tags.of(fileSystem).add("Environment", envName);
     cdk.Tags.of(fileSystem).add("StorageClass", "One-Zone-IA");
+    cdk.Tags.of(fileSystem).add("AvailabilityZone", availabilityZone);
 
-    return fileSystem;
+    return { fileSystem, availabilityZone };
   }
 
   /**
@@ -262,8 +281,11 @@ export class MonitoringInfraStack extends cdk.Stack {
   private createAutoScalingGroup(
     vpc: ec2.IVpc,
     envName: string,
-    fileSystem: efs.FileSystem
+    fileSystem: efs.FileSystem,
+    availabilityZone: string
   ): autoscaling.AutoScalingGroup {
+    // CRITICAL: Constrain ASG to same AZ as EFS One Zone mount target
+    // This ensures EC2 instances can always mount the EFS filesystem
     const asg = this.cluster.addCapacity("MonitoringCapacity", {
       instanceType: ec2.InstanceType.of(
         ec2.InstanceClass.T3,
@@ -273,7 +295,10 @@ export class MonitoringInfraStack extends cdk.Stack {
       maxCapacity: 1,
       desiredCapacity: 1,
       machineImage: ecs.EcsOptimizedImage.amazonLinux2(),
-      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+      vpcSubnets: {
+        subnetType: ec2.SubnetType.PUBLIC,
+        availabilityZones: [availabilityZone], // Force same AZ as EFS
+      },
       associatePublicIpAddress: true,
       blockDevices: [
         {
@@ -314,12 +339,12 @@ export class MonitoringInfraStack extends cdk.Stack {
       "# Install EFS utilities",
       "yum install -y amazon-efs-utils",
       "",
-      "# Create mount point and mount EFS",
+      "# Create mount point and mount EFS with IAM authentication",
       "mkdir -p /mnt/efs",
-      `mount -t efs -o tls ${fileSystem.fileSystemId}:/ /mnt/efs`,
+      `mount -t efs -o tls,iam ${fileSystem.fileSystemId}:/ /mnt/efs`,
       "",
       "# Add to fstab for persistence across reboots",
-      `echo "${fileSystem.fileSystemId}:/ /mnt/efs efs _netdev,tls 0 0" >> /etc/fstab`,
+      `echo "${fileSystem.fileSystemId}:/ /mnt/efs efs _netdev,tls,iam 0 0" >> /etc/fstab`,
       "",
       "# Create directory structure on EFS",
       "# Data directories (persistent)",
@@ -333,18 +358,39 @@ export class MonitoringInfraStack extends cdk.Stack {
       "mkdir -p /mnt/efs/config/grafana/dashboards",
       "mkdir -p /mnt/efs/config/alertmanager",
       "",
-      "# Create symlinks for container access",
+      "# Create basic prometheus.yml config",
+      "cat > /mnt/efs/config/prometheus/prometheus.yml << 'PROMEOF'",
+      "global:",
+      "  scrape_interval: 15s",
+      "  evaluation_interval: 15s",
+      "",
+      "scrape_configs:",
+      "  - job_name: 'prometheus'",
+      "    static_configs:",
+      "      - targets: ['localhost:9090']",
+      "",
+      "  - job_name: 'node-exporter'",
+      "    static_configs:",
+      "      - targets: ['localhost:9100']",
+      "PROMEOF",
+      "",
+      "# Remove any existing symlink targets that might be directories",
+      "rm -rf /mnt/prometheus-data /mnt/grafana-data /mnt/prometheus-config /mnt/grafana-provisioning /mnt/grafana-dashboards",
+      "",
+      "# Create symlinks for container access (force overwrite)",
       "ln -sf /mnt/efs/prometheus-data /mnt/prometheus-data",
       "ln -sf /mnt/efs/grafana-data /mnt/grafana-data",
       "ln -sf /mnt/efs/config/prometheus /mnt/prometheus-config",
       "ln -sf /mnt/efs/config/grafana/provisioning /mnt/grafana-provisioning",
       "ln -sf /mnt/efs/config/grafana/dashboards /mnt/grafana-dashboards",
       "",
-      "# Set permissions",
+      "# Set permissions (777 for data dirs, correct ownership)",
       "chown -R 65534:65534 /mnt/efs/prometheus-data /mnt/efs/config/prometheus",
       "chown -R 472:0 /mnt/efs/grafana-data /mnt/efs/config/grafana",
-      "chmod -R 755 /mnt/efs/prometheus-data /mnt/efs/config/prometheus",
-      "chmod -R 775 /mnt/efs/grafana-data /mnt/efs/config/grafana"
+      "chmod -R 777 /mnt/efs/prometheus-data",
+      "chmod -R 777 /mnt/efs/grafana-data",
+      "chmod -R 755 /mnt/efs/config/prometheus",
+      "chmod -R 755 /mnt/efs/config/grafana"
     );
 
     // Security group rules
@@ -442,6 +488,12 @@ export class MonitoringInfraStack extends cdk.Stack {
       value: this.fileSystem.fileSystemId,
       description: "EFS File System ID",
       exportName: `${this.stackName}-efs-id`,
+    });
+
+    new cdk.CfnOutput(this, "EfsAvailabilityZone", {
+      value: this.efsAvailabilityZone,
+      description: "EFS Availability Zone (One Zone deployment)",
+      exportName: `${this.stackName}-efs-az`,
     });
 
     new cdk.CfnOutput(this, "LoadBalancerDns", {
