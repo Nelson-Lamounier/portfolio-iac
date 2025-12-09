@@ -12,6 +12,11 @@ import { Construct } from "constructs";
 import { SuppressionManager } from "../../cdk-nag";
 import { MonitoringConfigBucketConstruct } from "../../constructs/monitoring";
 
+import {
+  AlbConstruct,
+  AlbListenerConstruct,
+} from "../../constructs/networking/alb";
+
 /**
  * LAYER 1: Monitoring Infrastructure Stack
  *
@@ -31,6 +36,9 @@ export interface MonitoringInfraStackProps extends cdk.StackProps {
   vpc: ec2.IVpc;
   envName: string;
   allowedIpRanges?: string[];
+  certificateArn?: string;
+  enableHttps?: boolean;
+  enableAccessLogs?: boolean;
 }
 
 export class MonitoringInfraStack extends cdk.Stack {
@@ -43,11 +51,20 @@ export class MonitoringInfraStack extends cdk.Stack {
   public readonly eventLogGroup: logs.LogGroup;
   public readonly efsAccessPoint: efs.AccessPoint;
   public readonly configBucket: MonitoringConfigBucketConstruct;
+  public readonly alb: AlbConstruct;
+  public readonly listeners: AlbListenerConstruct;
 
   constructor(scope: Construct, id: string, props: MonitoringInfraStackProps) {
     super(scope, id, props);
 
-    const { vpc, envName, allowedIpRanges } = props;
+    const {
+      vpc,
+      envName,
+      allowedIpRanges = ["0.0.0.0/0"],
+      certificateArn,
+      enableHttps = !!certificateArn,
+      enableAccessLogs = true,
+    } = props;
 
     // ========================================================================
     // S3 BUCKET (Configuration Storage)
@@ -133,10 +150,7 @@ export class MonitoringInfraStack extends cdk.Stack {
     // ========================================================================
     this.loadBalancer = this.createLoadBalancer(vpc, envName, allowedIpRanges);
 
-    // Check if certificate is available via CloudFormation exports
-    const certificateArn = this.getCertificateArn();
-
-    if (certificateArn) {
+    if (enableHttps && certificateArn) {
       // HTTPS listener with certificate
       this.listener = this.loadBalancer.addListener("MonitoringListener", {
         port: 443,
@@ -353,24 +367,10 @@ export class MonitoringInfraStack extends cdk.Stack {
     return asg;
   }
 
-  /**
-   * Get certificate ARN from CloudFormation exports
-   * Returns undefined if certificate stack not deployed
-   */
-  private getCertificateArn(): string | undefined {
-    try {
-      return cdk.Fn.importValue(
-        `${this.node.tryGetContext("envName") || "pipeline"}-certificate-arn`
-      );
-    } catch {
-      return undefined;
-    }
-  }
-
   private createLoadBalancer(
     vpc: ec2.IVpc,
     envName: string,
-    allowedIpRanges?: string[]
+    allowedIpRanges: string[]
   ): elbv2.ApplicationLoadBalancer {
     const albSecurityGroup = new ec2.SecurityGroup(this, "MonitoringAlbSg", {
       vpc,
@@ -378,8 +378,7 @@ export class MonitoringInfraStack extends cdk.Stack {
       allowAllOutbound: true,
     });
 
-    const ipRanges = allowedIpRanges || ["0.0.0.0/0"];
-    ipRanges.forEach((ipRange) => {
+    allowedIpRanges.forEach((ipRange) => {
       // HTTP
       albSecurityGroup.addIngressRule(
         ec2.Peer.ipv4(ipRange),

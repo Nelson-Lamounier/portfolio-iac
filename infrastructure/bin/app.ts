@@ -20,6 +20,7 @@ import {
   VpcPeeringStack,
 } from "../lib/stacks";
 import { VpcPeeringAcceptorRole } from "../lib/constructs/iam/vpc-peering-acceptor-role";
+import { CertificateStack } from "../lib/stacks/networking/security/acm-stack";
 import { environments } from "../config/environments";
 
 const app = new cdk.App();
@@ -143,26 +144,33 @@ const networkingStack = new NetworkingStack(
 // ========================================
 // 5. Certificate Stack (Optional - for HTTPS)
 // ========================================
-// Certificates are managed manually in the dev account
-// Certificate ARN is stored in SSM Parameter Store in pipeline account: /portfolio/domain/acm-arn
+// Certificates are managed via:
+// 1. CDK-created certificates (if domain is configured)
+// 2. Environment variable CERTIFICATE_ARN (from CI/CD workflow)
+// 3. SSM Parameter Store lookup (for local development)
 //
-// Setup process:
-// 1. Create certificate manually in AWS Console (ACM) in dev account
-// 2. Use DNS validation with Route 53
-// 3. Store ARN in SSM Parameter Store in pipeline account:
-//    aws ssm put-parameter --name "/portfolio/domain/acm-arn" \
-//      --value "arn:aws:acm:eu-west-1:ACCOUNT:certificate/ID" \
-//      --type String --overwrite --profile github-actions
-//
-// The workflow will fetch this parameter from pipeline account and pass as env var
+// Priority: Environment variable > SSM Parameter Store > Create new
 
 let certificateArn: string | undefined;
+let certificateStack: CertificateStack | undefined;
 
 // Check if certificate ARN is provided via environment variable (from workflow)
 if (process.env.CERTIFICATE_ARN) {
   certificateArn = process.env.CERTIFICATE_ARN;
   console.log(`✓ Using certificate ARN from environment variable`);
   console.log(`  Certificate: ${certificateArn}`);
+} else if (rootDomainName && hostedZoneId) {
+  // Create new certificate with DNS validation
+  certificateStack = new CertificateStack(app, `AcmStack-${config.envName}`, {
+    ...stackProps,
+    envName: config.envName,
+    DomainName: rootDomainName,
+    subjectAlternativeNames: [`*.${rootDomainName}`],
+    hostedZoneId: hostedZoneId,
+    storeCertificateArnInSsm: true,
+  });
+  certificateArn = certificateStack.certificateArn;
+  console.log(`✓ Created ACM certificate for ${rootDomainName}`);
 } else if (process.env.SKIP_DOMAIN_LOOKUP !== "true") {
   // Fallback: Try to fetch certificate ARN from SSM Parameter Store
   // This is for local development only - workflow should pass via env var
@@ -188,7 +196,7 @@ if (process.env.CERTIFICATE_ARN) {
     console.log("⚠ Certificate ARN not configured - HTTPS will be disabled");
   }
 } else {
-  console.log("⚠ Domain lookup skipped - HTTPS will be disabled");
+  console.log("Domain lookup skipped - HTTPS will be disabled");
 }
 
 // ========================================
@@ -196,7 +204,8 @@ if (process.env.CERTIFICATE_ARN) {
 // ========================================
 // Creates Application Load Balancer
 // Depends on: NetworkingStack (VPC)
-// Uses certificate ARN from SSM Parameter Store (if available)
+// Uses certificate ARN from previous step (if available)
+
 const loadBalancerStack = new LoadBalancerStack(
   app,
   `LoadBalancerStack-${config.envName}`,
@@ -431,6 +440,38 @@ if (config.enableMonitoring) {
         }
       );
 
+      if (config.enableMonitoring) {
+        if (config.isMonitoringAccount) {
+          let monitoringCertificateArn: string | undefined;
+
+          if (rootDomainName && hostedZoneId) {
+            const monitoringAcmStack = new CertificateStack(
+              app,
+              `MonitoringAcmStack-${config.envName}`,
+              {
+                ...stackProps,
+                envName: config.envName,
+                DomainName: `monitoring.${rootDomainName}`,
+                subjectAlternativeNames: [`*.monitoring.${rootDomainName}`],
+                hostedZoneId: hostedZoneId,
+                storeCertificateArnInSsm: true,
+                ssmParameterName: "/portfolio/monitoring/acm-arn",
+              }
+            );
+
+            monitoringCertificateArn = monitoringAcmStack.certificateArn;
+
+            console.log(
+              `✓ Created monitoring certificate for monitoring.${rootDomainName}`
+            );
+          } else {
+            console.log(
+              "⚠ No domain configured - monitoring will use HTTP only"
+            );
+          }
+        }
+      }
+
       if (monitoringVpc !== networkingStack) {
         monitoringInfraStack.addDependency(monitoringVpc);
       }
@@ -507,6 +548,31 @@ if (config.enableMonitoring) {
     if (useLayeredMonitoring) {
       console.log("   Using LAYERED monitoring architecture (recommended)\n");
 
+      // Create monitoring certificate if domain is configured
+      let monitoringCertificateArn: string | undefined;
+      let monitoringAcmStack: CertificateStack | undefined;
+
+      if (rootDomainName && hostedZoneId) {
+        monitoringAcmStack = new CertificateStack(
+          app,
+          `MonitoringAcmStack-${config.envName}`,
+          {
+            ...stackProps,
+            envName: config.envName,
+            DomainName: `monitoring.${rootDomainName}`,
+            subjectAlternativeNames: [`*.monitoring.${rootDomainName}`],
+            hostedZoneId: hostedZoneId,
+            storeCertificateArnInSsm: true,
+            ssmParameterName: "/portfolio/monitoring/acm-arn",
+          }
+        );
+
+        monitoringCertificateArn = monitoringAcmStack.certificateArn;
+        console.log(
+          `✓ Created monitoring certificate for monitoring.${rootDomainName}`
+        );
+      }
+
       // Layer 1: Infrastructure (VPC, ECS Cluster, EFS, ALB)
       const monitoringInfraStack = new MonitoringInfraStack(
         app,
@@ -515,8 +581,15 @@ if (config.enableMonitoring) {
           ...stackProps,
           envName: config.envName,
           vpc: networkingStack.vpc,
+          certificateArn: monitoringCertificateArn,
+          enableHttps: !!monitoringCertificateArn,
+          enableAccessLogs: true,
         }
       );
+
+      if (monitoringAcmStack) {
+        monitoringInfraStack.addDependency(monitoringAcmStack);
+      }
 
       monitoringInfraStack.addDependency(networkingStack);
 
