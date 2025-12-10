@@ -133,6 +133,64 @@ jobs:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
+      # Fetch Domain Configuration and Certificate from SSM
+      - name: Fetch Domain Configuration and Certificate from SSM
+        run: |
+          echo "## 🔒 HTTPS Configuration Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Fetch domain configuration from SSM parameters
+          echo "Fetching domain configuration from SSM..."
+
+          ROOT_DOMAIN=$(aws ssm get-parameter \
+            --name "/portfolio/domain/root-domain-name" \
+            --query "Parameter.Value" \
+            --output text 2>/dev/null || echo "")
+
+          HOSTED_ZONE=$(aws ssm get-parameter \
+            --name "/portfolio/domain/hosted-zone-id" \
+            --query "Parameter.Value" \
+            --output text 2>/dev/null || echo "")
+
+          CERT_ARN=$(aws ssm get-parameter \
+            --name "/portfolio/domain/acm-arn" \
+            --query "Parameter.Value" \
+            --output text 2>/dev/null || echo "")
+
+          if [ -n "$ROOT_DOMAIN" ] && [ "$ROOT_DOMAIN" != "None" ] && \
+             [ -n "$HOSTED_ZONE" ] && [ "$HOSTED_ZONE" != "None" ] && \
+             [ -n "$CERT_ARN" ] && [ "$CERT_ARN" != "None" ]; then
+            
+            echo "✅ Complete domain configuration found in SSM" >> $GITHUB_STEP_SUMMARY
+            echo "- **Domain**: $ROOT_DOMAIN" >> $GITHUB_STEP_SUMMARY
+            echo "- **Hosted Zone**: $HOSTED_ZONE" >> $GITHUB_STEP_SUMMARY
+            echo "- **Certificate**: ${CERT_ARN:0:50}..." >> $GITHUB_STEP_SUMMARY
+            echo "- **Monitoring URL**: https://monitoring.$ROOT_DOMAIN" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            echo "ROOT_DOMAIN_NAME=$ROOT_DOMAIN" >> $GITHUB_ENV
+            echo "HOSTED_ZONE_ID=$HOSTED_ZONE" >> $GITHUB_ENV
+            echo "CERTIFICATE_ARN=$CERT_ARN" >> $GITHUB_ENV
+            echo "HTTPS_ENABLED=true" >> $GITHUB_ENV
+            
+            echo "✅ HTTPS will be enabled for monitoring.$ROOT_DOMAIN"
+            echo "Using certificate: ${CERT_ARN:0:50}..."
+            
+          else
+            echo "⚠️ Incomplete domain configuration in SSM" >> $GITHUB_STEP_SUMMARY
+            echo "**Missing SSM Parameters:**" >> $GITHUB_STEP_SUMMARY
+            [ -z "$ROOT_DOMAIN" ] && echo "- \`/portfolio/domain/root-domain-name\`" >> $GITHUB_STEP_SUMMARY
+            [ -z "$HOSTED_ZONE" ] && echo "- \`/portfolio/domain/hosted-zone-id\`" >> $GITHUB_STEP_SUMMARY
+            [ -z "$CERT_ARN" ] && echo "- \`/portfolio/domain/acm-arn\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**HTTPS will be disabled** - HTTP only mode" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            echo "HTTPS_ENABLED=false" >> $GITHUB_ENV
+            echo "⚠️ Incomplete domain configuration - HTTPS will be disabled"
+            echo "Missing SSM parameters for domain configuration"
+          fi
+
       # Fetch Staging Account Info (if needed)
       - name: Configure AWS Credentials (Staging Account)
         if: vars.AWS_ACCOUNT_ID_STAGING != ''
@@ -207,6 +265,12 @@ jobs:
         run: |
           echo "Deploying MonitoringInfraStack-pipeline..."
           cd infrastructure
+
+          # Skip certificate creation - use existing certificate ARN from SSM
+          # Certificate must be created manually in root account where domain/hosted zone exists
+          echo "Using certificate ARN from environment: ${CERTIFICATE_ARN:-none}"
+
+          # Deploy infrastructure stack with certificate ARN
           ENVIRONMENT=pipeline yarn cdk deploy MonitoringInfraStack-pipeline --require-approval never
 
           echo "Getting stack outputs..."
@@ -224,10 +288,27 @@ jobs:
           echo "efs_id=$EFS_ID" >> $GITHUB_OUTPUT
           echo "ALB DNS: $ALB_DNS"
           echo "EFS ID: $EFS_ID"
+
+          # Log HTTPS status
+          if [ -n "$ROOT_DOMAIN_NAME" ] && [ -n "$HOSTED_ZONE_ID" ]; then
+            echo "✅ HTTPS enabled for monitoring.$ROOT_DOMAIN_NAME"
+            echo "## 🔒 HTTPS Configuration" >> $GITHUB_STEP_SUMMARY
+            echo "- **SSL Certificate**: Created for monitoring.$ROOT_DOMAIN_NAME" >> $GITHUB_STEP_SUMMARY
+            echo "- **HTTPS URL**: https://monitoring.$ROOT_DOMAIN_NAME" >> $GITHUB_STEP_SUMMARY
+            echo "- **HTTP Redirect**: Enabled (HTTP → HTTPS)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ HTTPS disabled - using HTTP only"
+            echo "## ⚠️ HTTP Only Configuration" >> $GITHUB_STEP_SUMMARY
+            echo "- **HTTP URL**: http://$ALB_DNS" >> $GITHUB_STEP_SUMMARY
+            echo "- **Security**: No SSL certificate configured" >> $GITHUB_STEP_SUMMARY
+          fi
         env:
           AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
           AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
           DEV_VPC_ID: ${{ env.DEV_VPC_ID }}
+          ROOT_DOMAIN_NAME: ${{ env.ROOT_DOMAIN_NAME }}
+          HOSTED_ZONE_ID: ${{ env.HOSTED_ZONE_ID }}
+          CERTIFICATE_ARN: ${{ env.CERTIFICATE_ARN }}
 
       # Wait for EC2 Instance and Validate UserData Execution
       - name: Validate EC2 Instance and UserData
@@ -439,6 +520,8 @@ jobs:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
+      # Domain configuration is fetched from SSM parameters automatically by CDK
+
       # Deploy Layer 2: Services
       - name: Deploy Services Stack
         run: |
@@ -447,6 +530,8 @@ jobs:
           ENVIRONMENT=pipeline yarn cdk deploy MonitoringServiceStack-pipeline --require-approval never
         env:
           AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
+          ROOT_DOMAIN_NAME: ${{ vars.ROOT_DOMAIN_NAME }}
+          HOSTED_ZONE_ID: ${{ vars.HOSTED_ZONE_ID }}
 
       # Initialize Configuration
       - name: Initialize Configuration
@@ -588,17 +673,46 @@ jobs:
         run: |
           ALB_DNS="${{ steps.outputs.outputs.alb_dns }}"
 
-          echo "Testing Prometheus at http://${ALB_DNS}/prometheus"
-
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            "http://${ALB_DNS}/prometheus/-/healthy" || echo "000")
-
-          echo "Prometheus health check: HTTP $HTTP_CODE"
-
-          if [ "$HTTP_CODE" = "200" ]; then
-            echo "Prometheus is healthy"
+          # Test HTTPS first if domain is configured
+          if [ "${{ env.HTTPS_ENABLED }}" = "true" ] && [ -n "${{ env.ROOT_DOMAIN_NAME }}" ]; then
+            PROMETHEUS_URL="https://monitoring.${{ env.ROOT_DOMAIN_NAME }}/prometheus"
+            echo "Testing Prometheus at $PROMETHEUS_URL"
+            
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+              "$PROMETHEUS_URL/-/healthy" || echo "000")
+            
+            echo "Prometheus HTTPS health check: HTTP $HTTP_CODE"
+            
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Prometheus is healthy (HTTPS)"
+            else
+              echo "::warning::Prometheus HTTPS health check failed with code $HTTP_CODE"
+              
+              # Fallback to HTTP test
+              echo "Falling back to HTTP test..."
+              HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+                "http://${ALB_DNS}/prometheus/-/healthy" || echo "000")
+              
+              if [ "$HTTP_CODE" = "200" ]; then
+                echo "✅ Prometheus is healthy (HTTP fallback)"
+              else
+                echo "::warning::Prometheus HTTP fallback also failed with code $HTTP_CODE"
+              fi
+            fi
           else
-            echo "::warning::Prometheus health check failed with code $HTTP_CODE"
+            # HTTP only test
+            echo "Testing Prometheus at http://${ALB_DNS}/prometheus"
+            
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+              "http://${ALB_DNS}/prometheus/-/healthy" || echo "000")
+
+            echo "Prometheus health check: HTTP $HTTP_CODE"
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Prometheus is healthy"
+            else
+              echo "::warning::Prometheus health check failed with code $HTTP_CODE"
+            fi
           fi
 
       - name: Test Grafana Endpoint
@@ -607,17 +721,46 @@ jobs:
         run: |
           ALB_DNS="${{ steps.outputs.outputs.alb_dns }}"
 
-          echo "Testing Grafana at http://${ALB_DNS}/grafana"
-
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            "http://${ALB_DNS}/grafana/api/health" || echo "000")
-
-          echo "Grafana health check: HTTP $HTTP_CODE"
-
-          if [ "$HTTP_CODE" = "200" ]; then
-            echo "✅ Grafana is healthy"
+          # Test HTTPS first if domain is configured
+          if [ "${{ env.HTTPS_ENABLED }}" = "true" ] && [ -n "${{ env.ROOT_DOMAIN_NAME }}" ]; then
+            GRAFANA_URL="https://monitoring.${{ env.ROOT_DOMAIN_NAME }}/grafana"
+            echo "Testing Grafana at $GRAFANA_URL"
+            
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+              "$GRAFANA_URL/api/health" || echo "000")
+            
+            echo "Grafana HTTPS health check: HTTP $HTTP_CODE"
+            
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Grafana is healthy (HTTPS)"
+            else
+              echo "::warning::Grafana HTTPS health check failed with code $HTTP_CODE"
+              
+              # Fallback to HTTP test
+              echo "Falling back to HTTP test..."
+              HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+                "http://${ALB_DNS}/grafana/api/health" || echo "000")
+              
+              if [ "$HTTP_CODE" = "200" ]; then
+                echo "✅ Grafana is healthy (HTTP fallback)"
+              else
+                echo "::warning::Grafana HTTP fallback also failed with code $HTTP_CODE"
+              fi
+            fi
           else
-            echo "::warning::Grafana health check failed with code $HTTP_CODE"
+            # HTTP only test
+            echo "Testing Grafana at http://${ALB_DNS}/grafana"
+            
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+              "http://${ALB_DNS}/grafana/api/health" || echo "000")
+
+            echo "Grafana health check: HTTP $HTTP_CODE"
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Grafana is healthy"
+            else
+              echo "::warning::Grafana health check failed with code $HTTP_CODE"
+            fi
           fi
 
       - name: Check Container Status
@@ -770,10 +913,21 @@ jobs:
               --output text 2>/dev/null || echo "")
             
             if [ -n "$ALB_DNS" ]; then
-              echo "### Access URLs" >> $GITHUB_STEP_SUMMARY
-              echo "- **Grafana**: http://${ALB_DNS}/grafana (admin/admin)" >> $GITHUB_STEP_SUMMARY
-              echo "- **Prometheus**: http://${ALB_DNS}/prometheus" >> $GITHUB_STEP_SUMMARY
-              echo "- **Targets**: http://${ALB_DNS}/prometheus/targets" >> $GITHUB_STEP_SUMMARY
+              echo "### 🌐 Access URLs" >> $GITHUB_STEP_SUMMARY
+              
+              # Use HTTPS URLs if domain is configured, otherwise HTTP
+              if [ "${{ env.HTTPS_ENABLED }}" = "true" ] && [ -n "${{ env.ROOT_DOMAIN_NAME }}" ]; then
+                BASE_URL="https://monitoring.${{ env.ROOT_DOMAIN_NAME }}"
+                echo "- **🔒 Grafana (HTTPS)**: ${BASE_URL}/grafana (admin/admin)" >> $GITHUB_STEP_SUMMARY
+                echo "- **🔒 Prometheus (HTTPS)**: ${BASE_URL}/prometheus" >> $GITHUB_STEP_SUMMARY
+                echo "- **🔒 Targets (HTTPS)**: ${BASE_URL}/prometheus/targets" >> $GITHUB_STEP_SUMMARY
+                echo "- **🔄 HTTP Redirect**: http://${ALB_DNS} → ${BASE_URL}" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "- **⚠️ Grafana (HTTP)**: http://${ALB_DNS}/grafana (admin/admin)" >> $GITHUB_STEP_SUMMARY
+                echo "- **⚠️ Prometheus (HTTP)**: http://${ALB_DNS}/prometheus" >> $GITHUB_STEP_SUMMARY
+                echo "- **⚠️ Targets (HTTP)**: http://${ALB_DNS}/prometheus/targets" >> $GITHUB_STEP_SUMMARY
+                echo "- **🔓 Security**: No SSL certificate - HTTP only" >> $GITHUB_STEP_SUMMARY
+              fi
             fi
           else
             echo "✓ All monitoring stacks destroyed" >> $GITHUB_STEP_SUMMARY
@@ -933,6 +1087,10 @@ jobs:
           echo "Destroying MonitoringInfraStack-pipeline..."
           ENVIRONMENT=pipeline yarn cdk destroy MonitoringInfraStack-pipeline --force 2>/dev/null || true
 
+          # Destroy monitoring certificate (if exists)
+          echo "Destroying MonitoringAcmStack-pipeline..."
+          ENVIRONMENT=pipeline yarn cdk destroy MonitoringAcmStack-pipeline --force 2>/dev/null || true
+
           # Destroy VPC peering
           echo "Destroying VpcPeeringStack-pipeline..."
           ENVIRONMENT=pipeline yarn cdk destroy VpcPeeringStack-pipeline --force 2>/dev/null || true
@@ -950,5 +1108,6 @@ jobs:
           echo "All monitoring stacks have been destroyed:" >> $GITHUB_STEP_SUMMARY
           echo "- MonitoringServiceStack-pipeline" >> $GITHUB_STEP_SUMMARY
           echo "- MonitoringInfraStack-pipeline" >> $GITHUB_STEP_SUMMARY
+          echo "- MonitoringAcmStack-pipeline (SSL Certificate)" >> $GITHUB_STEP_SUMMARY
           echo "- VpcPeeringStack-pipeline" >> $GITHUB_STEP_SUMMARY
           echo "- NetworkingStack-pipeline" >> $GITHUB_STEP_SUMMARY

@@ -422,27 +422,24 @@ if (config.enableMonitoring) {
     // This provides better separation of concerns and easier updates
     console.log("Deploying layered monitoring architecture...\n");
 
-    // Optional: Create SSL certificate for monitoring subdomain
+    // Use existing SSL certificate for monitoring subdomain
+    // Use the same certificate as the main application (supports wildcard *.domain.com)
     let monitoringCertificateArn: string | undefined;
-    if (rootDomainName && hostedZoneId) {
-      const monitoringAcmStack = new CertificateStack(
-        app,
-        `MonitoringAcmStack-${config.envName}`,
-        {
-          ...stackProps,
-          envName: config.envName,
-          DomainName: `monitoring.${rootDomainName}`,
-          subjectAlternativeNames: [`*.monitoring.${rootDomainName}`],
-          hostedZoneId: hostedZoneId,
-          storeCertificateArnInSsm: true,
-          ssmParameterName: "/portfolio/monitoring/acm-arn",
-        }
-      );
 
-      monitoringCertificateArn = monitoringAcmStack.certificateArn;
-      console.log(`✓ SSL Certificate: monitoring.${rootDomainName}\n`);
+    // Check if certificate ARN is provided via environment variable (from workflow)
+    if (process.env.CERTIFICATE_ARN) {
+      monitoringCertificateArn = process.env.CERTIFICATE_ARN;
+      console.log(`✓ Using certificate ARN from environment variable`);
+      console.log(`  Certificate: ${monitoringCertificateArn}\n`);
+    } else if (certificateArn) {
+      // Use the same certificate as the main application (should support *.domain.com)
+      monitoringCertificateArn = certificateArn;
+      console.log(`✓ Using main application certificate for monitoring`);
+      console.log(`  Certificate: ${monitoringCertificateArn}\n`);
     } else {
-      console.log("⚠ No domain configured - monitoring will use HTTP only\n");
+      console.log(
+        "⚠ No certificate configured - monitoring will use HTTP only\n"
+      );
     }
 
     // Layer 1: Infrastructure (VPC, ECS Cluster, EFS, ALB)
@@ -526,29 +523,19 @@ if (config.enableMonitoring) {
     if (useLayeredMonitoring) {
       console.log("   Using LAYERED monitoring architecture (recommended)\n");
 
-      // Create monitoring certificate if domain is configured
+      // Use existing certificate for monitoring if domain is configured
       let monitoringCertificateArn: string | undefined;
-      let monitoringAcmStack: CertificateStack | undefined;
 
-      if (rootDomainName && hostedZoneId) {
-        monitoringAcmStack = new CertificateStack(
-          app,
-          `MonitoringAcmStack-${config.envName}`,
-          {
-            ...stackProps,
-            envName: config.envName,
-            DomainName: `monitoring.${rootDomainName}`,
-            subjectAlternativeNames: [`*.monitoring.${rootDomainName}`],
-            hostedZoneId: hostedZoneId,
-            storeCertificateArnInSsm: true,
-            ssmParameterName: "/portfolio/monitoring/acm-arn",
-          }
-        );
-
-        monitoringCertificateArn = monitoringAcmStack.certificateArn;
-        console.log(
-          `✓ Created monitoring certificate for monitoring.${rootDomainName}`
-        );
+      // Check if certificate ARN is provided via environment variable (from workflow)
+      if (process.env.CERTIFICATE_ARN) {
+        monitoringCertificateArn = process.env.CERTIFICATE_ARN;
+        console.log(`✓ Using certificate ARN from environment variable`);
+        console.log(`  Certificate: ${monitoringCertificateArn}`);
+      } else if (certificateArn) {
+        // Use the same certificate as the main application (should support *.domain.com)
+        monitoringCertificateArn = certificateArn;
+        console.log(`✓ Using main application certificate for monitoring`);
+        console.log(`  Certificate: ${monitoringCertificateArn}`);
       }
 
       // Layer 1: Infrastructure (VPC, ECS Cluster, EFS, ALB)
@@ -564,10 +551,6 @@ if (config.enableMonitoring) {
           enableAccessLogs: true,
         }
       );
-
-      if (monitoringAcmStack) {
-        monitoringInfraStack.addDependency(monitoringAcmStack);
-      }
 
       monitoringInfraStack.addDependency(networkingStack);
 
