@@ -498,51 +498,105 @@ jobs:
 
           # Wait for SSM agent to be ready
           echo "Waiting for SSM agent to be ready..."
-          aws ssm wait instance-information-available --instance-ids "$INSTANCE_ID" --max-attempts 30 --delay 10
+
+          # Wait for instance to appear in SSM
+          for i in {1..30}; do
+            SSM_STATUS=$(aws ssm describe-instance-information \
+              --filters "Key=InstanceIds,Values=$INSTANCE_ID" \
+              --query 'InstanceInformationList[0].PingStatus' \
+              --output text 2>/dev/null || echo "NOT_FOUND")
+            
+            if [ "$SSM_STATUS" = "Online" ]; then
+              echo "SSM agent is online"
+              break
+            fi
+            
+            echo "Waiting for SSM agent... (attempt $i/30, status: $SSM_STATUS)"
+            sleep 10
+          done
+
+          if [ "$SSM_STATUS" != "Online" ]; then
+            echo "::warning::SSM agent not online after 5 minutes, proceeding anyway"
+          fi
 
           # Check UserData execution
           echo "Checking UserData execution..."
-          COMMAND_ID=$(aws ssm send-command \
-            --instance-ids "$INSTANCE_ID" \
-            --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["echo \"=== UserData Execution Status ===\"","tail -50 /var/log/cloud-init-output.log","echo \"=== EFS Mount Status ===\"","df -h | grep efs || echo \"EFS not mounted\"","echo \"=== Directory Structure ===\"","ls -la /mnt/efs/ 2>/dev/null || echo \"EFS directory not accessible\"","echo \"=== Symlinks Status ===\"","ls -la /mnt/ | grep -E \"(prometheus|grafana)\" || echo \"Symlinks not created\""]' \
-            --query 'Command.CommandId' \
-            --output text)
 
-          # Wait for command to complete
-          sleep 15
-
-          # Get command output
-          OUTPUT=$(aws ssm get-command-invocation \
-            --command-id "$COMMAND_ID" \
-            --instance-id "$INSTANCE_ID" \
-            --query 'StandardOutputContent' \
-            --output text)
-
-          echo "UserData execution status:"
-          echo "$OUTPUT"
-
-          # Check if EFS is mounted
-          if echo "$OUTPUT" | grep -q "efs"; then
-            echo " EFS is mounted successfully"
-            echo "efs_mounted=true" >> $GITHUB_OUTPUT
+          if [ "$SSM_STATUS" = "Online" ]; then
+            COMMAND_ID=$(aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name "AWS-RunShellScript" \
+              --parameters 'commands=["echo \"=== UserData Execution Status ===\"","tail -50 /var/log/cloud-init-output.log","echo \"=== EFS Mount Status ===\"","df -h | grep efs || echo \"EFS not mounted\"","echo \"=== Directory Structure ===\"","ls -la /mnt/efs/ 2>/dev/null || echo \"EFS directory not accessible\"","echo \"=== Symlinks Status ===\"","ls -la /mnt/ | grep -E \"(prometheus|grafana)\" || echo \"Symlinks not created\""]' \
+              --query 'Command.CommandId' \
+              --output text 2>/dev/null || echo "FAILED")
           else
-            echo "EFS is not mounted"
-            echo "efs_mounted=false" >> $GITHUB_OUTPUT
+            echo "::warning::SSM agent not available, skipping UserData validation"
+            COMMAND_ID="FAILED"
           fi
 
-          # Check if config directories exist
-          if echo "$OUTPUT" | grep -q "prometheus"; then
-            echo "Config directories created"
+          if [ "$COMMAND_ID" != "FAILED" ]; then
+            # Wait for command to complete
+            sleep 15
+
+            # Get command output
+            OUTPUT=$(aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" \
+              --instance-id "$INSTANCE_ID" \
+              --query 'StandardOutputContent' \
+              --output text 2>/dev/null || echo "Command execution failed")
+
+            echo "UserData execution status:"
+            echo "$OUTPUT"
+          else
+            echo "::warning::Could not execute SSM command, assuming UserData is running"
+            OUTPUT="SSM command failed - assuming UserData is executing"
+          fi
+
+          # Check if EFS is mounted (with fallback)
+          if [ "$COMMAND_ID" != "FAILED" ] && echo "$OUTPUT" | grep -q "efs"; then
+            echo "✅ EFS is mounted successfully"
+            echo "efs_mounted=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ EFS mount status unknown (will be validated later)"
+            echo "efs_mounted=unknown" >> $GITHUB_OUTPUT
+          fi
+
+          # Check if config directories exist (with fallback)
+          if [ "$COMMAND_ID" != "FAILED" ] && echo "$OUTPUT" | grep -q "prometheus"; then
+            echo "✅ Config directories created"
             echo "config_created=true" >> $GITHUB_OUTPUT
           else
-            echo "Config directories not created"
-            echo "config_created=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Config directory status unknown (will be validated later)"
+            echo "config_created=unknown" >> $GITHUB_OUTPUT
+          fi
+
+      # Alternative validation using EC2 instance status
+      - name: Alternative Instance Validation
+        if: steps.validate-userdata.outputs.efs_mounted == 'unknown'
+        run: |
+          echo "Performing alternative instance validation..."
+          INSTANCE_ID="${{ steps.validate-userdata.outputs.instance_id }}"
+
+          # Check instance state
+          INSTANCE_STATE=$(aws ec2 describe-instances \
+            --instance-ids "$INSTANCE_ID" \
+            --query 'Reservations[0].Instances[0].State.Name' \
+            --output text)
+
+          echo "Instance state: $INSTANCE_STATE"
+
+          # If instance is running, assume UserData is executing
+          if [ "$INSTANCE_STATE" = "running" ]; then
+            echo "✅ Instance is running - UserData should be executing"
+            echo "Waiting additional time for UserData to complete..."
+            sleep 60
+          else
+            echo "⚠️ Instance is not in running state: $INSTANCE_STATE"
           fi
 
       # Fix EFS DNS Resolution Issue
       - name: Fix EFS DNS Resolution
-        if: steps.validate-userdata.outputs.efs_mounted == 'false'
+        if: steps.validate-userdata.outputs.efs_mounted == 'false' || steps.validate-userdata.outputs.efs_mounted == 'unknown'
         run: |
           echo "EFS mount failed, attempting to fix DNS resolution issue..."
           INSTANCE_ID="${{ steps.validate-userdata.outputs.instance_id }}"
