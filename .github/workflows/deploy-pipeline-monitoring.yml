@@ -314,6 +314,22 @@ jobs:
           AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
 
       # Deploy VPC Peering (if configured) - Redeploy after networking updates
+      - name: Debug VPC Peering Condition
+        run: |
+          echo "🔍 VPC Peering Deployment Debug:"
+          echo "  DEV_VPC_ID: '${DEV_VPC_ID:-UNSET}'"
+          echo "  AWS_ACCOUNT_ID_DEV: '${{ vars.AWS_ACCOUNT_ID_DEV }}'"
+          echo "  Condition check:"
+          echo "    DEV_VPC_ID != '': $([ '${DEV_VPC_ID:-}' != '' ] && echo 'true' || echo 'false')"
+          echo "    DEV_VPC_ID != 'NOT_FOUND': $([ '${DEV_VPC_ID:-}' != 'NOT_FOUND' ] && echo 'true' || echo 'false')"
+          echo "    DEV_VPC_ID != 'None': $([ '${DEV_VPC_ID:-}' != 'None' ] && echo 'true' || echo 'false')"
+
+          if [ -n "${DEV_VPC_ID:-}" ] && [ "${DEV_VPC_ID}" != "NOT_FOUND" ] && [ "${DEV_VPC_ID}" != "None" ]; then
+            echo "  ✅ All conditions met - VPC Peering should deploy"
+          else
+            echo "  ❌ Conditions not met - VPC Peering will be skipped"
+          fi
+
       - name: Deploy VPC Peering
         if: env.DEV_VPC_ID != '' && env.DEV_VPC_ID != 'NOT_FOUND' && env.DEV_VPC_ID != 'None'
         continue-on-error: true
@@ -330,6 +346,35 @@ jobs:
         env:
           AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
           DEV_VPC_ID: ${{ env.DEV_VPC_ID }}
+
+      - name: Force Deploy VPC Peering (Fallback)
+        if: vars.AWS_ACCOUNT_ID_DEV != '' && (env.DEV_VPC_ID == '' || env.DEV_VPC_ID == 'NOT_FOUND' || env.DEV_VPC_ID == 'None')
+        continue-on-error: true
+        run: |
+          echo "⚠️ VPC Peering was skipped due to condition failure"
+          echo "Attempting to fetch VPC ID directly and deploy anyway..."
+
+          cd infrastructure
+
+          # Try to get VPC ID directly from dev account
+          DEV_VPC_ID_DIRECT=$(aws ssm get-parameter \
+            --name "/networking/development/vpc-id" \
+            --query 'Parameter.Value' \
+            --output text 2>/dev/null || echo "NOT_FOUND")
+
+          echo "Direct VPC ID lookup: $DEV_VPC_ID_DIRECT"
+
+          if [ "$DEV_VPC_ID_DIRECT" != "NOT_FOUND" ] && [ -n "$DEV_VPC_ID_DIRECT" ]; then
+            echo "✅ Found VPC ID directly, deploying VPC Peering..."
+            export DEV_VPC_ID="$DEV_VPC_ID_DIRECT"
+            ENVIRONMENT=pipeline yarn cdk deploy VpcPeeringStack-pipeline --require-approval never
+            echo "✅ VPC Peering deployed successfully (fallback)"
+          else
+            echo "❌ Could not retrieve VPC ID - VPC Peering deployment skipped"
+            echo "This is expected if development infrastructure is not deployed yet"
+          fi
+        env:
+          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
 
       # Deploy Layer 1: Infrastructure (ECS, EFS, ALB)
       - name: Deploy Layer 1 - Infrastructure

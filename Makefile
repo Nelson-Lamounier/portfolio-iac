@@ -47,6 +47,7 @@ help:
 	@echo "  force-deploy-networking         - Force deploy networking stack (for UPDATE_ROLLBACK_COMPLETE)"
 	@echo "  cleanup-alb-resources           - Clean up orphaned ALB resources (pipeline account)"
 	@echo "  force-redeploy-monitoring-infra - Delete and recreate MonitoringInfraStack (for resource mismatches)"
+	@echo "  deploy-vpc-peering-manual       - Manually deploy VPC Peering (if workflow skipped it)"
 	@echo ""
 	@echo "Centralized Monitoring (Pipeline Account - Legacy):"
 	@echo "  deploy-monitoring-centralized   - Deploy centralized monitoring (embedded)"
@@ -356,6 +357,22 @@ force-redeploy-monitoring-infra:
 	@echo "Waiting for stack deletion to complete..."
 	@sleep 30
 	@cd infrastructure && ENVIRONMENT=pipeline yarn cdk deploy MonitoringInfraStack-pipeline --require-approval never
+
+# Deploy VPC Peering manually
+deploy-vpc-peering-manual:
+	@echo "🔗 Manually deploying VPC Peering..."
+	@echo "Fetching dev VPC ID from SSM..."
+	@DEV_VPC_ID=$$(aws ssm get-parameter --name "/networking/development/vpc-id" --query 'Parameter.Value' --output text 2>/dev/null || echo "NOT_FOUND"); \
+	if [ "$$DEV_VPC_ID" != "NOT_FOUND" ] && [ -n "$$DEV_VPC_ID" ]; then \
+		echo "✅ Found Dev VPC ID: $$DEV_VPC_ID"; \
+		export DEV_VPC_ID="$$DEV_VPC_ID"; \
+		export AWS_ACCOUNT_ID_DEV=$(AWS_ACCOUNT_ID_DEV); \
+		cd infrastructure && ENVIRONMENT=pipeline yarn cdk deploy VpcPeeringStack-pipeline --require-approval never; \
+		echo "✅ VPC Peering deployed successfully"; \
+	else \
+		echo "❌ Could not find dev VPC ID in SSM"; \
+		echo "Make sure development infrastructure is deployed first"; \
+	fi
 
 ##############################################################################
 # CENTRALIZED MONITORING (Pipeline Account) - Legacy Embedded
