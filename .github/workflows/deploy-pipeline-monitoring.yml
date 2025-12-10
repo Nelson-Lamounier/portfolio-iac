@@ -110,20 +110,29 @@ jobs:
       # Fetch Dev Account Info using Direct EC2 API (Same as setup-vpc-peering.sh)
       - name: Fetch Dev Account VPC Info
         id: dev-info
-        if: vars.AWS_ACCOUNT_ID_DEV != ''
         continue-on-error: true
         run: |
           echo "🔍 Fetching dev account VPC info using EC2 API..."
           echo "Current AWS Account:"
           aws sts get-caller-identity
           echo ""
+          echo "AWS_ACCOUNT_ID_DEV from vars: ${{ vars.AWS_ACCOUNT_ID_DEV }}"
+          echo ""
+
+          # Test basic EC2 access first
+          echo "Testing EC2 access..."
+          aws ec2 describe-vpcs --query 'Vpcs[0].VpcId' --output text 2>/dev/null || echo "EC2 access failed"
+          echo ""
 
           # Get Development VPC Info (same logic as setup-vpc-peering.sh)
+          echo "Looking for development VPC..."
           DEV_VPC=$(aws ec2 describe-vpcs \
             --filters "Name=tag:Environment,Values=development" \
             --query 'Vpcs[0].VpcId' \
             --output text \
             --region ${{ env.AWS_REGION }} 2>/dev/null || echo "NOT_FOUND")
+
+          echo "Raw VPC query result: '$DEV_VPC'"
 
           if [ "$DEV_VPC" = "NOT_FOUND" ] || [ "$DEV_VPC" = "None" ] || [ -z "$DEV_VPC" ]; then
             echo "⚠️ Development VPC not found or not accessible"
