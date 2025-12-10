@@ -398,9 +398,16 @@ jobs:
             fi
           fi
 
-          # Skip certificate creation - use existing certificate ARN from SSM
-          # Certificate must be created manually in root account where domain/hosted zone exists
-          echo "Using certificate ARN from environment: ${CERTIFICATE_ARN:-none}"
+          # Skip certificate creation for monitoring - certificates cannot be used across accounts
+          # The certificate from root account cannot be used in pipeline account
+          echo "⚠️ Disabling HTTPS for monitoring - cross-account certificate usage not supported"
+          echo "Monitoring will be accessible via HTTP only"
+
+          # Clear certificate environment variables to force HTTP-only mode
+          unset CERTIFICATE_ARN
+          unset ROOT_DOMAIN_NAME
+          unset HOSTED_ZONE_ID
+          echo "HTTPS_ENABLED=false" >> $GITHUB_ENV
 
           # Deploy infrastructure stack with certificate ARN
           echo "Attempting to deploy MonitoringInfraStack-pipeline..."
@@ -447,26 +454,18 @@ jobs:
           echo "ALB DNS: $ALB_DNS"
           echo "EFS ID: $EFS_ID"
 
-          # Log HTTPS status
-          if [ -n "$ROOT_DOMAIN_NAME" ] && [ -n "$HOSTED_ZONE_ID" ]; then
-            echo "✅ HTTPS enabled for monitoring.$ROOT_DOMAIN_NAME"
-            echo "## 🔒 HTTPS Configuration" >> $GITHUB_STEP_SUMMARY
-            echo "- **SSL Certificate**: Created for monitoring.$ROOT_DOMAIN_NAME" >> $GITHUB_STEP_SUMMARY
-            echo "- **HTTPS URL**: https://monitoring.$ROOT_DOMAIN_NAME" >> $GITHUB_STEP_SUMMARY
-            echo "- **HTTP Redirect**: Enabled (HTTP → HTTPS)" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "⚠️ HTTPS disabled - using HTTP only"
-            echo "## ⚠️ HTTP Only Configuration" >> $GITHUB_STEP_SUMMARY
-            echo "- **HTTP URL**: http://$ALB_DNS" >> $GITHUB_STEP_SUMMARY
-            echo "- **Security**: No SSL certificate configured" >> $GITHUB_STEP_SUMMARY
-          fi
+          # Log HTTP-only status for monitoring
+          echo "ℹ️ Monitoring configured for HTTP-only access"
+          echo "## 🌐 HTTP-Only Monitoring Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "- **HTTP URL**: http://$ALB_DNS" >> $GITHUB_STEP_SUMMARY
+          echo "- **Reason**: Cross-account certificate usage not supported" >> $GITHUB_STEP_SUMMARY
+          echo "- **Security**: Internal monitoring network, HTTP acceptable" >> $GITHUB_STEP_SUMMARY
         env:
           AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
           AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
           DEV_VPC_ID: ${{ env.DEV_VPC_ID }}
-          ROOT_DOMAIN_NAME: ${{ env.ROOT_DOMAIN_NAME }}
-          HOSTED_ZONE_ID: ${{ env.HOSTED_ZONE_ID }}
-          CERTIFICATE_ARN: ${{ env.CERTIFICATE_ARN }}
+          # Certificate variables removed - monitoring uses HTTP only
+          # Cross-account certificate usage is not supported by AWS
 
       # Wait for EC2 Instance and Validate UserData Execution
       - name: Validate EC2 Instance and UserData

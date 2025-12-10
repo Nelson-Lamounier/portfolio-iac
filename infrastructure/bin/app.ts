@@ -428,9 +428,22 @@ if (config.enableMonitoring) {
 
     // Check if certificate ARN is provided via environment variable (from workflow)
     if (process.env.CERTIFICATE_ARN) {
-      monitoringCertificateArn = process.env.CERTIFICATE_ARN;
-      console.log(`✓ Using certificate ARN from environment variable`);
-      console.log(`  Certificate: ${monitoringCertificateArn}\n`);
+      // Validate that certificate is in the same account as the deployment
+      const certAccountId = process.env.CERTIFICATE_ARN.split(":")[4];
+      const deploymentAccountId = config.account;
+
+      if (certAccountId === deploymentAccountId) {
+        monitoringCertificateArn = process.env.CERTIFICATE_ARN;
+        console.log(`✓ Using certificate ARN from environment variable`);
+        console.log(`  Certificate: ${monitoringCertificateArn}\n`);
+      } else {
+        console.log(
+          `⚠️ Certificate is from different account (${certAccountId}) than deployment account (${deploymentAccountId})`
+        );
+        console.log(`  ACM certificates cannot be used across accounts`);
+        console.log(`  Monitoring will use HTTP only\n`);
+        monitoringCertificateArn = undefined;
+      }
     } else if (certificateArn) {
       // Use the same certificate as the main application (should support *.domain.com)
       monitoringCertificateArn = certificateArn;
@@ -528,9 +541,22 @@ if (config.enableMonitoring) {
 
       // Check if certificate ARN is provided via environment variable (from workflow)
       if (process.env.CERTIFICATE_ARN) {
-        monitoringCertificateArn = process.env.CERTIFICATE_ARN;
-        console.log(`✓ Using certificate ARN from environment variable`);
-        console.log(`  Certificate: ${monitoringCertificateArn}`);
+        // Validate that certificate is in the same account as the deployment
+        const certAccountId = process.env.CERTIFICATE_ARN.split(":")[4];
+        const deploymentAccountId = config.account;
+
+        if (certAccountId === deploymentAccountId) {
+          monitoringCertificateArn = process.env.CERTIFICATE_ARN;
+          console.log(`✓ Using certificate ARN from environment variable`);
+          console.log(`  Certificate: ${monitoringCertificateArn}`);
+        } else {
+          console.log(
+            `⚠️ Certificate is from different account (${certAccountId}) than deployment account (${deploymentAccountId})`
+          );
+          console.log(`  ACM certificates cannot be used across accounts`);
+          console.log(`  Monitoring will use HTTP only`);
+          monitoringCertificateArn = undefined;
+        }
       } else if (certificateArn) {
         // Use the same certificate as the main application (should support *.domain.com)
         monitoringCertificateArn = certificateArn;
