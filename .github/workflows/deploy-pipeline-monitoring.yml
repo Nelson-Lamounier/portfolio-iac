@@ -178,12 +178,20 @@ jobs:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
+      # Set AWS_PIPELINE_ACCOUNT_ID from current account (fix for S3 bucket naming)
+      - name: Set Pipeline Account ID
+        run: |
+          CURRENT_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          echo "AWS_PIPELINE_ACCOUNT_ID=$CURRENT_ACCOUNT" >> $GITHUB_ENV
+          echo "✅ Set AWS_PIPELINE_ACCOUNT_ID=$CURRENT_ACCOUNT"
+
       # Verify environment variables are still set after credential switch
       - name: Verify Environment Variables After Credential Switch
         run: |
           echo "🔍 Environment Variables After Credential Switch:"
           echo "  DEV_VPC_ID: '${{ env.DEV_VPC_ID }}'"
           echo "  Step output dev_vpc_id: '${{ steps.dev-info.outputs.dev_vpc_id }}'"
+          echo "  AWS_PIPELINE_ACCOUNT_ID: '${{ env.AWS_PIPELINE_ACCOUNT_ID }}'"
           echo "  Current AWS Account:"
           aws sts get-caller-identity
 
@@ -222,64 +230,6 @@ jobs:
             echo "No recovery needed - proceeding with normal deployment"
           else
             echo "✅ All stacks are in deployable states - proceeding with deployment"
-          fi
-
-      # Fetch Domain Configuration and Certificate from SSM
-      - name: Fetch Domain Configuration and Certificate from SSM
-        run: |
-          echo "## 🔒 HTTPS Configuration Check" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          # Fetch domain configuration from SSM parameters
-          echo "Fetching domain configuration from SSM..."
-
-          ROOT_DOMAIN=$(aws ssm get-parameter \
-            --name "/portfolio/domain/root-domain-name" \
-            --query "Parameter.Value" \
-            --output text 2>/dev/null || echo "")
-
-          HOSTED_ZONE=$(aws ssm get-parameter \
-            --name "/portfolio/domain/hosted-zone-id" \
-            --query "Parameter.Value" \
-            --output text 2>/dev/null || echo "")
-
-          CERT_ARN=$(aws ssm get-parameter \
-            --name "/portfolio/domain/acm-arn" \
-            --query "Parameter.Value" \
-            --output text 2>/dev/null || echo "")
-
-          if [ -n "$ROOT_DOMAIN" ] && [ "$ROOT_DOMAIN" != "None" ] && \
-             [ -n "$HOSTED_ZONE" ] && [ "$HOSTED_ZONE" != "None" ] && \
-             [ -n "$CERT_ARN" ] && [ "$CERT_ARN" != "None" ]; then
-            
-            echo "✅ Complete domain configuration found in SSM" >> $GITHUB_STEP_SUMMARY
-            echo "- **Domain**: $ROOT_DOMAIN" >> $GITHUB_STEP_SUMMARY
-            echo "- **Hosted Zone**: $HOSTED_ZONE" >> $GITHUB_STEP_SUMMARY
-            echo "- **Certificate**: ${CERT_ARN:0:50}..." >> $GITHUB_STEP_SUMMARY
-            echo "- **Monitoring URL**: https://monitoring.$ROOT_DOMAIN" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            
-            echo "ROOT_DOMAIN_NAME=$ROOT_DOMAIN" >> $GITHUB_ENV
-            echo "HOSTED_ZONE_ID=$HOSTED_ZONE" >> $GITHUB_ENV
-            echo "CERTIFICATE_ARN=$CERT_ARN" >> $GITHUB_ENV
-            echo "HTTPS_ENABLED=true" >> $GITHUB_ENV
-            
-            echo "✅ HTTPS will be enabled for monitoring.$ROOT_DOMAIN"
-            echo "Using certificate: ${CERT_ARN:0:50}..."
-            
-          else
-            echo "⚠️ Incomplete domain configuration in SSM" >> $GITHUB_STEP_SUMMARY
-            echo "**Missing SSM Parameters:**" >> $GITHUB_STEP_SUMMARY
-            [ -z "$ROOT_DOMAIN" ] && echo "- \`/portfolio/domain/root-domain-name\`" >> $GITHUB_STEP_SUMMARY
-            [ -z "$HOSTED_ZONE" ] && echo "- \`/portfolio/domain/hosted-zone-id\`" >> $GITHUB_STEP_SUMMARY
-            [ -z "$CERT_ARN" ] && echo "- \`/portfolio/domain/acm-arn\`" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**HTTPS will be disabled** - HTTP only mode" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            
-            echo "HTTPS_ENABLED=false" >> $GITHUB_ENV
-            echo "⚠️ Incomplete domain configuration - HTTPS will be disabled"
-            echo "Missing SSM parameters for domain configuration"
           fi
 
       # Fetch Staging Account Info (if needed)
