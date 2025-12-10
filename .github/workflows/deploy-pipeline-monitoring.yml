@@ -133,6 +133,39 @@ jobs:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
+      # Recover any failed stacks before deployment
+      - name: Recover Failed CloudFormation Stacks
+        run: |
+          echo "🔧 Checking for failed CloudFormation stacks..."
+
+          # Check for common failed states that block deployment
+          NETWORKING_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name NetworkingStack-pipeline \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null || echo "NOT_FOUND")
+
+          INFRA_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name MonitoringInfraStack-pipeline \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null || echo "NOT_FOUND")
+
+          echo "Current stack states:"
+          echo "  NetworkingStack-pipeline: $NETWORKING_STATUS"
+          echo "  MonitoringInfraStack-pipeline: $INFRA_STATUS"
+
+          # Handle UPDATE_ROLLBACK_COMPLETE states
+          if [ "$NETWORKING_STATUS" = "UPDATE_ROLLBACK_COMPLETE" ] || [ "$INFRA_STATUS" = "UPDATE_ROLLBACK_COMPLETE" ]; then
+            echo "⚠️ Found stacks in UPDATE_ROLLBACK_COMPLETE state"
+            echo "Running recovery script..."
+            
+            chmod +x ./scripts/monitoring/recover-failed-stacks.sh
+            ./scripts/monitoring/recover-failed-stacks.sh
+            
+            echo "✅ Stack recovery completed"
+          else
+            echo "✅ No failed stacks detected - proceeding with deployment"
+          fi
+
       # Fetch Domain Configuration and Certificate from SSM
       - name: Fetch Domain Configuration and Certificate from SSM
         run: |
@@ -216,45 +249,97 @@ jobs:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # Fetch Dev VPC ID for VPC Peering
-      - name: Get Dev VPC ID
+      # Fetch Dev VPC ID for VPC Peering (from SSM cross-account)
+      - name: Get Dev VPC ID from SSM
         id: get-dev-vpc
         if: vars.AWS_ACCOUNT_ID_DEV != ''
         continue-on-error: true
         run: |
-          # Switch to dev account
-          aws sts assume-role \
+          echo "Fetching Dev VPC information from cross-account SSM..."
+
+          # Method 1: Try to get VPC ID from cross-account SSM (if accessible)
+          DEV_VPC_ID=""
+          if aws sts assume-role \
             --role-arn "arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/GitHubDeploymentRole" \
-            --role-session-name "GetDevVPC" \
+            --role-session-name "GetDevVPCFromSSM" \
             --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
-            --output text | read AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
-
-          export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
-
-          # Get VPC ID
-          DEV_VPC_ID=$(aws ec2 describe-vpcs \
-            --filters "Name=tag:Environment,Values=development" \
-            --query 'Vpcs[0].VpcId' \
-            --output text 2>/dev/null || echo "NOT_FOUND")
+            --output text | read AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN; then
+            
+            export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+            
+            # Try SSM parameter first (preferred method)
+            DEV_VPC_ID=$(aws ssm get-parameter \
+              --name "/networking/development/vpc-id" \
+              --query 'Parameter.Value' \
+              --output text 2>/dev/null || echo "")
+            
+            if [ -n "$DEV_VPC_ID" ] && [ "$DEV_VPC_ID" != "None" ]; then
+              echo "✅ Found Dev VPC ID in SSM: $DEV_VPC_ID"
+            else
+              echo "⚠️ SSM parameter not found, falling back to EC2 API..."
+              # Fallback: Get VPC ID via EC2 API
+              DEV_VPC_ID=$(aws ec2 describe-vpcs \
+                --filters "Name=tag:Environment,Values=development" \
+                --query 'Vpcs[0].VpcId' \
+                --output text 2>/dev/null || echo "NOT_FOUND")
+              
+              if [ "$DEV_VPC_ID" != "NOT_FOUND" ]; then
+                echo "✅ Found Dev VPC ID via EC2 API: $DEV_VPC_ID"
+              fi
+            fi
+          else
+            echo "❌ Cannot assume role in dev account"
+            DEV_VPC_ID="NOT_FOUND"
+          fi
 
           echo "DEV_VPC_ID=$DEV_VPC_ID" >> $GITHUB_ENV
-          echo "Dev VPC ID: $DEV_VPC_ID"
+          echo "Final Dev VPC ID: $DEV_VPC_ID"
 
-      # Deploy Networking Stack
+      # Deploy Networking Stack (with dependency management)
       - name: Deploy Networking Stack
         run: |
           cd infrastructure
+
+          echo "Checking for existing VPC Peering stack that might block networking updates..."
+
+          # Check if VPC Peering stack exists and might block networking updates
+          VPC_PEERING_EXISTS=$(aws cloudformation describe-stacks \
+            --stack-name VpcPeeringStack-pipeline \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null || echo "NOT_FOUND")
+
+          if [ "$VPC_PEERING_EXISTS" != "NOT_FOUND" ] && [ "$VPC_PEERING_EXISTS" != "DELETE_COMPLETE" ]; then
+            echo "⚠️ VPC Peering stack exists and may block networking updates"
+            echo "Temporarily removing VPC Peering to allow networking updates..."
+            
+            # Temporarily destroy VPC peering to allow networking updates
+            ENVIRONMENT=pipeline yarn cdk destroy VpcPeeringStack-pipeline --force 2>/dev/null || true
+            
+            echo "VPC Peering stack removed - networking can now be updated safely"
+          fi
+
+          # Deploy networking stack
+          echo "Deploying NetworkingStack-pipeline..."
           ENVIRONMENT=pipeline yarn cdk deploy NetworkingStack-pipeline --require-approval never
+
+          echo "✅ Networking stack deployed successfully"
         env:
           AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
 
-      # Deploy VPC Peering (if configured)
+      # Deploy VPC Peering (if configured) - Redeploy after networking updates
       - name: Deploy VPC Peering
         if: env.DEV_VPC_ID != '' && env.DEV_VPC_ID != 'NOT_FOUND'
         continue-on-error: true
         run: |
           cd infrastructure
+
+          echo "Deploying VPC Peering (after networking stack is stable)..."
+          echo "Dev VPC ID: $DEV_VPC_ID"
+
+          # Deploy VPC peering now that networking stack is updated
           ENVIRONMENT=pipeline yarn cdk deploy VpcPeeringStack-pipeline --require-approval never
+
+          echo "✅ VPC Peering deployed successfully"
         env:
           AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
           DEV_VPC_ID: ${{ env.DEV_VPC_ID }}
@@ -265,6 +350,25 @@ jobs:
         run: |
           echo "Deploying MonitoringInfraStack-pipeline..."
           cd infrastructure
+
+          # Check for failed stack state and handle recovery
+          INFRA_STACK_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name MonitoringInfraStack-pipeline \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null || echo "NOT_FOUND")
+
+          if [ "$INFRA_STACK_STATUS" = "UPDATE_ROLLBACK_COMPLETE" ]; then
+            echo "⚠️ Infrastructure stack is in UPDATE_ROLLBACK_COMPLETE state"
+            echo "This usually means a previous deployment failed and needs recovery"
+            echo "Attempting to continue update to recover the stack..."
+            
+            # Try to continue the update to get out of rollback state
+            aws cloudformation continue-update-rollback \
+              --stack-name MonitoringInfraStack-pipeline 2>/dev/null || true
+            
+            echo "Waiting for stack to stabilize before deployment..."
+            sleep 30
+          fi
 
           # Skip certificate creation - use existing certificate ARN from SSM
           # Certificate must be created manually in root account where domain/hosted zone exists
@@ -1091,11 +1195,15 @@ jobs:
           echo "Destroying MonitoringAcmStack-pipeline..."
           ENVIRONMENT=pipeline yarn cdk destroy MonitoringAcmStack-pipeline --force 2>/dev/null || true
 
-          # Destroy VPC peering
-          echo "Destroying VpcPeeringStack-pipeline..."
+          # CRITICAL: Destroy VPC peering BEFORE networking to avoid export dependency issues
+          echo "Destroying VpcPeeringStack-pipeline (must be destroyed before networking)..."
           ENVIRONMENT=pipeline yarn cdk destroy VpcPeeringStack-pipeline --force 2>/dev/null || true
 
-          # Destroy networking (last)
+          # Wait for VPC peering to be fully destroyed before destroying networking
+          echo "Waiting for VPC peering to be fully destroyed..."
+          sleep 30
+
+          # Destroy networking (last, after VPC peering is gone)
           echo "Destroying NetworkingStack-pipeline..."
           ENVIRONMENT=pipeline yarn cdk destroy NetworkingStack-pipeline --force 2>/dev/null || true
 

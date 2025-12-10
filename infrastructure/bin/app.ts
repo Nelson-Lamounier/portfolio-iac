@@ -660,8 +660,8 @@ if (
   config.monitoredAccounts &&
   config.monitoredAccounts.length > 0
 ) {
-  // Get peer VPC info from environment variables or SSM
-  // These should be set after deploying NetworkingStack in each peer account
+  // Get peer VPC info from environment variables (from workflow) or SSM parameters
+  // Priority: Environment variables (from workflow) > SSM parameters > Skip
   const peerAccounts: Array<{
     envName: string;
     accountId: string;
@@ -671,14 +671,47 @@ if (
   }> = [];
 
   // Check for development account peering config
-  if (process.env.DEV_VPC_ID && process.env.AWS_ACCOUNT_ID_DEV) {
+  let devVpcId = process.env.DEV_VPC_ID;
+  const devAccountId = process.env.AWS_ACCOUNT_ID_DEV;
+
+  // If not provided via environment, try SSM parameter lookup
+  if (!devVpcId && devAccountId && process.env.SKIP_DOMAIN_LOOKUP !== "true") {
+    try {
+      devVpcId = cdk.aws_ssm.StringParameter.valueFromLookup(
+        app,
+        "/networking/development/vpc-id"
+      );
+
+      // Check if we got a dummy value (parameter doesn't exist)
+      if (devVpcId?.includes("dummy-value")) {
+        devVpcId = undefined;
+        console.log("⚠ Dev VPC ID not found in SSM parameter");
+      } else if (devVpcId) {
+        console.log(`✓ Found Dev VPC ID in SSM: ${devVpcId}`);
+      }
+    } catch (error) {
+      console.log("⚠ Could not lookup Dev VPC ID from SSM");
+      devVpcId = undefined;
+    }
+  }
+
+  if (devVpcId && devAccountId && devVpcId !== "NOT_FOUND") {
     peerAccounts.push({
       envName: "development",
-      accountId: process.env.AWS_ACCOUNT_ID_DEV,
-      vpcId: process.env.DEV_VPC_ID,
+      accountId: devAccountId,
+      vpcId: devVpcId,
       vpcCidr: vpcCidrMap["development"] || "10.1.0.0/16",
-      roleArn: `arn:aws:iam::${process.env.AWS_ACCOUNT_ID_DEV}:role/development-VpcPeeringAcceptorRole`,
+      roleArn: `arn:aws:iam::${devAccountId}:role/development-VpcPeeringAcceptorRole`,
     });
+    console.log(`✓ Added development account for VPC peering: ${devVpcId}`);
+  } else {
+    console.log("⚠ Development account VPC peering not configured");
+    console.log(
+      "  Set DEV_VPC_ID and AWS_ACCOUNT_ID_DEV environment variables"
+    );
+    console.log(
+      "  Or ensure /networking/development/vpc-id SSM parameter exists"
+    );
   }
 
   if (peerAccounts.length > 0) {
@@ -687,12 +720,19 @@ if (
       `   Peering to: ${peerAccounts.map((p) => p.envName).join(", ")}\n`
     );
 
-    new VpcPeeringStack(app, `VpcPeeringStack-${config.envName}`, {
-      ...stackProps,
-      vpc: networkingStack.vpc,
-      envName: config.envName,
-      peerAccounts: peerAccounts,
-    });
+    const vpcPeeringStack = new VpcPeeringStack(
+      app,
+      `VpcPeeringStack-${config.envName}`,
+      {
+        ...stackProps,
+        vpc: networkingStack.vpc, // Direct reference - no exports/imports
+        envName: config.envName,
+        peerAccounts: peerAccounts,
+      }
+    );
+
+    // Explicit dependency to ensure proper deployment order
+    vpcPeeringStack.addDependency(networkingStack);
   } else {
     console.log("\n VPC Peering: No peer accounts configured");
     console.log("   Set DEV_VPC_ID and AWS_ACCOUNT_ID_DEV to enable peering\n");

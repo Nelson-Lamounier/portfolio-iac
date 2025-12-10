@@ -43,6 +43,7 @@ help:
 	@echo "  sync-monitoring-config          - Sync config from Git to EFS (no CDK deploy!)"
 	@echo "  check-monitoring-layered        - Check layered monitoring status"
 	@echo "  destroy-monitoring-layered      - Destroy layered monitoring stacks"
+	@echo "  recover-monitoring-stacks       - Recover failed monitoring stacks (pipeline account)"
 	@echo ""
 	@echo "Centralized Monitoring (Pipeline Account - Legacy):"
 	@echo "  deploy-monitoring-centralized   - Deploy centralized monitoring (embedded)"
@@ -324,6 +325,12 @@ destroy-monitoring-layered:
 	@cd infrastructure && ENVIRONMENT=pipeline yarn cdk destroy MonitoringServiceStack-pipeline --force 2>/dev/null || true
 	@cd infrastructure && ENVIRONMENT=pipeline yarn cdk destroy MonitoringInfraStack-pipeline --force 2>/dev/null || true
 	@echo "✓ Layered monitoring destroyed"
+
+# Recover failed monitoring stacks
+recover-monitoring-stacks:
+	@echo "🔧 Recovering failed monitoring stacks..."
+	@chmod +x ./scripts/monitoring/recover-failed-stacks.sh
+	@ENVIRONMENT=pipeline ./scripts/monitoring/recover-failed-stacks.sh
 
 ##############################################################################
 # CENTRALIZED MONITORING (Pipeline Account) - Legacy Embedded
