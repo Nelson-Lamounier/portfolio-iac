@@ -107,34 +107,25 @@ jobs:
           role-chaining: true
           role-session-name: GitHubActions-FetchDevInfo
 
-      # Fetch Dev Account Info from SSM (Simple and Direct)
-      - name: Fetch Dev Account Info from SSM
+      # Fetch Dev Account Info using Script (Reliable approach)
+      - name: Fetch Dev Account Monitoring Info
         id: dev-info
         if: vars.AWS_ACCOUNT_ID_DEV != ''
         continue-on-error: true
         run: |
-          echo "🔍 Fetching dev account info from SSM parameters..."
+          echo "::notice::Fetching dev account info using script"
+          echo "Current AWS Account:"
+          aws sts get-caller-identity
+          echo ""
 
-          # Get VPC ID from SSM
-          DEV_VPC_ID=$(aws ssm get-parameter \
-            --name "/networking/development/vpc-id" \
-            --query 'Parameter.Value' \
-            --output text 2>/dev/null || echo "NOT_FOUND")
+          # Use the script that was working before
+          make fetch-monitoring-info ENV=development
 
-          # Get EC2 IP from SSM (if available)
-          DEV_NODE_EXPORTER_IP=$(aws ssm get-parameter \
-            --name "/monitoring/development/node-exporter-ip" \
-            --query 'Parameter.Value' \
-            --output text 2>/dev/null || echo "")
-
-          # Set environment variables
-          echo "DEV_VPC_ID=$DEV_VPC_ID" >> $GITHUB_ENV
-          echo "DEV_NODE_EXPORTER_IP=$DEV_NODE_EXPORTER_IP" >> $GITHUB_ENV
-
-          # Debug output
-          echo "✅ Retrieved from SSM:"
-          echo "  DEV_VPC_ID: $DEV_VPC_ID"
-          echo "  DEV_NODE_EXPORTER_IP: ${DEV_NODE_EXPORTER_IP:-not available}"
+          # Debug: Show what was fetched
+          echo ""
+          echo "🔍 Dev Account Info Retrieved:"
+          echo "  DEV_VPC_ID: ${DEV_VPC_ID:-not set}"
+          echo "  DEV_NODE_EXPORTER_IP: ${DEV_NODE_EXPORTER_IP:-not set}"
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
 
