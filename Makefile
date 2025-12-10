@@ -46,6 +46,7 @@ help:
 	@echo "  recover-monitoring-stacks       - Recover failed monitoring stacks (pipeline account)"
 	@echo "  force-deploy-networking         - Force deploy networking stack (for UPDATE_ROLLBACK_COMPLETE)"
 	@echo "  cleanup-alb-resources           - Clean up orphaned ALB resources (pipeline account)"
+	@echo "  force-redeploy-monitoring-infra - Delete and recreate MonitoringInfraStack (for resource mismatches)"
 	@echo ""
 	@echo "Centralized Monitoring (Pipeline Account - Legacy):"
 	@echo "  deploy-monitoring-centralized   - Deploy centralized monitoring (embedded)"
@@ -345,6 +346,16 @@ cleanup-alb-resources:
 	@echo "🧹 Cleaning up orphaned ALB resources..."
 	@chmod +x ./scripts/monitoring/cleanup-alb-resources.sh
 	@ENVIRONMENT=pipeline ./scripts/monitoring/cleanup-alb-resources.sh
+
+# Force redeploy MonitoringInfraStack (delete and recreate)
+force-redeploy-monitoring-infra:
+	@echo "🔄 Force redeploying MonitoringInfraStack-pipeline..."
+	@echo "This will delete and recreate the infrastructure stack"
+	@echo "⚠️  This will cause temporary downtime for monitoring services"
+	@cd infrastructure && ENVIRONMENT=pipeline yarn cdk destroy MonitoringInfraStack-pipeline --force 2>/dev/null || true
+	@echo "Waiting for stack deletion to complete..."
+	@sleep 30
+	@cd infrastructure && ENVIRONMENT=pipeline yarn cdk deploy MonitoringInfraStack-pipeline --require-approval never
 
 ##############################################################################
 # CENTRALIZED MONITORING (Pipeline Account) - Legacy Embedded

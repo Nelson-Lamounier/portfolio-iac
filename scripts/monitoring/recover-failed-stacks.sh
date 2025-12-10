@@ -31,9 +31,33 @@ recover_stack() {
         "UPDATE_ROLLBACK_COMPLETE")
             echo "  Stack is in rollback complete state"
             echo "  This means a previous update failed and was rolled back"
-            echo "  The stack is now in a stable state and ready for a new deployment"
-            echo "  No recovery action needed - stack can be updated normally"
-            echo "  ✅ Stack is ready for deployment"
+            
+            # Special handling for MonitoringInfraStack with resource mismatches
+            if [[ "$stack_name" == *"MonitoringInfraStack"* ]]; then
+                echo "  🔍 Checking for resource reference mismatches..."
+                
+                # Check if this is a "resource not found" issue by looking at recent events
+                RECENT_ERROR=$(aws cloudformation describe-stack-events \
+                    --stack-name "$stack_name" \
+                    --query 'StackEvents[?ResourceStatus==`UPDATE_ROLLBACK_COMPLETE`] | [0].ResourceStatusReason' \
+                    --output text 2>/dev/null || echo "")
+                
+                if [[ "$RECENT_ERROR" == *"not found"* ]] || [[ "$RECENT_ERROR" == *"NotFound"* ]]; then
+                    echo "  ⚠️ Detected resource reference mismatch (resources were deleted outside CloudFormation)"
+                    echo "  🔄 This stack needs to be deleted and recreated"
+                    echo "  Deleting stack to clear invalid resource references..."
+                    
+                    aws cloudformation delete-stack --stack-name "$stack_name" 2>/dev/null || true
+                    echo "  Stack deletion initiated - it will be recreated on next deployment"
+                    return 0
+                else
+                    echo "  The stack is in a stable state and ready for a new deployment"
+                    echo "  ✅ Stack is ready for deployment"
+                fi
+            else
+                echo "  The stack is in a stable state and ready for a new deployment"
+                echo "  ✅ Stack is ready for deployment"
+            fi
             ;;
         "UPDATE_ROLLBACK_IN_PROGRESS")
             echo "  Stack is rolling back - waiting for completion..."

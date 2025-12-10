@@ -403,7 +403,33 @@ jobs:
           echo "Using certificate ARN from environment: ${CERTIFICATE_ARN:-none}"
 
           # Deploy infrastructure stack with certificate ARN
-          ENVIRONMENT=pipeline yarn cdk deploy MonitoringInfraStack-pipeline --require-approval never
+          echo "Attempting to deploy MonitoringInfraStack-pipeline..."
+
+          if ! ENVIRONMENT=pipeline yarn cdk deploy MonitoringInfraStack-pipeline --require-approval never; then
+            echo "❌ Deployment failed - checking if this is a resource reference mismatch..."
+            
+            # Check if the error is about resources not found
+            STACK_EVENTS=$(aws cloudformation describe-stack-events \
+              --stack-name MonitoringInfraStack-pipeline \
+              --query 'StackEvents[?ResourceStatus==`UPDATE_ROLLBACK_COMPLETE`] | [0].ResourceStatusReason' \
+              --output text 2>/dev/null || echo "")
+            
+            if [[ "$STACK_EVENTS" == *"not found"* ]] || [[ "$STACK_EVENTS" == *"NotFound"* ]]; then
+              echo "🔄 Detected resource reference mismatch - deleting and recreating stack..."
+              
+              # Delete the stack to clear invalid references
+              ENVIRONMENT=pipeline yarn cdk destroy MonitoringInfraStack-pipeline --force 2>/dev/null || true
+              
+              echo "Waiting for stack deletion to complete..."
+              sleep 60
+              
+              echo "Recreating MonitoringInfraStack-pipeline..."
+              ENVIRONMENT=pipeline yarn cdk deploy MonitoringInfraStack-pipeline --require-approval never
+            else
+              echo "❌ Deployment failed for a different reason - check CloudFormation console"
+              exit 1
+            fi
+          fi
 
           echo "Getting stack outputs..."
           ALB_DNS=$(aws cloudformation describe-stacks \
