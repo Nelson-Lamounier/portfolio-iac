@@ -49,16 +49,27 @@ permissions:
   contents: read
 
 jobs:
-  deploy:
-    name: ${{ github.event.inputs.action || 'deploy-all' }} (Layered Architecture)
+  # ============================================================================
+  # JOB 1: Deploy Infrastructure (Networking, VPC Peering, ECS, EFS, ALB)
+  # ============================================================================
+  deploy-infrastructure:
+    name: Deploy Infrastructure
     runs-on: ubuntu-latest
     environment: pipeline
-    concurrency:
-      group: deploy-pipeline-monitoring
-      cancel-in-progress: false
+    if: |
+      github.event.inputs.action == 'deploy-all' || 
+      github.event.inputs.action == 'deploy-infra-only' ||
+      github.event.inputs.action == '' ||
+      github.event.inputs.action == null
+
+    outputs:
+      alb_dns: ${{ steps.deploy-infra.outputs.alb_dns }}
+      efs_id: ${{ steps.deploy-infra.outputs.efs_id }}
+      instance_id: ${{ steps.validate-userdata.outputs.instance_id }}
+      efs_mounted: ${{ steps.validate-userdata.outputs.efs_mounted }}
+      config_created: ${{ steps.validate-userdata.outputs.config_created }}
 
     env:
-      # Default values for push triggers (workflow_dispatch will override via inputs)
       ACTION: ${{ github.event.inputs.action || 'deploy-all' }}
 
     steps:
@@ -171,31 +182,323 @@ jobs:
           echo "DEV_VPC_ID=$DEV_VPC_ID" >> $GITHUB_ENV
           echo "Dev VPC ID: $DEV_VPC_ID"
 
-      # Deploy Monitoring Infrastructure (Layered Architecture)
-      - name: Deploy Monitoring Infrastructure
-        run: make deploy-monitoring-layered
+      # Deploy Networking Stack
+      - name: Deploy Networking Stack
+        run: |
+          cd infrastructure
+          ENVIRONMENT=pipeline yarn cdk deploy NetworkingStack-pipeline --require-approval never
+        env:
+          AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
+
+      # Deploy VPC Peering (if configured)
+      - name: Deploy VPC Peering
+        if: env.DEV_VPC_ID != '' && env.DEV_VPC_ID != 'NOT_FOUND'
+        continue-on-error: true
+        run: |
+          cd infrastructure
+          ENVIRONMENT=pipeline yarn cdk deploy VpcPeeringStack-pipeline --require-approval never
+        env:
+          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+          DEV_VPC_ID: ${{ env.DEV_VPC_ID }}
+
+      # Deploy Layer 1: Infrastructure (ECS, EFS, ALB)
+      - name: Deploy Layer 1 - Infrastructure
+        id: deploy-infra
+        run: |
+          echo "Deploying MonitoringInfraStack-pipeline..."
+          cd infrastructure
+          ENVIRONMENT=pipeline yarn cdk deploy MonitoringInfraStack-pipeline --require-approval never
+
+          echo "Getting stack outputs..."
+          ALB_DNS=$(aws cloudformation describe-stacks \
+            --stack-name MonitoringInfraStack-pipeline \
+            --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerDns`].OutputValue' \
+            --output text)
+
+          EFS_ID=$(aws cloudformation describe-stacks \
+            --stack-name MonitoringInfraStack-pipeline \
+            --query 'Stacks[0].Outputs[?OutputKey==`EfsFileSystemId`].OutputValue' \
+            --output text)
+
+          echo "alb_dns=$ALB_DNS" >> $GITHUB_OUTPUT
+          echo "efs_id=$EFS_ID" >> $GITHUB_OUTPUT
+          echo "ALB DNS: $ALB_DNS"
+          echo "EFS ID: $EFS_ID"
         env:
           AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
           AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
-          AWS_ACCOUNT_ID_STAGING: ${{ vars.AWS_ACCOUNT_ID_STAGING }}
-          AWS_ACCOUNT_ID_PROD: ${{ vars.AWS_ACCOUNT_ID_PROD }}
           DEV_VPC_ID: ${{ env.DEV_VPC_ID }}
-          DEV_NODE_EXPORTER_IP: ${{ env.DEV_NODE_EXPORTER_IP }}
 
-      # Check Status
-      - name: Check Monitoring Status
-        if: env.ACTION != 'destroy-all'
-        run: make check-monitoring-layered
+      # Wait for EC2 Instance and Validate UserData Execution
+      - name: Validate EC2 Instance and UserData
+        id: validate-userdata
+        run: |
+          echo "Waiting for EC2 instance to be ready..."
+
+          # Wait up to 5 minutes for instance to appear
+          for i in {1..30}; do
+            INSTANCE_ID=$(aws ec2 describe-instances \
+              --filters "Name=tag:Environment,Values=pipeline" \
+                        "Name=instance-state-name,Values=running" \
+              --query 'Reservations[0].Instances[0].InstanceId' \
+              --output text 2>/dev/null || echo "")
+            
+            if [ -n "$INSTANCE_ID" ] && [ "$INSTANCE_ID" != "None" ]; then
+              echo "Instance found: $INSTANCE_ID"
+              echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
+              break
+            fi
+            
+            echo "Waiting for instance... (attempt $i/30)"
+            sleep 10
+          done
+
+          if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "None" ]; then
+            echo "::error::No EC2 instance found after 5 minutes"
+            exit 1
+          fi
+
+          # Wait for SSM agent to be ready
+          echo "Waiting for SSM agent to be ready..."
+          aws ssm wait instance-information-available --instance-ids "$INSTANCE_ID" --max-attempts 30 --delay 10
+
+          # Check UserData execution
+          echo "Checking UserData execution..."
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=["echo \"=== UserData Execution Status ===\"","tail -50 /var/log/cloud-init-output.log","echo \"=== EFS Mount Status ===\"","df -h | grep efs || echo \"EFS not mounted\"","echo \"=== Directory Structure ===\"","ls -la /mnt/efs/ 2>/dev/null || echo \"EFS directory not accessible\"","echo \"=== Symlinks Status ===\"","ls -la /mnt/ | grep -E \"(prometheus|grafana)\" || echo \"Symlinks not created\""]' \
+            --query 'Command.CommandId' \
+            --output text)
+
+          # Wait for command to complete
+          sleep 15
+
+          # Get command output
+          OUTPUT=$(aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query 'StandardOutputContent' \
+            --output text)
+
+          echo "UserData execution status:"
+          echo "$OUTPUT"
+
+          # Check if EFS is mounted
+          if echo "$OUTPUT" | grep -q "efs"; then
+            echo " EFS is mounted successfully"
+            echo "efs_mounted=true" >> $GITHUB_OUTPUT
+          else
+            echo "EFS is not mounted"
+            echo "efs_mounted=false" >> $GITHUB_OUTPUT
+          fi
+
+          # Check if config directories exist
+          if echo "$OUTPUT" | grep -q "prometheus"; then
+            echo "Config directories created"
+            echo "config_created=true" >> $GITHUB_OUTPUT
+          else
+            echo "Config directories not created"
+            echo "config_created=false" >> $GITHUB_OUTPUT
+          fi
+
+      # Fix EFS DNS Resolution Issue
+      - name: Fix EFS DNS Resolution
+        if: steps.validate-userdata.outputs.efs_mounted == 'false'
+        run: |
+          echo "EFS mount failed, attempting to fix DNS resolution issue..."
+          INSTANCE_ID="${{ steps.validate-userdata.outputs.instance_id }}"
+          EFS_ID="${{ steps.deploy-infra.outputs.efs_id }}"
+
+          # Get EFS mount target IP
+          MOUNT_TARGET_IP=$(aws efs describe-mount-targets \
+            --file-system-id "$EFS_ID" \
+            --query 'MountTargets[0].IpAddress' \
+            --output text)
+
+          echo "EFS Mount Target IP: $MOUNT_TARGET_IP"
+
+          # Mount EFS using IP instead of DNS
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters "commands=[\"echo 'Mounting EFS using IP address...'\",\"sudo mkdir -p /mnt/efs\",\"sudo mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2 $MOUNT_TARGET_IP:/ /mnt/efs\",\"echo 'Creating directory structure...'\",\"sudo mkdir -p /mnt/efs/prometheus-data /mnt/efs/grafana-data\",\"sudo mkdir -p /mnt/efs/config/prometheus /mnt/efs/config/grafana/provisioning/datasources /mnt/efs/config/grafana/dashboards\",\"echo 'Creating symlinks...'\",\"sudo rm -rf /mnt/prometheus-data /mnt/grafana-data /mnt/prometheus-config /mnt/grafana-provisioning /mnt/grafana-dashboards\",\"sudo ln -sf /mnt/efs/prometheus-data /mnt/prometheus-data\",\"sudo ln -sf /mnt/efs/grafana-data /mnt/grafana-data\",\"sudo ln -sf /mnt/efs/config/prometheus /mnt/prometheus-config\",\"sudo ln -sf /mnt/efs/config/grafana/provisioning /mnt/grafana-provisioning\",\"sudo ln -sf /mnt/efs/config/grafana/dashboards /mnt/grafana-dashboards\",\"echo 'Setting permissions...'\",\"sudo chown -R 65534:65534 /mnt/efs/prometheus-data /mnt/efs/config/prometheus\",\"sudo chown -R 472:0 /mnt/efs/grafana-data /mnt/efs/config/grafana\",\"sudo chmod -R 777 /mnt/efs/prometheus-data /mnt/efs/grafana-data\",\"sudo chmod -R 755 /mnt/efs/config/prometheus /mnt/efs/config/grafana\",\"echo 'EFS setup completed'\",\"df -h | grep efs\"]" \
+            --query 'Command.CommandId' \
+            --output text)
+
+          sleep 20
+
+          OUTPUT=$(aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query 'StandardOutputContent' \
+            --output text)
+
+          echo "EFS fix output:"
+          echo "$OUTPUT"
+
+          if echo "$OUTPUT" | grep -q "efs"; then
+            echo "✅ EFS mounted successfully using IP address"
+          else
+            echo "❌ EFS mount still failed"
+            exit 1
+          fi
+
+      # Deploy Layer 2: Services (Prometheus, Grafana, Node Exporter)
+      - name: Deploy Layer 2 - Services
+        id: deploy-services
+        run: |
+          echo "Deploying MonitoringServiceStack-pipeline..."
+          cd infrastructure
+          ENVIRONMENT=pipeline yarn cdk deploy MonitoringServiceStack-pipeline --require-approval never
+
+          echo "Services deployed successfully"
+        env:
+          AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
+
+      # Initialize Configuration
+      - name: Initialize Configuration
+        run: |
+          echo "Initializing monitoring configuration..."
+          chmod +x ./scripts/monitoring/init-config.sh
+          ./scripts/monitoring/init-config.sh --env pipeline
+        env:
+          AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
+
+      # Wait for Services to Stabilize
+      - name: Wait for Services to Stabilize
+        run: |
+          echo "Waiting for services to stabilize..."
+          sleep 60
+
+          CLUSTER="pipeline-monitoring-cluster"
+
+          for SERVICE in pipeline-prometheus pipeline-grafana pipeline-monitoring-node-exporter; do
+            echo "Checking $SERVICE..."
+            
+            # Wait for service to be stable
+            aws ecs wait services-stable \
+              --cluster "$CLUSTER" \
+              --services "$SERVICE" \
+              --max-attempts 20 \
+              --delay 15 || echo "Service $SERVICE may not be fully stable yet"
+            
+            # Check final status
+            RUNNING=$(aws ecs describe-services \
+              --cluster "$CLUSTER" \
+              --services "$SERVICE" \
+              --query 'services[0].runningCount' \
+              --output text 2>/dev/null || echo "0")
+            
+            DESIRED=$(aws ecs describe-services \
+              --cluster "$CLUSTER" \
+              --services "$SERVICE" \
+              --query 'services[0].desiredCount' \
+              --output text 2>/dev/null || echo "0")
+            
+            echo "$SERVICE: $RUNNING/$DESIRED tasks running"
+          done
 
   # ============================================================================
-  # POST-DEPLOYMENT: Health Checks
+  # JOB 2: Deploy Services (Prometheus, Grafana, Node Exporter)
+  # ============================================================================
+  deploy-services:
+    name: Deploy Services
+    needs: deploy-infrastructure
+    runs-on: ubuntu-latest
+    environment: pipeline
+    if: |
+      always() &&
+      needs.deploy-infrastructure.result == 'success' &&
+      (github.event.inputs.action == 'deploy-all' || 
+       github.event.inputs.action == 'deploy-services-only' ||
+       github.event.inputs.action == '' ||
+       github.event.inputs.action == null)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install Dependencies
+        run: make install
+
+      - name: Build Infrastructure
+        run: make build-infrastructure
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Deploy Layer 2: Services
+      - name: Deploy Services Stack
+        run: |
+          echo "Deploying MonitoringServiceStack-pipeline..."
+          cd infrastructure
+          ENVIRONMENT=pipeline yarn cdk deploy MonitoringServiceStack-pipeline --require-approval never
+        env:
+          AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
+
+      # Initialize Configuration
+      - name: Initialize Configuration
+        run: |
+          echo "Initializing monitoring configuration..."
+          chmod +x ./scripts/monitoring/init-config.sh
+          ./scripts/monitoring/init-config.sh --env pipeline
+
+      # Wait for Services to Stabilize
+      - name: Wait for Services to Stabilize
+        run: |
+          echo "Waiting for services to stabilize..."
+          sleep 60
+
+          CLUSTER="pipeline-monitoring-cluster"
+
+          for SERVICE in pipeline-prometheus pipeline-grafana pipeline-monitoring-node-exporter; do
+            echo "Checking $SERVICE..."
+            
+            # Wait for service to be stable
+            aws ecs wait services-stable \
+              --cluster "$CLUSTER" \
+              --services "$SERVICE" \
+              --max-attempts 20 \
+              --delay 15 || echo "Service $SERVICE may not be fully stable yet"
+            
+            # Check final status
+            RUNNING=$(aws ecs describe-services \
+              --cluster "$CLUSTER" \
+              --services "$SERVICE" \
+              --query 'services[0].runningCount' \
+              --output text 2>/dev/null || echo "0")
+            
+            DESIRED=$(aws ecs describe-services \
+              --cluster "$CLUSTER" \
+              --services "$SERVICE" \
+              --query 'services[0].desiredCount' \
+              --output text 2>/dev/null || echo "0")
+            
+            echo "$SERVICE: $RUNNING/$DESIRED tasks running"
+          done
+
+  # ============================================================================
+  # JOB 3: Validation and Health Checks
   # ============================================================================
   health-checks:
-    name: Health Checks
-    needs: deploy
+    name: Validation & Health Checks
+    needs: [deploy-infrastructure, deploy-services]
     if: |
       always() && 
-      needs.deploy.result == 'success' &&
+      needs.deploy-infrastructure.result == 'success' &&
+      (needs.deploy-services.result == 'success' || needs.deploy-services.result == 'skipped') &&
       (github.event.inputs.run_health_checks != 'false') &&
       (github.event.inputs.action != 'destroy-all')
     runs-on: ubuntu-latest
@@ -211,30 +514,27 @@ jobs:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Get Stack Outputs
+      - name: Get Infrastructure Details
         id: outputs
         run: |
-          # Try both stack names (layered vs embedded)
-          ALB_DNS=$(aws cloudformation describe-stacks \
-            --stack-name MonitoringInfraStack-pipeline \
-            --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerDns`].OutputValue' \
-            --output text 2>/dev/null || \
-            aws cloudformation describe-stacks \
-            --stack-name MonitoringEcsStack-pipeline \
-            --query 'Stacks[0].Outputs[?OutputKey==`MonitoringAlbDns`].OutputValue' \
-            --output text 2>/dev/null || echo "")
-          echo "alb_dns=$ALB_DNS" >> $GITHUB_OUTPUT
+          # Use outputs from infrastructure job
+          ALB_DNS="${{ needs.deploy-infrastructure.outputs.alb_dns }}"
+          INSTANCE_ID="${{ needs.deploy-infrastructure.outputs.instance_id }}"
+          EFS_ID="${{ needs.deploy-infrastructure.outputs.efs_id }}"
+          EFS_MOUNTED="${{ needs.deploy-infrastructure.outputs.efs_mounted }}"
+          CONFIG_CREATED="${{ needs.deploy-infrastructure.outputs.config_created }}"
 
-          INSTANCE_ID=$(aws ec2 describe-instances \
-            --filters "Name=tag:Environment,Values=pipeline" \
-                      "Name=tag:Purpose,Values=Monitoring" \
-                      "Name=instance-state-name,Values=running" \
-            --query 'Reservations[0].Instances[0].InstanceId' \
-            --output text 2>/dev/null || echo "")
+          echo "alb_dns=$ALB_DNS" >> $GITHUB_OUTPUT
           echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
+          echo "efs_id=$EFS_ID" >> $GITHUB_OUTPUT
+          echo "efs_mounted=$EFS_MOUNTED" >> $GITHUB_OUTPUT
+          echo "config_created=$CONFIG_CREATED" >> $GITHUB_OUTPUT
 
           echo "ALB DNS: $ALB_DNS"
           echo "Instance ID: $INSTANCE_ID"
+          echo "EFS ID: $EFS_ID"
+          echo "EFS Mounted: $EFS_MOUNTED"
+          echo "Config Created: $CONFIG_CREATED"
 
       - name: Check Instance Status
         if: steps.outputs.outputs.instance_id != ''
@@ -327,6 +627,106 @@ jobs:
           chmod +x ./scripts/monitoring/check-monitoring-instance.sh
           ENVIRONMENT=pipeline ./scripts/monitoring/check-monitoring-instance.sh
 
+      - name: Comprehensive Monitoring Validation
+        id: validation
+        continue-on-error: true
+        run: |
+          echo "Running comprehensive monitoring validation..."
+          chmod +x ./scripts/monitoring/validate-monitoring-deployment.sh
+
+          # Run validation and capture exit code
+          if ./scripts/monitoring/validate-monitoring-deployment.sh --env pipeline; then
+            echo "validation_result=PASS" >> $GITHUB_OUTPUT
+            echo "✅ All validation tests passed"
+          else
+            echo "validation_result=FAIL" >> $GITHUB_OUTPUT
+            echo "❌ Some validation tests failed"
+          fi
+
+      - name: Auto-Fix Issues (if validation failed)
+        if: steps.validation.outputs.validation_result == 'FAIL'
+        continue-on-error: true
+        run: |
+          echo "Validation failed, attempting auto-fix..."
+          chmod +x ./scripts/monitoring/auto-fix-monitoring-issues.sh
+          ./scripts/monitoring/auto-fix-monitoring-issues.sh --env pipeline
+
+          echo "Waiting 60 seconds for services to stabilize..."
+          sleep 60
+
+          echo "Re-running validation after auto-fix..."
+          if ./scripts/monitoring/validate-monitoring-deployment.sh --env pipeline; then
+            echo "✅ Auto-fix successful - all tests now pass"
+            echo "auto_fix_result=SUCCESS" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Auto-fix incomplete - some issues remain"
+            echo "auto_fix_result=PARTIAL" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Test Prometheus Targets
+        continue-on-error: true
+        run: |
+          ALB_DNS="${{ steps.outputs.outputs.alb_dns }}"
+
+          if [ -n "$ALB_DNS" ]; then
+            echo "Testing Prometheus targets..."
+            
+            # Get targets from Prometheus API
+            TARGETS_JSON=$(curl -s "http://${ALB_DNS}/prometheus/api/v1/targets" || echo '{"status":"error"}')
+            
+            # Install jq if not available
+            if ! command -v jq >/dev/null 2>&1; then
+              sudo apt-get update && sudo apt-get install -y jq
+            fi
+            
+            ACTIVE_TARGETS=$(echo "$TARGETS_JSON" | jq -r '.data.activeTargets[]? | select(.health=="up") | .labels.job' 2>/dev/null | wc -l || echo "0")
+            
+            echo "Active targets: $ACTIVE_TARGETS"
+            
+            if [ "$ACTIVE_TARGETS" -ge "2" ]; then
+              echo "✅ Prometheus has $ACTIVE_TARGETS active targets"
+              echo "Target details:"
+              echo "$TARGETS_JSON" | jq -r '.data.activeTargets[]? | select(.health=="up") | "  - " + .labels.job + " (" + .scrapeUrl + ")"' 2>/dev/null || true
+            else
+              echo "::warning::Prometheus has only $ACTIVE_TARGETS active targets (expected at least 2)"
+            fi
+          fi
+
+      - name: Test Grafana Datasources
+        continue-on-error: true
+        run: |
+          ALB_DNS="${{ steps.outputs.outputs.alb_dns }}"
+
+          if [ -n "$ALB_DNS" ]; then
+            echo "Testing Grafana datasources..."
+            
+            # Test Grafana API
+            DATASOURCES=$(curl -s -u admin:admin "http://${ALB_DNS}/grafana/api/datasources" || echo '[]')
+            
+            PROMETHEUS_DS=$(echo "$DATASOURCES" | jq -r '.[] | select(.type=="prometheus") | .name' 2>/dev/null || echo "")
+            CLOUDWATCH_DS=$(echo "$DATASOURCES" | jq -r '.[] | select(.type=="cloudwatch") | .name' 2>/dev/null || echo "")
+            
+            if [ -n "$PROMETHEUS_DS" ]; then
+              echo "✅ Prometheus datasource found: $PROMETHEUS_DS"
+              
+              # Test datasource connectivity
+              PROMETHEUS_TEST=$(curl -s -u admin:admin "http://${ALB_DNS}/grafana/api/datasources/proxy/1/api/v1/query?query=up" || echo '{"status":"error"}')
+              if [[ "$PROMETHEUS_TEST" == *'"status":"success"'* ]]; then
+                echo "✅ Prometheus datasource connectivity test passed"
+              else
+                echo "::warning::Prometheus datasource connectivity test failed"
+              fi
+            else
+              echo "::warning::Prometheus datasource not found"
+            fi
+            
+            if [ -n "$CLOUDWATCH_DS" ]; then
+              echo "✅ CloudWatch datasource found: $CLOUDWATCH_DS"
+            else
+              echo "ℹ️ CloudWatch datasource not configured (optional)"
+            fi
+          fi
+
       - name: Verify Peering Connection
         if: steps.dev-vpc.outputs.vpc_id != 'NOT_FOUND'
         run: |
@@ -393,15 +793,46 @@ jobs:
             echo "- **ALB**: ${{ steps.outputs.outputs.alb_dns }} ✅" >> $GITHUB_STEP_SUMMARY
           fi
 
+          # Add validation results
+          VALIDATION_RESULT="${{ steps.validation.outputs.validation_result }}"
+          AUTO_FIX_RESULT="${{ steps.validation.outputs.auto_fix_result }}"
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔍 Validation Results" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$VALIDATION_RESULT" = "PASS" ]; then
+            echo "- **Initial Validation**: ✅ PASSED" >> $GITHUB_STEP_SUMMARY
+          elif [ "$VALIDATION_RESULT" = "FAIL" ]; then
+            echo "- **Initial Validation**: ❌ FAILED" >> $GITHUB_STEP_SUMMARY
+            
+            if [ "$AUTO_FIX_RESULT" = "SUCCESS" ]; then
+              echo "- **Auto-Fix**: ✅ SUCCESSFUL" >> $GITHUB_STEP_SUMMARY
+            elif [ "$AUTO_FIX_RESULT" = "PARTIAL" ]; then
+              echo "- **Auto-Fix**: ⚠️ PARTIAL" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- **Auto-Fix**: ❌ FAILED" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Manual Verification" >> $GITHUB_STEP_SUMMARY
+          echo "After deployment, verify these manually:" >> $GITHUB_STEP_SUMMARY
+          echo "1. **Prometheus Targets**: All targets should be UP" >> $GITHUB_STEP_SUMMARY
+          echo "2. **Grafana Datasources**: Prometheus connection should work" >> $GITHUB_STEP_SUMMARY
+          echo "3. **Dashboard Functionality**: Import and test dashboards" >> $GITHUB_STEP_SUMMARY
+          echo "4. **Cross-Account Metrics**: Dev environment metrics visible" >> $GITHUB_STEP_SUMMARY
+
   # ============================================================================
-  # POST-DEPLOYMENT: Fix Grafana Datasource
+  # JOB 4: Auto-Fix Issues (if needed)
   # ============================================================================
-  fix-grafana:
-    name: Fix Grafana
-    needs: [deploy, health-checks]
+  auto-fix:
+    name: Auto-Fix Issues
+    needs: [deploy-infrastructure, deploy-services, health-checks]
     if: |
       always() && 
-      needs.deploy.result == 'success' &&
+      needs.deploy-infrastructure.result == 'success' &&
+      (needs.deploy-services.result == 'success' || needs.deploy-services.result == 'skipped') &&
+      needs.health-checks.outputs.validation_result == 'FAIL' &&
       (github.event.inputs.fix_grafana != 'false') &&
       (github.event.inputs.action != 'destroy-all')
     runs-on: ubuntu-latest
@@ -455,3 +886,69 @@ jobs:
               echo "HTTP Code: $HTTP_CODE" >> $GITHUB_STEP_SUMMARY
             fi
           fi
+
+  # ============================================================================
+  # JOB 5: Destroy Infrastructure (if requested)
+  # ============================================================================
+  destroy:
+    name: Destroy Infrastructure
+    runs-on: ubuntu-latest
+    environment: pipeline
+    if: github.event.inputs.action == 'destroy-all'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install Dependencies
+        run: make install
+
+      - name: Build Infrastructure
+        run: make build-infrastructure
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Destroy Monitoring Stacks
+        run: |
+          echo "Destroying monitoring stacks in reverse dependency order..."
+          cd infrastructure
+
+          # Destroy services first (Layer 2)
+          echo "Destroying MonitoringServiceStack-pipeline..."
+          ENVIRONMENT=pipeline yarn cdk destroy MonitoringServiceStack-pipeline --force 2>/dev/null || true
+
+          # Destroy infrastructure (Layer 1)
+          echo "Destroying MonitoringInfraStack-pipeline..."
+          ENVIRONMENT=pipeline yarn cdk destroy MonitoringInfraStack-pipeline --force 2>/dev/null || true
+
+          # Destroy VPC peering
+          echo "Destroying VpcPeeringStack-pipeline..."
+          ENVIRONMENT=pipeline yarn cdk destroy VpcPeeringStack-pipeline --force 2>/dev/null || true
+
+          # Destroy networking (last)
+          echo "Destroying NetworkingStack-pipeline..."
+          ENVIRONMENT=pipeline yarn cdk destroy NetworkingStack-pipeline --force 2>/dev/null || true
+
+          echo "✓ All monitoring stacks destroyed"
+
+      - name: Generate Destroy Summary
+        run: |
+          echo "## 🗑️ Monitoring Infrastructure Destroyed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All monitoring stacks have been destroyed:" >> $GITHUB_STEP_SUMMARY
+          echo "- MonitoringServiceStack-pipeline" >> $GITHUB_STEP_SUMMARY
+          echo "- MonitoringInfraStack-pipeline" >> $GITHUB_STEP_SUMMARY
+          echo "- VpcPeeringStack-pipeline" >> $GITHUB_STEP_SUMMARY
+          echo "- NetworkingStack-pipeline" >> $GITHUB_STEP_SUMMARY
