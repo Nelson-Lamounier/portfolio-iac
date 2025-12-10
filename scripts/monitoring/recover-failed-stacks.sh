@@ -29,13 +29,11 @@ recover_stack() {
     
     case $status in
         "UPDATE_ROLLBACK_COMPLETE")
-            echo "  Stack is in rollback complete state - attempting to continue update"
-            aws cloudformation continue-update-rollback \
-                --stack-name "$stack_name" 2>/dev/null || {
-                echo "  Continue update rollback failed - stack may need manual intervention"
-                return 1
-            }
-            echo "  Continue update rollback initiated"
+            echo "  Stack is in rollback complete state"
+            echo "  This means a previous update failed and was rolled back"
+            echo "  The stack is now in a stable state and ready for a new deployment"
+            echo "  No recovery action needed - stack can be updated normally"
+            echo "  ✅ Stack is ready for deployment"
             ;;
         "UPDATE_ROLLBACK_IN_PROGRESS")
             echo "  Stack is rolling back - waiting for completion..."
@@ -169,6 +167,13 @@ echo "Recovery Summary:"
 echo "- Stacks should now be in a deployable state"
 echo "- You can proceed with normal deployment"
 echo "- If any stacks still show issues, check CloudFormation console for details"
+
+echo ""
+echo "Next Steps:"
+echo "1. For UPDATE_ROLLBACK_COMPLETE stacks: Simply redeploy normally"
+echo "2. For other failed states: Check CloudFormation console for specific errors"
+echo "3. If deployment still fails, consider using --exclusively flag:"
+echo "   cd infrastructure && ENVIRONMENT=pipeline yarn cdk deploy NetworkingStack-pipeline --exclusively"
 
 echo ""
 echo "Stack recovery process completed"

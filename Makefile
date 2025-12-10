@@ -44,6 +44,7 @@ help:
 	@echo "  check-monitoring-layered        - Check layered monitoring status"
 	@echo "  destroy-monitoring-layered      - Destroy layered monitoring stacks"
 	@echo "  recover-monitoring-stacks       - Recover failed monitoring stacks (pipeline account)"
+	@echo "  force-deploy-networking         - Force deploy networking stack (for UPDATE_ROLLBACK_COMPLETE)"
 	@echo ""
 	@echo "Centralized Monitoring (Pipeline Account - Legacy):"
 	@echo "  deploy-monitoring-centralized   - Deploy centralized monitoring (embedded)"
@@ -331,6 +332,12 @@ recover-monitoring-stacks:
 	@echo "🔧 Recovering failed monitoring stacks..."
 	@chmod +x ./scripts/monitoring/recover-failed-stacks.sh
 	@ENVIRONMENT=pipeline ./scripts/monitoring/recover-failed-stacks.sh
+
+# Force deploy networking stack (for UPDATE_ROLLBACK_COMPLETE state)
+force-deploy-networking:
+	@echo "🚀 Force deploying NetworkingStack-pipeline..."
+	@echo "This will deploy the networking stack even if it's in UPDATE_ROLLBACK_COMPLETE state"
+	@cd infrastructure && ENVIRONMENT=pipeline yarn cdk deploy NetworkingStack-pipeline --require-approval never --exclusively
 
 ##############################################################################
 # CENTRALIZED MONITORING (Pipeline Account) - Legacy Embedded

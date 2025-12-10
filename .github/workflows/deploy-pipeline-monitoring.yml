@@ -133,10 +133,10 @@ jobs:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # Recover any failed stacks before deployment
-      - name: Recover Failed CloudFormation Stacks
+      # Check stack states and handle recovery if needed
+      - name: Check CloudFormation Stack States
         run: |
-          echo "🔧 Checking for failed CloudFormation stacks..."
+          echo "🔧 Checking CloudFormation stack states..."
 
           # Check for common failed states that block deployment
           NETWORKING_STATUS=$(aws cloudformation describe-stacks \
@@ -153,17 +153,21 @@ jobs:
           echo "  NetworkingStack-pipeline: $NETWORKING_STATUS"
           echo "  MonitoringInfraStack-pipeline: $INFRA_STATUS"
 
-          # Handle UPDATE_ROLLBACK_COMPLETE states
-          if [ "$NETWORKING_STATUS" = "UPDATE_ROLLBACK_COMPLETE" ] || [ "$INFRA_STATUS" = "UPDATE_ROLLBACK_COMPLETE" ]; then
-            echo "⚠️ Found stacks in UPDATE_ROLLBACK_COMPLETE state"
-            echo "Running recovery script..."
-            
+          # Handle problematic states that need intervention
+          if [ "$NETWORKING_STATUS" = "UPDATE_ROLLBACK_FAILED" ] || [ "$INFRA_STATUS" = "UPDATE_ROLLBACK_FAILED" ]; then
+            echo "❌ Found stacks in UPDATE_ROLLBACK_FAILED state - running recovery"
             chmod +x ./scripts/monitoring/recover-failed-stacks.sh
             ./scripts/monitoring/recover-failed-stacks.sh
-            
-            echo "✅ Stack recovery completed"
+          elif [ "$NETWORKING_STATUS" = "UPDATE_ROLLBACK_IN_PROGRESS" ] || [ "$INFRA_STATUS" = "UPDATE_ROLLBACK_IN_PROGRESS" ]; then
+            echo "⏳ Found stacks in UPDATE_ROLLBACK_IN_PROGRESS state - waiting for completion"
+            chmod +x ./scripts/monitoring/recover-failed-stacks.sh
+            ./scripts/monitoring/recover-failed-stacks.sh
+          elif [ "$NETWORKING_STATUS" = "UPDATE_ROLLBACK_COMPLETE" ] || [ "$INFRA_STATUS" = "UPDATE_ROLLBACK_COMPLETE" ]; then
+            echo "✅ Found stacks in UPDATE_ROLLBACK_COMPLETE state"
+            echo "This is a stable state - stacks are ready for deployment"
+            echo "No recovery needed - proceeding with normal deployment"
           else
-            echo "✅ No failed stacks detected - proceeding with deployment"
+            echo "✅ All stacks are in deployable states - proceeding with deployment"
           fi
 
       # Fetch Domain Configuration and Certificate from SSM
@@ -318,9 +322,23 @@ jobs:
             echo "VPC Peering stack removed - networking can now be updated safely"
           fi
 
+          # Check networking stack state
+          NETWORKING_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name NetworkingStack-pipeline \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null || echo "NOT_FOUND")
+
+          echo "NetworkingStack-pipeline status: $NETWORKING_STATUS"
+
           # Deploy networking stack
           echo "Deploying NetworkingStack-pipeline..."
-          ENVIRONMENT=pipeline yarn cdk deploy NetworkingStack-pipeline --require-approval never
+
+          if [ "$NETWORKING_STATUS" = "UPDATE_ROLLBACK_COMPLETE" ]; then
+            echo "Stack is in UPDATE_ROLLBACK_COMPLETE state - deploying with --exclusively flag"
+            ENVIRONMENT=pipeline yarn cdk deploy NetworkingStack-pipeline --require-approval never --exclusively
+          else
+            ENVIRONMENT=pipeline yarn cdk deploy NetworkingStack-pipeline --require-approval never
+          fi
 
           echo "✅ Networking stack deployed successfully"
         env:
