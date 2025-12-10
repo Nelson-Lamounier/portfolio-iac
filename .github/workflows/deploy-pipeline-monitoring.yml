@@ -107,63 +107,67 @@ jobs:
           role-chaining: true
           role-session-name: GitHubActions-FetchDevInfo
 
-      # Fetch Dev Account Info using Direct EC2 API (Same as setup-vpc-peering.sh)
-      - name: Fetch Dev Account VPC Info
+      # Use setup-vpc-peering.sh script to get VPC info (but don't deploy)
+      - name: Get Dev VPC Info from setup-vpc-peering.sh
         id: dev-info
         continue-on-error: true
         run: |
-          echo "🔍 Fetching dev account VPC info using EC2 API..."
+          echo "🔍 Using setup-vpc-peering.sh logic to get VPC info..."
           echo "Current AWS Account:"
           aws sts get-caller-identity
           echo ""
-          echo "AWS_ACCOUNT_ID_DEV from vars: ${{ vars.AWS_ACCOUNT_ID_DEV }}"
+
+          # Exact same logic as setup-vpc-peering.sh Step 2
+          DEV_ENV="development"
+          AWS_REGION="${{ env.AWS_REGION }}"
+
+          echo "Getting development VPC information..."
+          echo "Note: This requires AWS credentials to be configured for dev account"
           echo ""
 
-          # Test basic EC2 access first
-          echo "Testing EC2 access..."
-          aws ec2 describe-vpcs --query 'Vpcs[0].VpcId' --output text 2>/dev/null || echo "EC2 access failed"
-          echo ""
-
-          # Get Development VPC Info (same logic as setup-vpc-peering.sh)
-          echo "Looking for development VPC..."
           DEV_VPC=$(aws ec2 describe-vpcs \
-            --filters "Name=tag:Environment,Values=development" \
+            --filters "Name=tag:Environment,Values=$DEV_ENV" \
             --query 'Vpcs[0].VpcId' \
             --output text \
-            --region ${{ env.AWS_REGION }} 2>/dev/null || echo "NOT_FOUND")
-
-          echo "Raw VPC query result: '$DEV_VPC'"
+            --region "$AWS_REGION" 2>/dev/null || echo "NOT_FOUND")
 
           if [ "$DEV_VPC" = "NOT_FOUND" ] || [ "$DEV_VPC" = "None" ] || [ -z "$DEV_VPC" ]; then
-            echo "⚠️ Development VPC not found or not accessible"
+            echo "WARNING: Development VPC not found or not accessible"
+            echo "Make sure:"
+            echo "  1. Development infrastructure is deployed"
+            echo "  2. AWS credentials are configured for dev account"
+            echo "  3. Cross-account role has ec2:DescribeVpcs permission"
+            echo ""
             DEV_VPC="NOT_FOUND"
           else
-            echo "✅ Found Development VPC: $DEV_VPC"
+            DEV_CIDR=$(aws ec2 describe-vpcs \
+              --vpc-ids "$DEV_VPC" \
+              --query 'Vpcs[0].CidrBlock' \
+              --output text \
+              --region "$AWS_REGION")
+            
+            echo "✓ Development VPC: $DEV_VPC"
+            echo "  CIDR: $DEV_CIDR"
           fi
 
-          # Try to get EC2 instance IP for monitoring targets
-          DEV_NODE_EXPORTER_IP=$(aws ec2 describe-instances \
-            --filters "Name=tag:Environment,Values=development" \
-                      "Name=instance-state-name,Values=running" \
-            --query 'Reservations[0].Instances[0].PrivateIpAddress' \
-            --output text 2>/dev/null || echo "")
-
-          if [ -n "$DEV_NODE_EXPORTER_IP" ] && [ "$DEV_NODE_EXPORTER_IP" != "None" ]; then
-            echo "✅ Found Development EC2 IP: $DEV_NODE_EXPORTER_IP"
-          else
-            echo "ℹ️ Development EC2 instance not found (expected if no apps deployed)"
-            DEV_NODE_EXPORTER_IP=""
-          fi
-
-          # Set environment variables for GitHub Actions
+          # Set environment variables for GitHub Actions (CRITICAL: Must be set correctly)
           echo "DEV_VPC_ID=$DEV_VPC" >> $GITHUB_ENV
-          echo "DEV_NODE_EXPORTER_IP=$DEV_NODE_EXPORTER_IP" >> $GITHUB_ENV
+          echo "DEV_VPC_CIDR=${DEV_CIDR:-}" >> $GITHUB_ENV
 
-          # Debug output
+          # Also set as step outputs for debugging
+          echo "dev_vpc_id=$DEV_VPC" >> $GITHUB_OUTPUT
+          echo "dev_vpc_cidr=${DEV_CIDR:-}" >> $GITHUB_OUTPUT
+
           echo ""
-          echo "🔍 Dev Account Info Retrieved:"
+          echo "🔍 Results:"
           echo "  DEV_VPC_ID: $DEV_VPC"
-          echo "  DEV_NODE_EXPORTER_IP: ${DEV_NODE_EXPORTER_IP:-not available}"
+          echo "  DEV_VPC_CIDR: ${DEV_CIDR:-}"
+
+          # Debug: Verify environment variable was set
+          echo ""
+          echo "🔍 Environment Variable Debug:"
+          echo "  Setting DEV_VPC_ID=$DEV_VPC in GITHUB_ENV"
+          echo "  This should be available in subsequent steps as \${{ env.DEV_VPC_ID }}"
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
 
@@ -173,6 +177,15 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
+
+      # Verify environment variables are still set after credential switch
+      - name: Verify Environment Variables After Credential Switch
+        run: |
+          echo "🔍 Environment Variables After Credential Switch:"
+          echo "  DEV_VPC_ID: '${{ env.DEV_VPC_ID }}'"
+          echo "  Step output dev_vpc_id: '${{ steps.dev-info.outputs.dev_vpc_id }}'"
+          echo "  Current AWS Account:"
+          aws sts get-caller-identity
 
       # Check stack states and handle recovery if needed
       - name: Check CloudFormation Stack States
@@ -346,17 +359,24 @@ jobs:
       - name: Debug VPC Peering Condition
         run: |
           echo "🔍 VPC Peering Deployment Debug:"
-          echo "  DEV_VPC_ID: '${DEV_VPC_ID:-UNSET}'"
+          echo "  GitHub Actions env.DEV_VPC_ID: '${{ env.DEV_VPC_ID }}'"
+          echo "  Shell DEV_VPC_ID: '${DEV_VPC_ID:-UNSET}'"
+          echo "  Step output dev_vpc_id: '${{ steps.dev-info.outputs.dev_vpc_id }}'"
           echo "  AWS_ACCOUNT_ID_DEV: '${{ vars.AWS_ACCOUNT_ID_DEV }}'"
-          echo "  Condition check:"
-          echo "    DEV_VPC_ID != '': $([ '${DEV_VPC_ID:-}' != '' ] && echo 'true' || echo 'false')"
-          echo "    DEV_VPC_ID != 'NOT_FOUND': $([ '${DEV_VPC_ID:-}' != 'NOT_FOUND' ] && echo 'true' || echo 'false')"
-          echo "    DEV_VPC_ID != 'None': $([ '${DEV_VPC_ID:-}' != 'None' ] && echo 'true' || echo 'false')"
+          echo ""
+          echo "Condition evaluation:"
+          echo "  env.DEV_VPC_ID != '': ${{ env.DEV_VPC_ID != '' }}"
+          echo "  env.DEV_VPC_ID != 'NOT_FOUND': ${{ env.DEV_VPC_ID != 'NOT_FOUND' }}"
+          echo "  env.DEV_VPC_ID != 'None': ${{ env.DEV_VPC_ID != 'None' }}"
+          echo ""
 
-          if [ -n "${DEV_VPC_ID:-}" ] && [ "${DEV_VPC_ID}" != "NOT_FOUND" ] && [ "${DEV_VPC_ID}" != "None" ]; then
+          # Final condition check
+          if [ "${{ env.DEV_VPC_ID }}" != "" ] && [ "${{ env.DEV_VPC_ID }}" != "NOT_FOUND" ] && [ "${{ env.DEV_VPC_ID }}" != "None" ]; then
             echo "  ✅ All conditions met - VPC Peering should deploy"
+            echo "  Will deploy with DEV_VPC_ID=${{ env.DEV_VPC_ID }}"
           else
             echo "  ❌ Conditions not met - VPC Peering will be skipped"
+            echo "  Reason: DEV_VPC_ID is empty, NOT_FOUND, or None"
           fi
 
       - name: Deploy VPC Peering
@@ -365,8 +385,9 @@ jobs:
         run: |
           cd infrastructure
 
-          echo "Deploying VPC Peering (after networking stack is stable)..."
-          echo "Dev VPC ID: $DEV_VPC_ID"
+          echo "🔗 Deploying VPC Peering (after networking stack is stable)..."
+          echo "Dev VPC ID: ${{ env.DEV_VPC_ID }}"
+          echo "Dev Account: ${{ vars.AWS_ACCOUNT_ID_DEV }}"
 
           # Deploy VPC peering now that networking stack is updated
           ENVIRONMENT=pipeline yarn cdk deploy VpcPeeringStack-pipeline --require-approval never
@@ -381,25 +402,38 @@ jobs:
         continue-on-error: true
         run: |
           echo "⚠️ VPC Peering was skipped due to condition failure"
-          echo "Attempting to fetch VPC ID directly and deploy anyway..."
+          echo "Primary DEV_VPC_ID: '${{ env.DEV_VPC_ID }}'"
+          echo "Step output dev_vpc_id: '${{ steps.dev-info.outputs.dev_vpc_id }}'"
+          echo ""
 
           cd infrastructure
 
-          # Try to get VPC ID directly from dev account
+          # First try to use the step output if it's valid
+          STEP_VPC_ID="${{ steps.dev-info.outputs.dev_vpc_id }}"
+          if [ "$STEP_VPC_ID" != "" ] && [ "$STEP_VPC_ID" != "NOT_FOUND" ] && [ "$STEP_VPC_ID" != "None" ]; then
+            echo "✅ Using VPC ID from step output: $STEP_VPC_ID"
+            export DEV_VPC_ID="$STEP_VPC_ID"
+            ENVIRONMENT=pipeline yarn cdk deploy VpcPeeringStack-pipeline --require-approval never
+            echo "✅ VPC Peering deployed successfully (step output fallback)"
+            exit 0
+          fi
+
+          # If step output failed, try SSM parameter directly
+          echo "Step output not available, trying SSM parameter directly..."
           DEV_VPC_ID_DIRECT=$(aws ssm get-parameter \
             --name "/networking/development/vpc-id" \
             --query 'Parameter.Value' \
             --output text 2>/dev/null || echo "NOT_FOUND")
 
-          echo "Direct VPC ID lookup: $DEV_VPC_ID_DIRECT"
+          echo "Direct SSM VPC ID lookup: $DEV_VPC_ID_DIRECT"
 
           if [ "$DEV_VPC_ID_DIRECT" != "NOT_FOUND" ] && [ -n "$DEV_VPC_ID_DIRECT" ]; then
-            echo "✅ Found VPC ID directly, deploying VPC Peering..."
+            echo "✅ Found VPC ID via SSM, deploying VPC Peering..."
             export DEV_VPC_ID="$DEV_VPC_ID_DIRECT"
             ENVIRONMENT=pipeline yarn cdk deploy VpcPeeringStack-pipeline --require-approval never
-            echo "✅ VPC Peering deployed successfully (fallback)"
+            echo "✅ VPC Peering deployed successfully (SSM fallback)"
           else
-            echo "❌ Could not retrieve VPC ID - VPC Peering deployment skipped"
+            echo "❌ Could not retrieve VPC ID via any method - VPC Peering deployment skipped"
             echo "This is expected if development infrastructure is not deployed yet"
           fi
         env:
