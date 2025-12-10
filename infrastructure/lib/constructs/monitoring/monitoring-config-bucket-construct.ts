@@ -43,8 +43,14 @@ export class MonitoringConfigBucketConstruct extends Construct {
     const { envName, enableVersioning = true } = props;
 
     // Create S3 bucket for monitoring configs
+    // Use account from stack context if available, otherwise let CDK generate unique name
+    const accountId = cdk.Stack.of(this).account;
+    const bucketName = accountId
+      ? `${envName}-monitoring-config-${accountId}`
+      : undefined;
+
     this.bucket = new s3.Bucket(this, "ConfigBucket", {
-      bucketName: `${envName}-monitoring-config-${cdk.Stack.of(this).account}`,
+      bucketName,
       versioned: enableVersioning,
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
