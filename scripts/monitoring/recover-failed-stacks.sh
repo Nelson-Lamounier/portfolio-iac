@@ -123,6 +123,32 @@ done
 echo ""
 echo "🔧 Starting recovery process..."
 
+# Check for ALB resource conflicts (common cause of MonitoringInfraStack failures)
+monitoring_infra_status=$(check_stack_status "MonitoringInfraStack-$ENVIRONMENT")
+if [ "$monitoring_infra_status" = "UPDATE_ROLLBACK_COMPLETE" ]; then
+    echo ""
+    echo "🔍 MonitoringInfraStack failed - checking for ALB resource conflicts..."
+    
+    # Check if ALB exists outside of CloudFormation
+    ALB_EXISTS=$(aws elbv2 describe-load-balancers \
+        --names "${ENVIRONMENT}-monitoring-alb" \
+        --query 'LoadBalancers[0].LoadBalancerArn' \
+        --output text 2>/dev/null || echo "NOT_FOUND")
+    
+    if [ "$ALB_EXISTS" != "NOT_FOUND" ]; then
+        echo "  ⚠️ Found orphaned ALB resources that may be blocking deployment"
+        echo "  🧹 Running ALB cleanup..."
+        
+        chmod +x ./scripts/monitoring/cleanup-alb-resources.sh
+        ENVIRONMENT=$ENVIRONMENT ./scripts/monitoring/cleanup-alb-resources.sh
+        
+        echo "  ✅ ALB cleanup completed - waiting for AWS to process deletions..."
+        sleep 30
+    else
+        echo "  ✅ No ALB resource conflicts detected"
+    fi
+fi
+
 # Handle VPC Peering dependency issue
 vpc_peering_status=$(check_stack_status "VpcPeeringStack-$ENVIRONMENT")
 networking_status=$(check_stack_status "NetworkingStack-$ENVIRONMENT")
