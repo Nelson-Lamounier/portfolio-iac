@@ -260,36 +260,56 @@ jobs:
       # Dev VPC ID is already fetched in "Fetch Dev Account Monitoring Info" step above
       # No need for duplicate VPC ID retrieval
 
-      # Deploy Networking Stack (with dependency management)
+      # Deploy Networking Stack (with smart dependency management)
       - name: Deploy Networking Stack
         run: |
           cd infrastructure
 
-          echo "Checking for existing VPC Peering stack that might block networking updates..."
-
-          # Check if VPC Peering stack exists and might block networking updates
-          VPC_PEERING_EXISTS=$(aws cloudformation describe-stacks \
-            --stack-name VpcPeeringStack-pipeline \
-            --query 'Stacks[0].StackStatus' \
-            --output text 2>/dev/null || echo "NOT_FOUND")
-
-          if [ "$VPC_PEERING_EXISTS" != "NOT_FOUND" ] && [ "$VPC_PEERING_EXISTS" != "DELETE_COMPLETE" ]; then
-            echo "⚠️ VPC Peering stack exists and may block networking updates"
-            echo "Temporarily removing VPC Peering to allow networking updates..."
-            
-            # Temporarily destroy VPC peering to allow networking updates
-            ENVIRONMENT=pipeline yarn cdk destroy VpcPeeringStack-pipeline --force 2>/dev/null || true
-            
-            echo "VPC Peering stack removed - networking can now be updated safely"
-          fi
-
-          # Check networking stack state
+          # Check networking stack state first
           NETWORKING_STATUS=$(aws cloudformation describe-stacks \
             --stack-name NetworkingStack-pipeline \
             --query 'Stacks[0].StackStatus' \
             --output text 2>/dev/null || echo "NOT_FOUND")
 
           echo "NetworkingStack-pipeline status: $NETWORKING_STATUS"
+
+          # Only proceed with networking deployment if needed
+          if [ "$NETWORKING_STATUS" = "CREATE_COMPLETE" ] || [ "$NETWORKING_STATUS" = "UPDATE_COMPLETE" ]; then
+            echo "✅ NetworkingStack-pipeline is already in good state ($NETWORKING_STATUS)"
+            echo "Skipping networking deployment to avoid unnecessary VPC Peering disruption"
+            
+            # Check if there are actual changes that need deployment
+            echo "Checking for networking stack changes..."
+            DIFF_OUTPUT=$(ENVIRONMENT=pipeline yarn cdk diff NetworkingStack-pipeline 2>&1 || echo "")
+            
+            if echo "$DIFF_OUTPUT" | grep -q "There were no differences"; then
+              echo "✅ No changes detected in NetworkingStack - skipping deployment"
+              exit 0
+            else
+              echo "⚠️ Changes detected in NetworkingStack - proceeding with deployment"
+            fi
+          fi
+
+          # If we reach here, networking stack needs deployment
+          echo "NetworkingStack-pipeline needs deployment..."
+
+          # Check if VPC Peering exists and might block networking updates
+          VPC_PEERING_EXISTS=$(aws cloudformation describe-stacks \
+            --stack-name VpcPeeringStack-pipeline \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null || echo "NOT_FOUND")
+
+          VPC_PEERING_DESTROYED=false
+          if [ "$VPC_PEERING_EXISTS" != "NOT_FOUND" ] && [ "$VPC_PEERING_EXISTS" != "DELETE_COMPLETE" ]; then
+            echo "⚠️ VPC Peering stack exists and may block networking updates"
+            echo "Temporarily removing VPC Peering to allow networking updates..."
+            
+            # Temporarily destroy VPC peering to allow networking updates
+            ENVIRONMENT=pipeline yarn cdk destroy VpcPeeringStack-pipeline --force 2>/dev/null || true
+            VPC_PEERING_DESTROYED=true
+            
+            echo "VPC Peering stack removed - networking can now be updated safely"
+          fi
 
           # Deploy networking stack
           echo "Deploying NetworkingStack-pipeline..."
@@ -302,6 +322,9 @@ jobs:
           fi
 
           echo "✅ Networking stack deployed successfully"
+
+          # Set flag for VPC Peering redeployment
+          echo "VPC_PEERING_NEEDS_REDEPLOY=$VPC_PEERING_DESTROYED" >> $GITHUB_ENV
         env:
           AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
 
@@ -335,11 +358,30 @@ jobs:
         run: |
           cd infrastructure
 
-          echo "🔗 Deploying VPC Peering (after networking stack is stable)..."
+          echo "🔗 Checking VPC Peering deployment need..."
           echo "Dev VPC ID: ${{ env.DEV_VPC_ID }}"
           echo "Dev Account: ${{ vars.AWS_ACCOUNT_ID_DEV }}"
+          echo "VPC Peering needs redeploy: ${{ env.VPC_PEERING_NEEDS_REDEPLOY }}"
 
-          # Deploy VPC peering now that networking stack is updated
+          # Check if VPC Peering already exists and is healthy
+          VPC_PEERING_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name VpcPeeringStack-pipeline \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null || echo "NOT_FOUND")
+
+          echo "Current VPC Peering status: $VPC_PEERING_STATUS"
+
+          if [ "$VPC_PEERING_STATUS" = "CREATE_COMPLETE" ] || [ "$VPC_PEERING_STATUS" = "UPDATE_COMPLETE" ]; then
+            if [ "${{ env.VPC_PEERING_NEEDS_REDEPLOY }}" != "true" ]; then
+              echo "✅ VPC Peering already exists and is healthy - skipping deployment"
+              exit 0
+            else
+              echo "🔄 VPC Peering was destroyed for networking updates - redeploying..."
+            fi
+          fi
+
+          # Deploy VPC peering
+          echo "Deploying VpcPeeringStack-pipeline..."
           ENVIRONMENT=pipeline yarn cdk deploy VpcPeeringStack-pipeline --require-approval never
 
           echo "✅ VPC Peering deployed successfully"
@@ -357,6 +399,17 @@ jobs:
           echo ""
 
           cd infrastructure
+
+          # Check if VPC Peering already exists and is healthy
+          VPC_PEERING_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name VpcPeeringStack-pipeline \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null || echo "NOT_FOUND")
+
+          if [ "$VPC_PEERING_STATUS" = "CREATE_COMPLETE" ] || [ "$VPC_PEERING_STATUS" = "UPDATE_COMPLETE" ]; then
+            echo "✅ VPC Peering already exists and is healthy - no fallback needed"
+            exit 0
+          fi
 
           # First try to use the step output if it's valid
           STEP_VPC_ID="${{ steps.dev-info.outputs.dev_vpc_id }}"
