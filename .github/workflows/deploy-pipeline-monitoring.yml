@@ -107,25 +107,54 @@ jobs:
           role-chaining: true
           role-session-name: GitHubActions-FetchDevInfo
 
-      # Fetch Dev Account Info using Script (Reliable approach)
-      - name: Fetch Dev Account Monitoring Info
+      # Fetch Dev Account Info using Direct EC2 API (Same as setup-vpc-peering.sh)
+      - name: Fetch Dev Account VPC Info
         id: dev-info
         if: vars.AWS_ACCOUNT_ID_DEV != ''
         continue-on-error: true
         run: |
-          echo "::notice::Fetching dev account info using script"
+          echo "🔍 Fetching dev account VPC info using EC2 API..."
           echo "Current AWS Account:"
           aws sts get-caller-identity
           echo ""
 
-          # Use the script that was working before
-          make fetch-monitoring-info ENV=development
+          # Get Development VPC Info (same logic as setup-vpc-peering.sh)
+          DEV_VPC=$(aws ec2 describe-vpcs \
+            --filters "Name=tag:Environment,Values=development" \
+            --query 'Vpcs[0].VpcId' \
+            --output text \
+            --region ${{ env.AWS_REGION }} 2>/dev/null || echo "NOT_FOUND")
 
-          # Debug: Show what was fetched
+          if [ "$DEV_VPC" = "NOT_FOUND" ] || [ "$DEV_VPC" = "None" ] || [ -z "$DEV_VPC" ]; then
+            echo "⚠️ Development VPC not found or not accessible"
+            DEV_VPC="NOT_FOUND"
+          else
+            echo "✅ Found Development VPC: $DEV_VPC"
+          fi
+
+          # Try to get EC2 instance IP for monitoring targets
+          DEV_NODE_EXPORTER_IP=$(aws ec2 describe-instances \
+            --filters "Name=tag:Environment,Values=development" \
+                      "Name=instance-state-name,Values=running" \
+            --query 'Reservations[0].Instances[0].PrivateIpAddress' \
+            --output text 2>/dev/null || echo "")
+
+          if [ -n "$DEV_NODE_EXPORTER_IP" ] && [ "$DEV_NODE_EXPORTER_IP" != "None" ]; then
+            echo "✅ Found Development EC2 IP: $DEV_NODE_EXPORTER_IP"
+          else
+            echo "ℹ️ Development EC2 instance not found (expected if no apps deployed)"
+            DEV_NODE_EXPORTER_IP=""
+          fi
+
+          # Set environment variables for GitHub Actions
+          echo "DEV_VPC_ID=$DEV_VPC" >> $GITHUB_ENV
+          echo "DEV_NODE_EXPORTER_IP=$DEV_NODE_EXPORTER_IP" >> $GITHUB_ENV
+
+          # Debug output
           echo ""
           echo "🔍 Dev Account Info Retrieved:"
-          echo "  DEV_VPC_ID: ${DEV_VPC_ID:-not set}"
-          echo "  DEV_NODE_EXPORTER_IP: ${DEV_NODE_EXPORTER_IP:-not set}"
+          echo "  DEV_VPC_ID: $DEV_VPC"
+          echo "  DEV_NODE_EXPORTER_IP: ${DEV_NODE_EXPORTER_IP:-not available}"
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
 
