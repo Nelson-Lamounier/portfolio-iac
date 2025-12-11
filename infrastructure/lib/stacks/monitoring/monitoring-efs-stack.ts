@@ -4,7 +4,7 @@ import * as cdk from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as efs from "aws-cdk-lib/aws-efs";
 import * as iam from "aws-cdk-lib/aws-iam";
-import * as lambda from "aws-cdk-lib/aws-lambda";
+
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import * as cr from "aws-cdk-lib/custom-resources";
@@ -108,12 +108,13 @@ export class MonitoringEfsStack extends cdk.Stack {
     enableEncryption: boolean,
     lifecyclePolicy: efs.LifecyclePolicy
   ): { fileSystem: efs.FileSystem; availabilityZone: string } {
-    // Use first public subnet's AZ for One Zone storage class (cost optimization)
+    // Use first public subnet's AZ for reference (though Regional EFS spans all AZs)
     const publicSubnets = vpc.selectSubnets({
       subnetType: ec2.SubnetType.PUBLIC,
     });
     const availabilityZone = publicSubnets.availabilityZones[0];
 
+    // Create Regional EFS (spans all AZs with automatic mount targets)
     const fileSystem = new efs.FileSystem(this, `MonitoringEfs-${envName}`, {
       vpc,
       lifecyclePolicy,
@@ -122,18 +123,15 @@ export class MonitoringEfsStack extends cdk.Stack {
       provisionedThroughputPerSecond: cdk.Size.mebibytes(10), // 10 MiB/s baseline
       encrypted: enableEncryption,
       removalPolicy: cdk.RemovalPolicy.RETAIN, // Protect data
-      // CRITICAL: For One Zone EFS, mount targets must be in the same AZ as the FileSystem
+      // Regional EFS: Mount targets created in all AZs automatically
       vpcSubnets: {
-        availabilityZones: [availabilityZone],
         subnetType: ec2.SubnetType.PUBLIC, // Use public subnets since no NAT Gateway
       },
       // Note: Backup policy needs to be configured separately
     });
 
-    // Note: Commenting out One Zone configuration to use Regional EFS
     // Regional EFS automatically creates mount targets in all AZs
-    // const cfnFileSystem = fileSystem.node.defaultChild as efs.CfnFileSystem;
-    // cfnFileSystem.availabilityZoneName = availabilityZone;
+    // No need to specify availabilityZoneName for Regional EFS
 
     // Add tags
     cdk.Tags.of(fileSystem).add("Name", `${envName}-monitoring-efs`);
@@ -449,9 +447,6 @@ export class MonitoringEfsStack extends cdk.Stack {
       onEventHandler: efsInitLambda.function,
       logRetention: logs.RetentionDays.ONE_DAY,
     });
-
-    // Apply CDK Nag suppression directly to the Custom Resource Provider
-    const { NagSuppressions } = require("cdk-nag");
 
     // Note: CDK Nag suppression for Custom Resource Provider IAM permissions
     // is handled in SuppressionManager.getEfsCustomResourceSuppressions()

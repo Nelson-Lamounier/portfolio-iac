@@ -52,10 +52,18 @@ export class MonitoringEcsStack extends cdk.Stack {
       enablePersistence,
     } = props;
 
-    // Create EFS for persistent storage (optional but recommended)
+    // DEPRECATED: EFS creation moved to dedicated MonitoringEfsStack
+    // This stack now assumes external EFS is provided if persistence is needed
+    // For new deployments, use MonitoringEfsStack + MonitoringInfraStack instead
     let fileSystem: efs.FileSystem | undefined;
     if (enablePersistence) {
-      fileSystem = this.createEfsFileSystem(vpc, envName);
+      console.warn(
+        "WARNING: MonitoringEcsStack EFS creation is deprecated. " +
+          "Use MonitoringEfsStack for new deployments to avoid conflicts."
+      );
+      // EFS creation removed to prevent multiple EFS instances
+      // If you need persistence, deploy MonitoringEfsStack separately
+      fileSystem = undefined;
     }
 
     // Create ECS Cluster for monitoring
@@ -154,10 +162,22 @@ export class MonitoringEcsStack extends cdk.Stack {
   }
 
   /**
-   * Create EFS file system for persistent monitoring data
+   * DEPRECATED: Create EFS file system for persistent monitoring data
+   *
+   * This method is deprecated to prevent multiple EFS instances.
+   * Use MonitoringEfsStack for new deployments instead.
+   *
    * Uses One Zone storage class for cost optimization (~47% cheaper than Standard)
    */
   private createEfsFileSystem(vpc: ec2.IVpc, envName: string): efs.FileSystem {
+    throw new Error(
+      "DEPRECATED: MonitoringEcsStack.createEfsFileSystem() is deprecated. " +
+        "Use MonitoringEfsStack for new deployments to avoid multiple EFS instances. " +
+        "This method was disabled to prevent conflicts with the new centralized EFS stack."
+    );
+
+    // Original code commented out to prevent accidental usage
+    /*
     const publicSubnets = vpc.selectSubnets({
       subnetType: ec2.SubnetType.PUBLIC,
     });
@@ -198,6 +218,7 @@ export class MonitoringEcsStack extends cdk.Stack {
     });
 
     return fileSystem;
+    */
   }
 
   /**

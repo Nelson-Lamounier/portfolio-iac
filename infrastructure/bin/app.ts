@@ -13,7 +13,6 @@ import {
   NetworkingStack,
   ComputeStack,
   MonitoringStack,
-  MonitoringEcsStack,
   MonitoringEfsStack,
   MonitoringInfraStack,
   MonitoringServiceStack,
@@ -425,6 +424,8 @@ if (config.isMonitoringAccount) {
 } else {
   // Application accounts: Local monitoring (CloudWatch + ECS monitoring)
   console.log(`\n📊 Local monitoring for ${config.envName}`);
+  console.log(`   isMonitoringAccount: ${config.isMonitoringAccount}`);
+  console.log(`   This should be FALSE for application accounts\n`);
 
   // CloudWatch Monitoring Stack
   const monitoringStack = new MonitoringStack(
@@ -444,25 +445,35 @@ if (config.isMonitoringAccount) {
   monitoringStack.addDependency(computeStack);
 
   // ECS Monitoring Stack (Prometheus + Grafana on ECS)
-  console.log(`   Adding ECS monitoring (Prometheus + Grafana)`);
+  // CRITICAL: Only deploy in application accounts, NOT in monitoring accounts
+  if (!config.isMonitoringAccount) {
+    console.log(`   Adding ECS monitoring (Prometheus + Grafana)`);
 
-  const monitoringEcsStack = new MonitoringEcsStack(
-    app,
-    `MonitoringEcsStack-${config.envName}`,
-    {
-      ...stackProps,
-      envName: config.envName,
-      vpc: networkingStack.vpc,
-      albDnsName: loadBalancerStack.alb.loadBalancer.loadBalancerDnsName,
-      // Enable EFS for persistent storage (data survives instance replacement)
-      enablePersistence: true,
-      // Optional: Restrict access to specific IPs for security
-      // allowedIpRanges: ['YOUR_IP/32'],
-    }
-  );
+    // Import MonitoringEcsStack only when needed to avoid conflicts
+    const { MonitoringEcsStack } = require("../lib/stacks");
 
-  monitoringEcsStack.addDependency(networkingStack);
-  monitoringEcsStack.addDependency(loadBalancerStack);
+    const monitoringEcsStack = new MonitoringEcsStack(
+      app,
+      `MonitoringEcsStack-${config.envName}`,
+      {
+        ...stackProps,
+        envName: config.envName,
+        vpc: networkingStack.vpc,
+        albDnsName: loadBalancerStack.alb.loadBalancer.loadBalancerDnsName,
+        // Enable EFS for persistent storage (data survives instance replacement)
+        enablePersistence: true,
+        // Optional: Restrict access to specific IPs for security
+        // allowedIpRanges: ['YOUR_IP/32'],
+      }
+    );
+
+    monitoringEcsStack.addDependency(networkingStack);
+    monitoringEcsStack.addDependency(loadBalancerStack);
+
+    console.log(`✅ Local ECS monitoring configured for ${config.envName}`);
+  } else {
+    console.log(`   Skipping ECS monitoring (this is a monitoring account)`);
+  }
 
   console.log(`✅ Local monitoring configured for ${config.envName}`);
 }

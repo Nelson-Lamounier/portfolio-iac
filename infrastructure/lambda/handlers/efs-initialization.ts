@@ -63,7 +63,7 @@ export const handler = async (
 
 async function initializeEfs(
   event: CloudFormationCustomResourceEvent,
-  context: Context
+  _context: Context
 ): Promise<CloudFormationCustomResourceResponse> {
   const { EfsId, AccessPointId, StackName } = event.ResourceProperties;
   const region = process.env.AWS_REGION!;
@@ -96,7 +96,7 @@ async function initializeEfs(
 
 async function cleanupEfs(
   event: CloudFormationCustomResourceEvent,
-  context: Context
+  _context: Context
 ): Promise<CloudFormationCustomResourceResponse> {
   console.log("EFS cleanup - no action needed (data preserved)");
 
@@ -221,7 +221,7 @@ echo "EFS setup completed successfully"
 
 async function getSSMParameter(
   parameterName: string,
-  region: string
+  _region: string
 ): Promise<string> {
   try {
     const command = new GetParameterCommand({ Name: parameterName });
@@ -236,7 +236,7 @@ async function getSSMParameter(
 async function putSSMParameter(
   parameterName: string,
   value: string,
-  region: string
+  _region: string
 ): Promise<void> {
   try {
     const command = new PutParameterCommand({
