@@ -276,7 +276,7 @@ export class MonitoringInfraStack extends cdk.Stack {
       })
     );
 
-    // Simplified user data - mount EFS and create directory structure
+    // Clean user data - only mount EFS and create symlinks (EFS stack handles setup)
     asg.addUserData(
       "#!/bin/bash",
       "set -e",
@@ -291,33 +291,22 @@ export class MonitoringInfraStack extends cdk.Stack {
       "# Add to fstab for persistence across reboots",
       `echo "${fileSystem.fileSystemId}:/ /mnt/efs efs _netdev,tls,iam 0 0" >> /etc/fstab`,
       "",
-      "# Create directory structure on EFS (if not exists)",
-      "mkdir -p /mnt/efs/monitoring/prometheus-data",
-      "mkdir -p /mnt/efs/monitoring/grafana-data",
-      "mkdir -p /mnt/efs/monitoring/grafana-data/plugins",
-      "mkdir -p /mnt/efs/monitoring/grafana-data/logs",
-      "mkdir -p /mnt/efs/monitoring/grafana-data/csv",
-      "mkdir -p /mnt/efs/monitoring/grafana-data/png",
-      "mkdir -p /mnt/efs/monitoring/config/prometheus",
-      "mkdir -p /mnt/efs/monitoring/config/grafana/provisioning/datasources",
-      "mkdir -p /mnt/efs/monitoring/config/grafana/provisioning/dashboards",
-      "mkdir -p /mnt/efs/monitoring/config/grafana/dashboards",
-      "mkdir -p /mnt/efs/monitoring/config/alertmanager",
+      "# Wait for EFS to be ready and verify directory structure exists",
+      "sleep 10",
+      "if [ ! -d '/mnt/efs/prometheus-data' ]; then",
+      "  echo 'ERROR: EFS not properly initialized by EFS stack'",
+      "  exit 1",
+      "fi",
       "",
-      "# Set permissions",
-      "chown -R 65534:65534 /mnt/efs/monitoring/prometheus-data /mnt/efs/monitoring/config/prometheus",
-      "chown -R 472:0 /mnt/efs/monitoring/grafana-data /mnt/efs/monitoring/config/grafana",
-      "chmod -R 777 /mnt/efs/monitoring/prometheus-data",
-      "chmod -R 777 /mnt/efs/monitoring/grafana-data",
-      "chmod -R 755 /mnt/efs/monitoring/config/prometheus",
-      "chmod -R 755 /mnt/efs/monitoring/config/grafana",
+      "# Create symlinks for container access (directories created by EFS stack)",
+      "ln -sf /mnt/efs/prometheus-data /mnt/prometheus-data",
+      "ln -sf /mnt/efs/grafana-data /mnt/grafana-data",
+      "ln -sf /mnt/efs/config/prometheus /mnt/prometheus-config",
+      "ln -sf /mnt/efs/config/grafana/provisioning /mnt/grafana-provisioning",
+      "ln -sf /mnt/efs/config/grafana/dashboards /mnt/grafana-dashboards",
       "",
-      "# Create symlinks for container access",
-      "ln -sf /mnt/efs/monitoring/prometheus-data /mnt/prometheus-data",
-      "ln -sf /mnt/efs/monitoring/grafana-data /mnt/grafana-data",
-      "ln -sf /mnt/efs/monitoring/config/prometheus /mnt/prometheus-config",
-      "ln -sf /mnt/efs/monitoring/config/grafana/provisioning /mnt/grafana-provisioning",
-      "ln -sf /mnt/efs/monitoring/config/grafana/dashboards /mnt/grafana-dashboards"
+      "# Verify symlinks were created successfully",
+      "ls -la /mnt/ | grep -E '(prometheus|grafana)' || echo 'WARNING: Some symlinks may not have been created'"
     );
 
     // Security group rules
