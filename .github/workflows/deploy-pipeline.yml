@@ -1,0 +1,201 @@
+# @format
+
+name: Deploy Pipeline Monitoring
+
+on:
+  push:
+    branches:
+      - feature/testing-pipeline # Specific branch for monitoring work /
+    # paths:
+    #   # - "infrastructure/lib/stacks/monitoring/**"
+    #   # - "infrastructure/config/**"
+    #   # - "infrastructure/bin/app.ts"
+    #   # - "monitoring/**"
+    #   # - "scripts/monitoring/**"
+    #   # - "scripts/deploy/pipeline-monitoring.sh"
+    #   # - "Makefile"
+    #   # - ".github/workflows/deploy-pipeline-monitoring.yml"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Action to perform"
+        required: true
+        type: choice
+        default: "deploy-all"
+        options:
+          - deploy-all
+          - deploy-infra-only
+          - deploy-services-only
+          - deploy-vpc-peering
+          - sync-config-only
+          - destroy-all
+      run_health_checks:
+        description: "Run post-deployment health checks"
+        required: false
+        type: boolean
+        default: true
+      fix_grafana:
+        description: "Automatically fix Grafana datasource"
+        required: false
+        type: boolean
+        default: true
+
+env:
+  NODE_VERSION: "22"
+  AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  # ============================================================================
+  # JOB 1: Deploy Infrastructure (Networking, VPC Peering, ECS, EFS, ALB)
+  # ============================================================================
+  deploy-infrastructure:
+    name: Deploy Infrastructure
+    runs-on: ubuntu-latest
+    environment: pipeline
+    if: |
+      github.event.inputs.action == 'deploy-all' || 
+      github.event.inputs.action == 'deploy-infra-only' ||
+      github.event.inputs.action == '' ||
+      github.event.inputs.action == null
+
+    outputs:
+      alb_dns: ${{ steps.deploy-infra.outputs.alb_dns }}
+      efs_id: ${{ steps.deploy-infra.outputs.efs_id }}
+      instance_id: ${{ steps.validate-userdata.outputs.instance_id }}
+      efs_mounted: ${{ steps.validate-userdata.outputs.efs_mounted }}
+      config_created: ${{ steps.validate-userdata.outputs.config_created }}
+
+    env:
+      ACTION: ${{ github.event.inputs.action || 'deploy-all' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install Dependencies
+        run: make install
+
+      - name: Build Infrastructure
+        run: make build-infrastructure
+
+      - name: Configure AWS Credentials (OIDC - Pipeline Account)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Check stack states and handle recovery if needed
+      - name: Check CloudFormation Stack States
+        run: |
+          echo "Checking CloudFormation stack states..."
+
+          # Check for common failed states that block deployment
+          NETWORKING_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name NetworkingStack-pipeline \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null || echo "NOT_FOUND")
+
+          INFRA_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name MonitoringInfraStack-pipeline \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null || echo "NOT_FOUND")
+
+          echo "Current stack states:"
+          echo "  NetworkingStack-pipeline: $NETWORKING_STATUS"
+          echo "  MonitoringInfraStack-pipeline: $INFRA_STATUS"
+
+          # Handle problematic states that need intervention
+          if [ "$NETWORKING_STATUS" = "UPDATE_ROLLBACK_FAILED" ] || [ "$INFRA_STATUS" = "UPDATE_ROLLBACK_FAILED" ]; then
+            echo "Found stacks in UPDATE_ROLLBACK_FAILED state - running recovery"
+            chmod +x ./scripts/monitoring/recover-failed-stacks.sh
+            ./scripts/monitoring/recover-failed-stacks.sh
+          elif [ "$NETWORKING_STATUS" = "UPDATE_ROLLBACK_IN_PROGRESS" ] || [ "$INFRA_STATUS" = "UPDATE_ROLLBACK_IN_PROGRESS" ]; then
+            echo "Found stacks in UPDATE_ROLLBACK_IN_PROGRESS state - waiting for completion"
+            chmod +x ./scripts/monitoring/recover-failed-stacks.sh
+            ./scripts/monitoring/recover-failed-stacks.sh
+          elif [ "$NETWORKING_STATUS" = "UPDATE_ROLLBACK_COMPLETE" ] || [ "$INFRA_STATUS" = "UPDATE_ROLLBACK_COMPLETE" ]; then
+            echo "Found stacks in UPDATE_ROLLBACK_COMPLETE state"
+            echo "This is a stable state - stacks are ready for deployment"
+            echo "No recovery needed - proceeding with normal deployment"
+          else
+            echo " All stacks are in deployable states - proceeding with deployment"
+          fi
+      # Deploy Networking Stack (with smart dependency management)
+      - name: Deploy Networking Stack
+        run: |
+          cd infrastructure
+
+          # Check networking stack state first
+          NETWORKING_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name NetworkingStack-pipeline \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null || echo "NOT_FOUND")
+
+          echo "NetworkingStack-pipeline status: $NETWORKING_STATUS"
+
+          # Only proceed with networking deployment if needed
+          if [ "$NETWORKING_STATUS" = "CREATE_COMPLETE" ] || [ "$NETWORKING_STATUS" = "UPDATE_COMPLETE" ]; then
+            echo "NetworkingStack-pipeline is already in good state ($NETWORKING_STATUS)"
+            echo "Skipping networking deployment to avoid unnecessary VPC Peering disruption"
+            
+            # Check if there are actual changes that need deployment
+            echo "Checking for networking stack changes..."
+            DIFF_OUTPUT=$(ENVIRONMENT=pipeline yarn cdk diff NetworkingStack-pipeline 2>&1 || echo "")
+            
+            if echo "$DIFF_OUTPUT" | grep -q "There were no differences"; then
+              echo "No changes detected in NetworkingStack - skipping deployment"
+              exit 0
+            else
+              echo "Changes detected in NetworkingStack - proceeding with deployment"
+            fi
+          fi
+
+          # If we reach here, networking stack needs deployment
+          echo "NetworkingStack-pipeline needs deployment..."
+
+          # Check if VPC Peering exists and might block networking updates
+          VPC_PEERING_EXISTS=$(aws cloudformation describe-stacks \
+            --stack-name VpcPeeringStack-pipeline \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null || echo "NOT_FOUND")
+
+          VPC_PEERING_DESTROYED=false
+          if [ "$VPC_PEERING_EXISTS" != "NOT_FOUND" ] && [ "$VPC_PEERING_EXISTS" != "DELETE_COMPLETE" ]; then
+            echo "VPC Peering stack exists and may block networking updates"
+            echo "Temporarily removing VPC Peering to allow networking updates..."
+            
+            # Temporarily destroy VPC peering to allow networking updates
+            ENVIRONMENT=pipeline yarn cdk destroy VpcPeeringStack-pipeline --force 2>/dev/null || true
+            VPC_PEERING_DESTROYED=true
+            
+            echo "VPC Peering stack removed - networking can now be updated safely"
+          fi
+
+          # Deploy networking stack
+          echo "Deploying NetworkingStack-pipeline..."
+
+          if [ "$NETWORKING_STATUS" = "UPDATE_ROLLBACK_COMPLETE" ]; then
+            echo "Stack is in UPDATE_ROLLBACK_COMPLETE state - deploying with --exclusively flag"
+            ENVIRONMENT=pipeline yarn cdk deploy NetworkingStack-pipeline --require-approval never --exclusively
+          else
+            ENVIRONMENT=pipeline yarn cdk deploy NetworkingStack-pipeline --require-approval never
+          fi
+
+          echo "✅ Networking stack deployed successfully"
+
+          # Set flag for VPC Peering redeployment
+          echo "VPC_PEERING_NEEDS_REDEPLOY=$VPC_PEERING_DESTROYED" >> $GITHUB_ENV
+        env:
+          AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
