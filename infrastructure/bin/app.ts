@@ -395,6 +395,12 @@ if (config.isMonitoringAccount) {
   monitoringInfraStack.addDependency(networkingStack);
   monitoringInfraStack.addDependency(monitoringEfsStack);
 
+  // Add explicit dependency to ensure Infrastructure stack updates when EFS changes
+  monitoringInfraStack.node.addMetadata(
+    "EfsFileSystemId",
+    monitoringEfsStack.fileSystem.fileSystemId
+  );
+
   // Layer 2: Services //
   console.log("Layer 2: Services Stack");
   console.log("  - Prometheus (metrics collection)");

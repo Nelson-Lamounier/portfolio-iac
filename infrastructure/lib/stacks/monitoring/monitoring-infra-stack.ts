@@ -280,6 +280,18 @@ export class MonitoringInfraStack extends cdk.Stack {
       })
     );
 
+    // Grant EFS describe permissions for debugging
+    asg.role.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          "elasticfilesystem:DescribeFileSystems",
+          "elasticfilesystem:DescribeMountTargets",
+        ],
+        resources: ["*"], // These actions don't support resource-level permissions
+      })
+    );
+
     // Grant SSM permissions to read EFS setup script
     asg.role.addToPrincipalPolicy(
       new iam.PolicyStatement({
@@ -408,18 +420,39 @@ export class MonitoringInfraStack extends cdk.Stack {
       "# Create mount point",
       "mkdir -p /mnt/efs",
       "",
+      "# Validate EFS has mount targets before attempting mount",
+      `echo 'Validating EFS ${fileSystem.fileSystemId} has mount targets...'`,
+      `MOUNT_TARGETS=$(aws efs describe-mount-targets --region ${this.region} --file-system-id ${fileSystem.fileSystemId} --query 'length(MountTargets)' --output text 2>/dev/null || echo '0')`,
+      'if [ "$MOUNT_TARGETS" = "0" ]; then',
+      `  echo 'ERROR: EFS ${fileSystem.fileSystemId} has no mount targets'`,
+      "  echo 'This indicates an orphaned EFS instance from a previous deployment'",
+      "  echo 'Please redeploy the EFS stack or clean up orphaned EFS instances'",
+      "  exit 1",
+      "fi",
+      'echo "Found $MOUNT_TARGETS mount target(s) for EFS"',
+      "",
       "# Mount EFS using mount helper with retry logic",
-      `echo 'Mounting One Zone EFS ${fileSystem.fileSystemId} using mount helper...'`,
+      `echo 'Mounting EFS ${fileSystem.fileSystemId} using mount helper...'`,
       "MOUNT_RETRIES=5",
       "MOUNT_DELAY=10",
       "for i in $(seq 1 $MOUNT_RETRIES); do",
       `  echo "Mount attempt $i of $MOUNT_RETRIES for EFS ${fileSystem.fileSystemId}"`,
       "  ",
       "  # Use EFS mount helper for One Zone file system with IAM authentication",
-      `  if timeout 60 mount -t efs -o tls,iam,regional ${fileSystem.fileSystemId}:/ /mnt/efs; then`,
+      `  if timeout 60 mount -t efs -o tls,iam ${fileSystem.fileSystemId}:/ /mnt/efs; then`,
       "    echo 'EFS mounted successfully using mount helper'",
       "    break",
       "  else",
+      "    echo 'EFS mount helper failed, trying direct NFS mount...'",
+      "    # Fallback: Try to find mount target IP and mount directly",
+      `    MOUNT_TARGET_IP=$(aws efs describe-mount-targets --region ${this.region} --file-system-id ${fileSystem.fileSystemId} --query 'MountTargets[0].IpAddress' --output text 2>/dev/null || echo '')`,
+      '    if [ ! -z "$MOUNT_TARGET_IP" ] && [ "$MOUNT_TARGET_IP" != "None" ]; then',
+      '      echo "Found mount target IP: $MOUNT_TARGET_IP"',
+      "      if timeout 60 mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,intr,timeo=600 $MOUNT_TARGET_IP:/ /mnt/efs; then",
+      "        echo 'EFS mounted successfully using direct NFS'",
+      "        break",
+      "      fi",
+      "    fi",
       '    echo "Mount attempt $i failed, retrying in $MOUNT_DELAY seconds..."',
       "    if [ $i -eq $MOUNT_RETRIES ]; then",
       "      echo 'ERROR: Failed to mount EFS after all retries'",
@@ -428,7 +461,7 @@ export class MonitoringInfraStack extends cdk.Stack {
       "      echo 'Network connectivity test:'",
       "      ping -c 3 8.8.8.8 || echo 'No internet connectivity'",
       "      echo 'EFS mount targets in region:'",
-      `      aws efs describe-mount-targets --file-system-id ${fileSystem.fileSystemId} || echo 'Failed to describe mount targets'`,
+      `      aws efs describe-mount-targets --region ${this.region} --file-system-id ${fileSystem.fileSystemId} || echo 'Failed to describe mount targets'`,
       "      echo 'Checking EFS utils version:'",
       "      rpm -qa | grep amazon-efs-utils",
       "      exit 1",
@@ -445,7 +478,7 @@ export class MonitoringInfraStack extends cdk.Stack {
       "fi",
       "",
       "# Add to fstab for persistence across reboots using mount helper",
-      `echo "${fileSystem.fileSystemId}:/ /mnt/efs efs defaults,_netdev,tls,iam,regional 0 0" >> /etc/fstab`,
+      `echo "${fileSystem.fileSystemId}:/ /mnt/efs efs defaults,_netdev,tls,iam 0 0" >> /etc/fstab`,
       "",
       "# Wait for EFS to be fully ready",
       "echo 'Waiting for EFS to be fully ready...'",

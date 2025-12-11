@@ -114,11 +114,12 @@ export class MonitoringEfsStack extends cdk.Stack {
     });
     const availabilityZone = publicSubnets.availabilityZones[0];
 
-    const fileSystem = new efs.FileSystem(this, "MonitoringEfs", {
+    const fileSystem = new efs.FileSystem(this, `MonitoringEfs-${envName}`, {
       vpc,
       lifecyclePolicy,
       performanceMode: efs.PerformanceMode.GENERAL_PURPOSE,
-      throughputMode: efs.ThroughputMode.BURSTING,
+      throughputMode: efs.ThroughputMode.PROVISIONED,
+      provisionedThroughputPerSecond: cdk.Size.mebibytes(10), // 10 MiB/s baseline
       encrypted: enableEncryption,
       removalPolicy: cdk.RemovalPolicy.RETAIN, // Protect data
       // CRITICAL: For One Zone EFS, mount targets must be in the same AZ as the FileSystem
@@ -129,11 +130,10 @@ export class MonitoringEfsStack extends cdk.Stack {
       // Note: Backup policy needs to be configured separately
     });
 
-    // Set One Zone storage class for cost optimization
-    const cfnFileSystem = fileSystem.node.defaultChild as efs.CfnFileSystem;
-    cfnFileSystem.availabilityZoneName = availabilityZone;
-    cfnFileSystem.throughputMode = "provisioned";
-    cfnFileSystem.provisionedThroughputInMibps = 10; // 10 MiB/s baseline
+    // Note: Commenting out One Zone configuration to use Regional EFS
+    // Regional EFS automatically creates mount targets in all AZs
+    // const cfnFileSystem = fileSystem.node.defaultChild as efs.CfnFileSystem;
+    // cfnFileSystem.availabilityZoneName = availabilityZone;
 
     // Add tags
     cdk.Tags.of(fileSystem).add("Name", `${envName}-monitoring-efs`);
