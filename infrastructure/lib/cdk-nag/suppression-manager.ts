@@ -272,6 +272,39 @@ export class SuppressionManager {
   }
 
   /**
+   * EFS Custom Resource Suppressions
+   * For Lambda functions that initialize EFS
+   */
+  static getEfsCustomResourceSuppressions(): NagPackSuppression[] {
+    return [
+      {
+        id: "AwsSolutions-IAM4",
+        reason:
+          "EFS initialization Lambda requires AWS managed policy AWSLambdaVPCAccessExecutionRole for VPC access to mount EFS. This is a standard AWS managed policy for Lambda functions that need VPC access and cannot be replaced with a custom policy.",
+        appliesTo: [
+          "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
+        ],
+      },
+      {
+        id: "AwsSolutions-IAM5",
+        reason:
+          "EFS initialization Lambda requires wildcard access to SSM parameters under the monitoring stack path for reading configuration. The wildcard is scoped to the specific stack's parameter namespace and is read-only access.",
+        appliesTo: [
+          {
+            regex: "/^Resource::arn:aws:ssm:.*:.*:parameter/monitoring/.*\\*$/",
+          },
+        ],
+      },
+      {
+        id: "AwsSolutions-IAM5",
+        reason:
+          "CDK Custom Resource Provider framework requires wildcard permissions on the Lambda function ARN for invoking the function. This is managed by CDK and is necessary for the Custom Resource lifecycle management.",
+        appliesTo: [{ regex: "/^Resource::<.*>\\.Arn>:\\*$/" }],
+      },
+    ];
+  }
+
+  /**
    * Load Balancer Configuration
    * For ALB access logging and configuration
    */
@@ -356,7 +389,6 @@ export class SuppressionManager {
 
       case "MonitoringStack":
       case "MonitoringEcsStack":
-      case "MonitoringEfsStack":
       case "MonitoringInfraStack":
         suppressions.push(...this.getMonitoringSuppressions());
         suppressions.push(...this.getEcsEnvironmentVariableSuppressions());
@@ -367,6 +399,11 @@ export class SuppressionManager {
         if (envName) {
           suppressions.push(...this.getCloudWatchLogsSuppressions(envName));
         }
+        break;
+
+      case "MonitoringEfsStack":
+        suppressions.push(...this.getMonitoringSuppressions());
+        suppressions.push(...this.getEfsCustomResourceSuppressions());
         break;
 
       case "MonitoringServiceStack":
