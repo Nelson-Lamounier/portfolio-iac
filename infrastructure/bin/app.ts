@@ -389,6 +389,7 @@ if (config.isMonitoringAccount) {
       efsAccessPoint: monitoringEfsStack.accessPoint,
       efsAvailabilityZone: monitoringEfsStack.efsAvailabilityZone,
       efsSecurityGroup: monitoringEfsStack.mountTargetSecurityGroup,
+      efsInitializationComplete: monitoringEfsStack.efsInitializationComplete,
     }
   );
   monitoringInfraStack.addDependency(networkingStack);
