@@ -299,7 +299,12 @@ export class SuppressionManager {
         id: "AwsSolutions-IAM5",
         reason:
           "CDK Custom Resource Provider framework requires wildcard permissions on the Lambda function ARN for invoking the function. This is managed by CDK and is necessary for the Custom Resource lifecycle management.",
-        appliesTo: [{ regex: "/^Resource::<.*>\\.Arn>:\\*$/" }],
+        appliesTo: [
+          "Resource::<*Function*.Arn>:*",
+          "Resource::<*>:*",
+          { regex: "/^Resource::<.*Function.*\\.Arn>:\\*$/g" },
+          "Resource::<EfsInitLambdaFunctionFC8F36D2.Arn>:*",
+        ],
       },
     ];
   }

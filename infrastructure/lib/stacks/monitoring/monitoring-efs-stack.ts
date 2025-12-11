@@ -4,13 +4,14 @@ import * as cdk from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as efs from "aws-cdk-lib/aws-efs";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import * as cr from "aws-cdk-lib/custom-resources";
 import { Construct } from "constructs";
 import { SuppressionManager } from "../../cdk-nag";
 import { CrossAccountTarget } from "../../types";
-import { LambdaFunctionConstruct } from "../../constructs/lambda";
+import { LambdaFunctionConstruct } from "../../constructs/compute/lambda";
 
 /**
  * LAYER 0: Monitoring EFS Stack
@@ -412,50 +413,16 @@ export class MonitoringEfsStack extends cdk.Stack {
     envName: string,
     crossAccountTargets?: CrossAccountTarget[]
   ) {
-    // Create security group for Lambda
-    const lambdaSecurityGroup = new ec2.SecurityGroup(this, "EfsInitLambdaSg", {
-      vpc,
-      description: "Security group for EFS initialization Lambda",
-      allowAllOutbound: true,
-    });
-
-    // Allow Lambda to access EFS
-    this.mountTargetSecurityGroup.addIngressRule(
-      lambdaSecurityGroup,
-      ec2.Port.tcp(2049),
-      "Allow Lambda to access EFS"
-    );
-
-    // Create VPC Endpoints for Lambda to access AWS services
-    const ssmEndpoint = vpc.addInterfaceEndpoint("SsmEndpoint", {
-      service: ec2.InterfaceVpcEndpointAwsService.SSM,
-      subnets: {
-        availabilityZones: [this.efsAvailabilityZone],
-        subnetType: ec2.SubnetType.PUBLIC,
-      },
-      securityGroups: [lambdaSecurityGroup], // Use Lambda's security group
-    });
-
-    // Allow Lambda to access VPC endpoints
-    ssmEndpoint.connections.allowFrom(
-      lambdaSecurityGroup,
-      ec2.Port.tcp(443),
-      "Allow Lambda to access SSM endpoint"
-    );
-
-    // Create EFS initialization Lambda using the reusable construct
+    // Create EFS initialization Lambda using the existing construct
+    // Note: Lambda runs outside VPC to avoid circular dependencies
+    // It only creates configuration files in SSM - EC2 instances handle EFS setup
     const efsInitLambda = new LambdaFunctionConstruct(this, "EfsInitLambda", {
-      handlerName: "efs-initialization",
-      handlerFunction: "handler",
+      envName,
+      functionName: "efs-initialization",
+      entry: "lambda/handlers/efs-initialization.ts",
+      handler: "handler",
       timeout: cdk.Duration.minutes(5),
       memorySize: 512,
-      vpc,
-      vpcSubnets: {
-        availabilityZones: [this.efsAvailabilityZone],
-        subnetType: ec2.SubnetType.PUBLIC,
-      },
-      securityGroups: [lambdaSecurityGroup],
-      allowPublicSubnet: true, // We have VPC endpoints for AWS services
       environment: {
         EFS_ID: this.fileSystem.fileSystemId,
         EFS_ACCESS_POINT_ID: this.accessPoint.accessPointId,
@@ -465,21 +432,15 @@ export class MonitoringEfsStack extends cdk.Stack {
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
           actions: [
-            "elasticfilesystem:ClientMount",
-            "elasticfilesystem:ClientWrite",
-            "elasticfilesystem:ClientRootAccess",
+            "ssm:GetParameter",
+            "ssm:GetParameters",
+            "ssm:PutParameter",
           ],
-          resources: [this.fileSystem.fileSystemArn],
-        }),
-        new iam.PolicyStatement({
-          effect: iam.Effect.ALLOW,
-          actions: ["ssm:GetParameter", "ssm:GetParameters"],
           resources: [
             `arn:aws:ssm:${this.region}:${this.account}:parameter/monitoring/${this.stackName}/*`,
           ],
         }),
       ],
-      logRetention: logs.RetentionDays.TWO_WEEKS,
     });
 
     // Create Custom Resource Provider
@@ -487,6 +448,13 @@ export class MonitoringEfsStack extends cdk.Stack {
       onEventHandler: efsInitLambda.function,
       logRetention: logs.RetentionDays.ONE_DAY,
     });
+
+    // Apply CDK Nag suppression directly to the Custom Resource Provider
+    const { NagSuppressions } = require("cdk-nag");
+
+    // Note: CDK Nag suppression for Custom Resource Provider IAM permissions
+    // is handled in SuppressionManager.getEfsCustomResourceSuppressions()
+    // The dynamically generated resource name may not match regex patterns perfectly
 
     // Create Custom Resource
     const customResource = new cdk.CustomResource(

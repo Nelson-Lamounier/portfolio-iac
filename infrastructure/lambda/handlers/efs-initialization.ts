@@ -1,15 +1,14 @@
 /**
  * EFS Initialization Lambda Function
  *
- * This Lambda function initializes EFS with the required directory structure
- * and configuration files for monitoring services (Prometheus, Grafana).
+ * This Lambda function initializes EFS configuration by storing setup commands
+ * and enhanced configuration files in SSM parameters for EC2 instances to use.
  *
  * Features:
- * - Mounts EFS using access point
- * - Creates directory structure with proper permissions
- * - Generates configuration files from SSM parameters
- * - Sets correct ownership for Prometheus (65534) and Grafana (472)
- * - Validates setup completion
+ * - Creates enhanced YAML configuration files in SSM
+ * - Stores directory structure and permission commands
+ * - Provides setup scripts for EC2 instances
+ * - No VPC dependencies (runs outside VPC)
  *
  * @format
  */
@@ -19,10 +18,11 @@ import {
   CloudFormationCustomResourceResponse,
   Context,
 } from "aws-lambda";
-import { SSMClient, GetParameterCommand } from "@aws-sdk/client-ssm";
-import { execSync } from "child_process";
-import { writeFileSync, mkdirSync } from "fs";
-import { join } from "path";
+import {
+  SSMClient,
+  GetParameterCommand,
+  PutParameterCommand,
+} from "@aws-sdk/client-ssm";
 
 const ssmClient = new SSMClient({ region: process.env.AWS_REGION });
 
@@ -68,22 +68,17 @@ async function initializeEfs(
   const { EfsId, AccessPointId, StackName } = event.ResourceProperties;
   const region = process.env.AWS_REGION!;
 
-  console.log(`Initializing EFS ${EfsId} with access point ${AccessPointId}`);
+  console.log(
+    `Initializing EFS configuration for ${EfsId} with access point ${AccessPointId}`
+  );
 
-  // Mount EFS
-  const mountPoint = "/mnt/efs";
-  await mountEfs(EfsId, AccessPointId, mountPoint, region);
+  // Create enhanced configuration files in SSM
+  await createEnhancedConfigurationFiles(StackName, region);
 
-  // Create directory structure
-  await createDirectoryStructure(mountPoint);
+  // Store directory structure and permissions in SSM for EC2 instances to use
+  await storeDirectoryStructureInSSM(StackName, region);
 
-  // Create configuration files
-  await createConfigurationFiles(mountPoint, StackName, region);
-
-  // Set permissions
-  await setPermissions(mountPoint);
-
-  console.log("EFS initialization completed successfully");
+  console.log("EFS configuration initialization completed successfully");
 
   return {
     Status: "SUCCESS",
@@ -115,109 +110,93 @@ async function cleanupEfs(
   };
 }
 
-async function mountEfs(
-  efsId: string,
-  accessPointId: string,
-  mountPoint: string,
-  region: string
-): Promise<void> {
-  try {
-    // Create mount point
-    execSync(`mkdir -p ${mountPoint}`, { stdio: "inherit" });
-
-    // Mount EFS with access point
-    const mountCmd = [
-      "mount",
-      "-t",
-      "efs",
-      "-o",
-      `tls,iam,accesspoint=${accessPointId}`,
-      `${efsId}.efs.${region}.amazonaws.com:/`,
-      mountPoint,
-    ].join(" ");
-
-    execSync(mountCmd, { stdio: "inherit" });
-    console.log(`EFS mounted successfully at ${mountPoint}`);
-  } catch (error) {
-    console.error("Error mounting EFS:", error);
-    throw error;
-  }
-}
-
-async function createDirectoryStructure(mountPoint: string): Promise<void> {
-  const directories = [
-    // Data directories
-    `${mountPoint}/prometheus-data`,
-    `${mountPoint}/grafana-data`,
-    `${mountPoint}/grafana-data/plugins`,
-    `${mountPoint}/grafana-data/logs`,
-    `${mountPoint}/grafana-data/csv`,
-    `${mountPoint}/grafana-data/png`,
-
-    // Config directories
-    `${mountPoint}/config/prometheus`,
-    `${mountPoint}/config/grafana/provisioning/datasources`,
-    `${mountPoint}/config/grafana/provisioning/dashboards`,
-    `${mountPoint}/config/grafana/dashboards`,
-    `${mountPoint}/config/alertmanager`,
-  ];
-
-  for (const directory of directories) {
-    try {
-      mkdirSync(directory, { recursive: true });
-      console.log(`Created directory: ${directory}`);
-    } catch (error) {
-      console.error(`Failed to create directory ${directory}:`, error);
-      throw error;
-    }
-  }
-}
-
-async function createConfigurationFiles(
-  mountPoint: string,
+async function createEnhancedConfigurationFiles(
   stackName: string,
   region: string
 ): Promise<void> {
   try {
-    // Get Prometheus config from SSM
+    // Get existing configurations and enhance them
     const prometheusConfig = await getSSMParameter(
       `/monitoring/${stackName}/prometheus-config`,
       region
     );
-    const prometheusYmlPath = join(
-      mountPoint,
-      "config/prometheus/prometheus.yml"
-    );
-    writeYamlFile(prometheusYmlPath, JSON.parse(prometheusConfig));
-    console.log(`Created Prometheus config: ${prometheusYmlPath}`);
-
-    // Get Grafana datasource config from SSM
     const grafanaDsConfig = await getSSMParameter(
       `/monitoring/${stackName}/grafana-datasource-config`,
       region
     );
-    const grafanaDsPath = join(
-      mountPoint,
-      "config/grafana/provisioning/datasources/prometheus.yml"
-    );
-    writeYamlFile(grafanaDsPath, JSON.parse(grafanaDsConfig));
-    console.log(`Created Grafana datasource config: ${grafanaDsPath}`);
-
-    // Get Grafana dashboard config from SSM
     const grafanaDbConfig = await getSSMParameter(
       `/monitoring/${stackName}/grafana-dashboard-config`,
       region
     );
-    const grafanaDbPath = join(
-      mountPoint,
-      "config/grafana/provisioning/dashboards/dashboards.yml"
+
+    // Store enhanced YAML configurations for EC2 instances to use
+    await putSSMParameter(
+      `/monitoring/${stackName}/prometheus-config-yaml`,
+      dictToYaml(JSON.parse(prometheusConfig)),
+      region
     );
-    writeYamlFile(grafanaDbPath, JSON.parse(grafanaDbConfig));
-    console.log(`Created Grafana dashboard config: ${grafanaDbPath}`);
+
+    await putSSMParameter(
+      `/monitoring/${stackName}/grafana-datasource-config-yaml`,
+      dictToYaml(JSON.parse(grafanaDsConfig)),
+      region
+    );
+
+    await putSSMParameter(
+      `/monitoring/${stackName}/grafana-dashboard-config-yaml`,
+      dictToYaml(JSON.parse(grafanaDbConfig)),
+      region
+    );
+
+    console.log("Enhanced configuration files stored in SSM");
   } catch (error) {
-    console.error("Error creating configuration files:", error);
+    console.error("Error creating enhanced configuration files:", error);
     throw error;
   }
+}
+
+async function storeDirectoryStructureInSSM(
+  stackName: string,
+  region: string
+): Promise<void> {
+  const setupScript = `#!/bin/bash
+set -e
+
+echo "Setting up EFS directory structure and permissions..."
+
+# Create directory structure
+mkdir -p /mnt/efs/prometheus-data
+mkdir -p /mnt/efs/grafana-data/plugins
+mkdir -p /mnt/efs/grafana-data/logs
+mkdir -p /mnt/efs/grafana-data/csv
+mkdir -p /mnt/efs/grafana-data/png
+mkdir -p /mnt/efs/config/prometheus
+mkdir -p /mnt/efs/config/grafana/provisioning/datasources
+mkdir -p /mnt/efs/config/grafana/provisioning/dashboards
+mkdir -p /mnt/efs/config/grafana/dashboards
+mkdir -p /mnt/efs/config/alertmanager
+
+# Set permissions
+chown -R 65534:65534 /mnt/efs/prometheus-data /mnt/efs/config/prometheus
+chown -R 472:0 /mnt/efs/grafana-data /mnt/efs/config/grafana
+chmod -R 777 /mnt/efs/prometheus-data /mnt/efs/grafana-data
+chmod -R 755 /mnt/efs/config/prometheus /mnt/efs/config/grafana
+
+# Create configuration files from SSM
+aws ssm get-parameter --name "/monitoring/${stackName}/prometheus-config-yaml" --query "Parameter.Value" --output text > /mnt/efs/config/prometheus/prometheus.yml
+aws ssm get-parameter --name "/monitoring/${stackName}/grafana-datasource-config-yaml" --query "Parameter.Value" --output text > /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml
+aws ssm get-parameter --name "/monitoring/${stackName}/grafana-dashboard-config-yaml" --query "Parameter.Value" --output text > /mnt/efs/config/grafana/provisioning/dashboards/dashboards.yml
+
+echo "EFS setup completed successfully"
+`;
+
+  await putSSMParameter(
+    `/monitoring/${stackName}/efs-setup-script`,
+    setupScript,
+    region
+  );
+
+  console.log("EFS setup script stored in SSM");
 }
 
 async function getSSMParameter(
@@ -234,12 +213,23 @@ async function getSSMParameter(
   }
 }
 
-function writeYamlFile(filePath: string, configData: any): void {
+async function putSSMParameter(
+  parameterName: string,
+  value: string,
+  region: string
+): Promise<void> {
   try {
-    const yamlContent = dictToYaml(configData);
-    writeFileSync(filePath, yamlContent);
+    const command = new PutParameterCommand({
+      Name: parameterName,
+      Value: value,
+      Type: "String",
+      Overwrite: true,
+      Description: "EFS configuration generated by Lambda",
+    });
+    await ssmClient.send(command);
+    console.log(`Stored SSM parameter: ${parameterName}`);
   } catch (error) {
-    console.error(`Failed to write YAML file ${filePath}:`, error);
+    console.error(`Failed to put SSM parameter ${parameterName}:`, error);
     throw error;
   }
 }
@@ -280,32 +270,4 @@ function dictToYaml(data: any, indent: number = 0): string {
   }
 
   return yamlLines.join("\n");
-}
-
-async function setPermissions(mountPoint: string): Promise<void> {
-  const permissionCommands = [
-    // Prometheus permissions (UID 65534)
-    `chown -R 65534:65534 ${mountPoint}/prometheus-data`,
-    `chown -R 65534:65534 ${mountPoint}/config/prometheus`,
-    `chmod -R 777 ${mountPoint}/prometheus-data`,
-    `chmod -R 755 ${mountPoint}/config/prometheus`,
-
-    // Grafana permissions (UID 472)
-    `chown -R 472:0 ${mountPoint}/grafana-data`,
-    `chown -R 472:0 ${mountPoint}/config/grafana`,
-    `chmod -R 777 ${mountPoint}/grafana-data`,
-    `chmod -R 755 ${mountPoint}/config/grafana`,
-  ];
-
-  for (const cmd of permissionCommands) {
-    try {
-      execSync(cmd, { stdio: "inherit" });
-      console.log(`Executed: ${cmd}`);
-    } catch (error) {
-      console.error(`Failed to execute ${cmd}:`, error);
-      throw error;
-    }
-  }
-
-  console.log("Permissions set successfully");
 }
