@@ -106,6 +106,11 @@ export class MonitoringEfsStack extends cdk.Stack {
       throughputMode: efs.ThroughputMode.BURSTING,
       encrypted: enableEncryption,
       removalPolicy: cdk.RemovalPolicy.RETAIN, // Protect data
+      // CRITICAL: For One Zone EFS, mount targets must be in the same AZ as the FileSystem
+      vpcSubnets: {
+        availabilityZones: [availabilityZone],
+        subnetType: ec2.SubnetType.PUBLIC, // Use public subnets since no NAT Gateway
+      },
       // Note: Backup policy needs to be configured separately
     });
 
