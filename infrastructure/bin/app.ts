@@ -28,7 +28,7 @@ const app = new cdk.App();
 
 // Domain configuration - can come from environment variables or SSM Parameter Store
 // Priority: Environment variables > SSM Parameter Store
-// For HTTP-only mode, leave these unset
+// For HTTP-only mode, leave these unset //
 let rootDomainName: string | undefined;
 let hostedZoneId: string | undefined;
 
@@ -395,7 +395,7 @@ if (config.isMonitoringAccount) {
   monitoringInfraStack.addDependency(networkingStack);
   monitoringInfraStack.addDependency(monitoringEfsStack);
 
-  // Layer 2: Services
+  // Layer 2: Services //
   console.log("Layer 2: Services Stack");
   console.log("  - Prometheus (metrics collection)");
   console.log("  - Grafana (visualization)");
