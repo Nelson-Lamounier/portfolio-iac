@@ -119,6 +119,22 @@ jobs:
 
           echo "vpc_id=$DEV_VPC_ID" >> $GITHUB_OUTPUT
 
+      # Switch back to Pipeline Account
+      - name: Configure AWS Credentials (OIDC - Pipeline Account)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Continue with pipeline operations
+      - name: Continue Pipeline Operations
+        run: |
+          echo "Back in Pipeline account"
+          aws sts get-caller-identity
+
+          echo "Dev VPC: ${{ steps.dev-params.outputs.vpc_id }}"
+          echo "Dev Cluster: ${{ steps.dev-params.outputs.cluster_arn }}"
+
       # Check stack states and handle recovery if needed
       - name: Check CloudFormation Stack States
         run: |
