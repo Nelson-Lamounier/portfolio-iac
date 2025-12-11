@@ -469,6 +469,7 @@ export class MonitoringEfsStack extends cdk.Stack {
         subnetType: ec2.SubnetType.PUBLIC,
       },
       securityGroups: [lambdaSecurityGroup],
+      allowPublicSubnet: true, // Required since we don't have NAT Gateway
       timeout: cdk.Duration.minutes(5),
       memorySize: 512,
       environment: {
