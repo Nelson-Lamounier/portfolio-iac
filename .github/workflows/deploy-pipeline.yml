@@ -193,9 +193,44 @@ jobs:
             ENVIRONMENT=pipeline yarn cdk deploy NetworkingStack-pipeline --require-approval never
           fi
 
-          echo "✅ Networking stack deployed successfully"
+          echo "Networking stack deployed successfully"
 
           # Set flag for VPC Peering redeployment
           echo "VPC_PEERING_NEEDS_REDEPLOY=$VPC_PEERING_DESTROYED" >> $GITHUB_ENV
         env:
           AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
+
+      - name: Deploy VPC Peering
+        run: |
+          cd infrastructure
+
+          echo "Checking VPC Peering deployment need..."
+          DEV_VPC_ID=$(aws ssm get-parameter --name "/networking/development/vpc-id" --query "Parameter.Value" --output text)
+          echo "vpc_id=$DEV_VPC_ID" >> $GITHUB_OUTPUT
+          echo "VPC Peering needs redeploy: ${{ env.VPC_PEERING_NEEDS_REDEPLOY }}"
+
+          # Check if VPC Peering already exists and is healthy
+          VPC_PEERING_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name VpcPeeringStack-pipeline \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null || echo "NOT_FOUND")
+
+          echo "Current VPC Peering status: $VPC_PEERING_STATUS"
+
+          if [ "$VPC_PEERING_STATUS" = "CREATE_COMPLETE" ] || [ "$VPC_PEERING_STATUS" = "UPDATE_COMPLETE" ]; then
+            if [ "${{ env.VPC_PEERING_NEEDS_REDEPLOY }}" != "true" ]; then
+              echo "VPC Peering already exists and is healthy - skipping deployment"
+              exit 0
+            else
+              echo "VPC Peering was destroyed for networking updates - redeploying..."
+            fi
+          fi
+
+          # Deploy VPC peering
+          echo "Deploying VpcPeeringStack-pipeline..."
+          ENVIRONMENT=pipeline yarn cdk deploy VpcPeeringStack-pipeline --require-approval never
+
+          echo "VPC Peering deployed successfully"
+        env:
+          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+          DEV_VPC_ID: ${{ env.DEV_VPC_ID }}
