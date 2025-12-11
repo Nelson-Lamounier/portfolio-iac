@@ -264,6 +264,16 @@ export class SuppressionManager {
         ],
       },
       {
+        id: "AwsSolutions-IAM5",
+        reason:
+          "EC2 instances in monitoring infrastructure require read access to SSM parameters under the monitoring stack path for EFS setup scripts and configuration. The wildcard is scoped to the specific stack's parameter namespace (/monitoring/{stackName}/*) and provides read-only access to configuration data.",
+        appliesTo: [
+          {
+            regex: "/^Resource::arn:aws:ssm:.*:.*:parameter/monitoring/.*\\*$/",
+          },
+        ],
+      },
+      {
         id: "AwsSolutions-SNS3",
         reason:
           "SNS topic is used for internal ECS lifecycle hooks managed by CDK for the monitoring cluster. SSL enforcement is handled by AWS internal services. The lifecycle hook topic is used for draining ECS tasks during instance termination.",
