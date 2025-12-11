@@ -108,13 +108,13 @@ export class MonitoringEfsStack extends cdk.Stack {
     enableEncryption: boolean,
     lifecyclePolicy: efs.LifecyclePolicy
   ): { fileSystem: efs.FileSystem; availabilityZone: string } {
-    // Use first public subnet's AZ for reference (though Regional EFS spans all AZs)
+    // Use first public subnet's AZ for One Zone EFS (cost optimization)
     const publicSubnets = vpc.selectSubnets({
       subnetType: ec2.SubnetType.PUBLIC,
     });
     const availabilityZone = publicSubnets.availabilityZones[0];
 
-    // Create Regional EFS (spans all AZs with automatic mount targets)
+    // Create One Zone EFS (single AZ for cost optimization ~47% cheaper)
     const fileSystem = new efs.FileSystem(this, `MonitoringEfs-${envName}`, {
       vpc,
       lifecyclePolicy,
@@ -123,20 +123,23 @@ export class MonitoringEfsStack extends cdk.Stack {
       provisionedThroughputPerSecond: cdk.Size.mebibytes(10), // 10 MiB/s baseline
       encrypted: enableEncryption,
       removalPolicy: cdk.RemovalPolicy.RETAIN, // Protect data
-      // Regional EFS: Mount targets created in all AZs automatically
+      // One Zone EFS: Mount target only in specified AZ
       vpcSubnets: {
+        availabilityZones: [availabilityZone],
         subnetType: ec2.SubnetType.PUBLIC, // Use public subnets since no NAT Gateway
       },
       // Note: Backup policy needs to be configured separately
     });
 
-    // Regional EFS automatically creates mount targets in all AZs
-    // No need to specify availabilityZoneName for Regional EFS
+    // Configure One Zone EFS by setting availabilityZoneName
+    const cfnFileSystem = fileSystem.node.defaultChild as efs.CfnFileSystem;
+    cfnFileSystem.availabilityZoneName = availabilityZone;
 
     // Add tags
     cdk.Tags.of(fileSystem).add("Name", `${envName}-monitoring-efs`);
     cdk.Tags.of(fileSystem).add("Environment", envName);
     cdk.Tags.of(fileSystem).add("Purpose", "monitoring-storage");
+    cdk.Tags.of(fileSystem).add("StorageClass", "One-Zone-IA");
 
     return { fileSystem, availabilityZone };
   }

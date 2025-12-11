@@ -260,12 +260,15 @@ export class MonitoringInfraStack extends cdk.Stack {
       ],
     });
 
-    // Allow EFS access (connect to external EFS security group)
+    // Allow EFS access (connect to EFS security group)
     asg.connections.allowTo(
       efsSecurityGroup,
       ec2.Port.tcp(2049),
       "Allow ECS instances to mount EFS"
     );
+
+    // EFS security group is managed by MonitoringEfsStack
+    // No additional configuration needed here
 
     // Grant EFS IAM permissions for mounting with IAM authentication
     asg.role.addToPrincipalPolicy(
@@ -366,10 +369,10 @@ export class MonitoringInfraStack extends cdk.Stack {
       "aws --version",
       "aws sts get-caller-identity",
       "",
-      "# Configure EFS utils for Regional file system",
-      "echo 'Configuring EFS utils for Regional file system...'",
+      "# Configure EFS utils for One Zone file system",
+      "echo 'Configuring EFS utils for One Zone file system...'",
       "cat > /etc/efs-fscache.conf << 'EOF'",
-      "# EFS Intelligent Tiering cache configuration for Regional EFS",
+      "# EFS Intelligent Tiering cache configuration for One Zone EFS",
       "optimize_for_performance = true",
       "cache_size_mb = 256",
       "EOF",
@@ -377,20 +380,20 @@ export class MonitoringInfraStack extends cdk.Stack {
       "# Configure EFS utils main configuration",
       "cat >> /etc/efs-utils.conf << 'EOF'",
       "",
-      "# Regional EFS configuration",
+      "# One Zone EFS configuration",
       "[mount]",
-      "# Use regional mount targets for Regional file systems",
+      "# Use mount targets for One Zone file systems",
       "region = " + this.region,
       "# Enable IAM authentication by default",
       "iam = true",
       "# Use TLS encryption in transit",
       "tls = true",
-      "# Optimize for Regional EFS performance",
+      "# Optimize for One Zone EFS performance",
       "rsize = 1048576",
       "wsize = 1048576",
       "hard = true",
       "intr = true",
-      "timeo = 900",
+      "timeo = 600",
       "retrans = 2",
       "EOF",
       "",
@@ -439,8 +442,8 @@ export class MonitoringInfraStack extends cdk.Stack {
       "for i in $(seq 1 $MOUNT_RETRIES); do",
       `  echo "Mount attempt $i of $MOUNT_RETRIES for EFS ${fileSystem.fileSystemId}"`,
       "  ",
-      "  # Use EFS mount helper for Regional file system with IAM authentication",
-      `  if timeout 90 mount -t efs -o tls,iam,regional ${fileSystem.fileSystemId}:/ /mnt/efs; then`,
+      "  # Use EFS mount helper for One Zone file system with IAM authentication",
+      `  if timeout 90 mount -t efs -o tls,iam ${fileSystem.fileSystemId}:/ /mnt/efs; then`,
       "    echo 'EFS mounted successfully using mount helper'",
       "    break",
       "  else",
@@ -481,7 +484,7 @@ export class MonitoringInfraStack extends cdk.Stack {
       "fi",
       "",
       "# Add to fstab for persistence across reboots using mount helper",
-      `echo "${fileSystem.fileSystemId}:/ /mnt/efs efs defaults,_netdev,tls,iam,regional 0 0" >> /etc/fstab`,
+      `echo "${fileSystem.fileSystemId}:/ /mnt/efs efs defaults,_netdev,tls,iam 0 0" >> /etc/fstab`,
       "",
       "# Wait for EFS to be fully ready",
       "echo 'Waiting for EFS to be fully ready...'",
