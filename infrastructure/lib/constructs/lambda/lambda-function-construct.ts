@@ -19,7 +19,7 @@ import { join } from "path";
 export interface LambdaFunctionProps {
   /**
    * The name of the Lambda function handler file (without .ts extension)
-   * e.g., 'efs-initialization' for efs-initialization.ts
+   * e.g., 'efs-initialization' for efs-initialization.ts test
    */
   handlerName: string;
 
