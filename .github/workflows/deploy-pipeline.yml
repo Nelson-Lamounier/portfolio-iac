@@ -6,12 +6,12 @@ on:
   push:
     branches:
       - feature/testing-pipeline
-      - main
-    paths:
-      - "infrastructure/lib/stacks/monitoring/**"
-      - "infrastructure/lib/stacks/networking/**"
-      - "infrastructure/bin/app.ts"
-      - ".github/workflows/deploy-pipeline.yml"
+    #   - main
+    # paths:
+    #   - "infrastructure/lib/stacks/monitoring/**"
+    #   - "infrastructure/lib/stacks/networking/**"
+    #   - "infrastructure/bin/app.ts"
+    #   - ".github/workflows/deploy-pipeline.yml"
   workflow_dispatch:
     inputs:
       stack:
