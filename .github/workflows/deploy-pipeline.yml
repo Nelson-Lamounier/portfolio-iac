@@ -239,36 +239,134 @@ jobs:
         env:
           AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
 
-      - name: Deploy VPC Peering
+      - name: Check Existing VPC Peering Stack
+        id: check-existing
         run: |
           cd infrastructure
 
-          echo "Checking VPC Peering deployment need..."
-          echo "${{ steps.dev-params.outputs.vpc_id }}"
-          echo "VPC Peering needs redeploy: ${{ env.VPC_PEERING_NEEDS_REDEPLOY }}"
-
-          # Check if VPC Peering already exists and is healthy
-          VPC_PEERING_STATUS=$(aws cloudformation describe-stacks \
+          STACK_STATUS=$(aws cloudformation describe-stacks \
             --stack-name VpcPeeringStack-pipeline \
             --query 'Stacks[0].StackStatus' \
             --output text 2>/dev/null || echo "NOT_FOUND")
 
-          echo "Current VPC Peering status: $VPC_PEERING_STATUS"
+          echo "stack_status=$STACK_STATUS" >> $GITHUB_OUTPUT
+          echo "Current VpcPeeringStack-pipeline status: $STACK_STATUS"
 
-          if [ "$VPC_PEERING_STATUS" = "CREATE_COMPLETE" ] || [ "$VPC_PEERING_STATUS" = "UPDATE_COMPLETE" ]; then
-            if [ "${{ env.VPC_PEERING_NEEDS_REDEPLOY }}" != "true" ]; then
-              echo "VPC Peering already exists and is healthy - skipping deployment"
-              exit 0
+          if [ "$STACK_STATUS" = "CREATE_COMPLETE" ] || [ "$STACK_STATUS" = "UPDATE_COMPLETE" ]; then
+            if [ "${{ github.event.inputs.force_redeploy }}" != "true" ]; then
+              echo "Checking for changes..."
+              DIFF_OUTPUT=$(ENVIRONMENT=pipeline yarn cdk diff VpcPeeringStack-pipeline 2>&1 || echo "")
+              
+              if echo "$DIFF_OUTPUT" | grep -q "There were no differences"; then
+                echo "no_changes=true" >> $GITHUB_OUTPUT
+                echo "No changes detected in VpcPeeringStack"
+              else
+                echo "no_changes=false" >> $GITHUB_OUTPUT
+                echo "Changes detected in VpcPeeringStack"
+              fi
             else
-              echo "VPC Peering was destroyed for networking updates - redeploying..."
+              echo "no_changes=false" >> $GITHUB_OUTPUT
+              echo "Force redeploy requested"
             fi
+          else
+            echo "no_changes=false" >> $GITHUB_OUTPUT
           fi
 
-          # Deploy VPC peering
-          echo "Deploying VpcPeeringStack-pipeline..."
+      - name: Deploy VPC Peering Stack
+        if: steps.check-existing.outputs.no_changes != 'true'
+        run: |
+          cd infrastructure
+
+          echo "🔗 Deploying VpcPeeringStack-pipeline..."
+          echo "Target environment: ${{ github.event.inputs.target_environment || 'development' }}"
+          echo ""
+
+          # Deploy VPC Peering stack
           ENVIRONMENT=pipeline yarn cdk deploy VpcPeeringStack-pipeline --require-approval never
 
-          echo "VPC Peering deployed successfully"
-        env:
-          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
-          DEV_VPC_ID: ${{ env.DEV_VPC_ID }}
+          echo "✅ VPC Peering stack deployed successfully"
+
+      - name: Skip Deployment (No Changes)
+        if: steps.check-existing.outputs.no_changes == 'true'
+        run: |
+          echo "✅ VpcPeeringStack-pipeline is up to date"
+          echo "No deployment needed - use force_redeploy=true to redeploy anyway"
+
+      - name: Verify Peering Connections
+        run: |
+          echo "🔍 Verifying VPC peering connections..."
+
+          # List all peering connections
+          aws ec2 describe-vpc-peering-connections \
+            --filters "Name=status-code,Values=active,pending-acceptance,provisioning" \
+            --query 'VpcPeeringConnections[*].{
+              ID:VpcPeeringConnectionId,
+              Status:Status.Code,
+              RequesterVPC:RequesterVpcInfo.VpcId,
+              RequesterCIDR:RequesterVpcInfo.CidrBlock,
+              AccepterVPC:AccepterVpcInfo.VpcId,
+              AccepterCIDR:AccepterVpcInfo.CidrBlock,
+              AccepterAccount:AccepterVpcInfo.OwnerId
+            }' \
+            --output table || echo "No peering connections found"
+
+  # ============================================================================
+  # JOB 3: Test Connectivity
+  # ============================================================================
+  test-connectivity:
+    name: Test Connectivity
+    runs-on: ubuntu-latest
+    environment: pipeline
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Test Route Tables
+        run: |
+          echo "🔍 Testing route table configurations..."
+
+          # Get pipeline VPC route tables
+          PIPELINE_VPC="${{ needs.validate-prerequisites.outputs.pipeline_vpc_id }}"
+
+          if [ "$PIPELINE_VPC" != "NOT_FOUND" ]; then
+            echo "Pipeline VPC Route Tables:"
+            aws ec2 describe-route-tables \
+              --filters "Name=vpc-id,Values=$PIPELINE_VPC" \
+              --query 'RouteTables[*].{
+                RouteTableId:RouteTableId,
+                Routes:Routes[?VpcPeeringConnectionId!=null].{
+                  Destination:DestinationCidrBlock,
+                  PeeringConnection:VpcPeeringConnectionId,
+                  State:State
+                }
+              }' \
+              --output table
+          fi
+
+      - name: Test Network Connectivity
+        continue-on-error: true
+        run: |
+          echo "🔍 Testing network connectivity..."
+
+          # This would typically test actual connectivity to peer VPCs
+          # For now, we'll check if peering connections are active
+
+          ACTIVE_PEERINGS=$(aws ec2 describe-vpc-peering-connections \
+            --filters "Name=status-code,Values=active" \
+            --query 'length(VpcPeeringConnections)' \
+            --output text)
+
+          echo "Active peering connections: $ACTIVE_PEERINGS"
+
+          if [ "$ACTIVE_PEERINGS" -gt 0 ]; then
+            echo "VPC peering connections are active"
+          else
+            echo "No active VPC peering connections found"
+          fi
