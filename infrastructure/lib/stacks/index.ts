@@ -16,6 +16,7 @@ export * from "./monitoring/monitoring-stack";
 export * from "./monitoring/monitoring-ecs-stack";
 export * from "./monitoring/cross-account-monitoring-stack";
 // Layered monitoring stacks (recommended for production)
+export * from "./monitoring/monitoring-efs-stack";
 export * from "./monitoring/monitoring-infra-stack";
 export * from "./monitoring/monitoring-service-stack";
 

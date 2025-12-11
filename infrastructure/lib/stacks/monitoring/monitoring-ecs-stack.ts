@@ -17,19 +17,7 @@ import {
   NodeExporterConstruct,
 } from "../../constructs";
 import { SuppressionManager } from "../../cdk-nag";
-
-export interface CrossAccountTarget {
-  /** Environment name (e.g., 'development', 'staging', 'production') */
-  envName: string;
-  /** Private IP address of the target instance */
-  privateIp: string;
-  /** Port to scrape (default: 9100 for node-exporter) */
-  port?: number;
-  /** Target type: 'node-exporter' or 'application' */
-  targetType?: "node-exporter" | "application";
-  /** Metrics path (default: /metrics for node-exporter, /api/metrics for application) */
-  metricsPath?: string;
-}
+import { CrossAccountTarget } from "../../types";
 
 export interface MonitoringEcsStackProps extends cdk.StackProps {
   vpc: ec2.IVpc;
@@ -792,7 +780,7 @@ export class MonitoringEcsStack extends cdk.Stack {
       lines.push("      - targets:");
 
       for (const target of envTargets) {
-        const port = target.port || 9100;
+        const port = target.port;
         lines.push(`          - '${target.privateIp}:${port}'`);
       }
 
@@ -827,7 +815,7 @@ export class MonitoringEcsStack extends cdk.Stack {
       lines.push("      - targets:");
 
       for (const target of envTargets) {
-        const port = target.port || 3000;
+        const port = target.port;
         lines.push(`          - '${target.privateIp}:${port}'`);
       }
 
