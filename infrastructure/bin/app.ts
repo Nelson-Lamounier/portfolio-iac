@@ -14,6 +14,7 @@ import {
   ComputeStack,
   MonitoringStack,
   MonitoringEcsStack,
+  MonitoringEfsStack,
   MonitoringInfraStack,
   MonitoringServiceStack,
   LoadBalancerStack,
@@ -348,7 +349,32 @@ if (config.isMonitoringAccount) {
     console.log("⚠️ No certificate - using HTTP only");
   }
 
+  // Layer 0: EFS Storage & Configuration (NEW - Phase 1)
+  console.log("Layer 0: EFS Storage & Configuration");
+  console.log("  - EFS FileSystem for persistent storage");
+  console.log("  - Configuration files (prometheus.yml, grafana configs)");
+  console.log("  - Access points and security groups\n");
+
+  const monitoringEfsStack = new MonitoringEfsStack(
+    app,
+    `MonitoringEfsStack-${config.envName}`,
+    {
+      ...stackProps,
+      envName: config.envName,
+      vpc: networkingStack.vpc,
+      // TODO: Add crossAccountTargets when available
+      enableEncryption: true,
+    }
+  );
+  monitoringEfsStack.addDependency(networkingStack);
+
   // Layer 1: Infrastructure
+  console.log("Layer 1: Infrastructure Stack");
+  console.log("  - ECS Cluster: pipeline-monitoring-cluster");
+  console.log("  - Auto Scaling Group: 1x t3.small");
+  console.log("  - Application Load Balancer");
+  console.log("  - Uses external EFS from MonitoringEfsStack\n");
+
   const monitoringInfraStack = new MonitoringInfraStack(
     app,
     `MonitoringInfraStack-${config.envName}`,
@@ -358,11 +384,22 @@ if (config.isMonitoringAccount) {
       vpc: networkingStack.vpc,
       certificateArn: monitoringCertificateArn,
       enableHttps: !!monitoringCertificateArn,
+      // Pass EFS resources from external EFS stack
+      fileSystem: monitoringEfsStack.fileSystem,
+      efsAccessPoint: monitoringEfsStack.accessPoint,
+      efsAvailabilityZone: monitoringEfsStack.efsAvailabilityZone,
+      efsSecurityGroup: monitoringEfsStack.mountTargetSecurityGroup,
     }
   );
   monitoringInfraStack.addDependency(networkingStack);
+  monitoringInfraStack.addDependency(monitoringEfsStack);
 
   // Layer 2: Services
+  console.log("Layer 2: Services Stack");
+  console.log("  - Prometheus (metrics collection)");
+  console.log("  - Grafana (visualization)");
+  console.log("  - Node Exporter (host metrics)\n");
+
   const monitoringServiceStack = new MonitoringServiceStack(
     app,
     `MonitoringServiceStack-${config.envName}`,
@@ -373,7 +410,6 @@ if (config.isMonitoringAccount) {
       autoScalingGroup: monitoringInfraStack.autoScalingGroup,
       loadBalancer: monitoringInfraStack.loadBalancer,
       listener: monitoringInfraStack.listener,
-      fileSystem: monitoringInfraStack.fileSystem,
     }
   );
   monitoringServiceStack.addDependency(monitoringInfraStack);
