@@ -276,37 +276,83 @@ export class MonitoringInfraStack extends cdk.Stack {
       })
     );
 
+    // Grant SSM permissions to read EFS setup script
+    asg.role.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ["ssm:GetParameter", "ssm:GetParameters"],
+        resources: [
+          `arn:aws:ssm:${this.region}:${this.account}:parameter/monitoring/${this.stackName}/*`,
+        ],
+      })
+    );
+
     // Clean user data - only mount EFS and create symlinks (EFS stack handles setup)
     asg.addUserData(
       "#!/bin/bash",
       "set -e",
+      "",
+      "# Enable detailed logging",
+      "exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1",
+      "echo 'Starting EFS setup user data script...'",
       "",
       "# Install EFS utilities",
       "yum install -y amazon-efs-utils",
       "",
       "# Create mount point and mount EFS with IAM authentication",
       "mkdir -p /mnt/efs",
+      `echo 'Mounting EFS ${fileSystem.fileSystemId}...'`,
       `mount -t efs -o tls,iam ${fileSystem.fileSystemId}:/ /mnt/efs`,
       "",
       "# Add to fstab for persistence across reboots",
       `echo "${fileSystem.fileSystemId}:/ /mnt/efs efs _netdev,tls,iam 0 0" >> /etc/fstab`,
       "",
-      "# Wait for EFS to be ready and verify directory structure exists",
-      "sleep 10",
-      "if [ ! -d '/mnt/efs/prometheus-data' ]; then",
-      "  echo 'ERROR: EFS not properly initialized by EFS stack'",
+      "# Wait a moment for EFS to be fully mounted",
+      "sleep 5",
+      "",
+      "# Execute EFS setup script from SSM (created by EFS stack Lambda)",
+      "echo 'Downloading and executing EFS setup script from SSM...'",
+      `aws ssm get-parameter --region ${this.region} --name "/monitoring/${this.stackName}/efs-setup-script" --query "Parameter.Value" --output text > /tmp/efs-setup.sh`,
+      "chmod +x /tmp/efs-setup.sh",
+      "",
+      "# Execute setup script with error handling",
+      "if /tmp/efs-setup.sh; then",
+      "  echo 'EFS setup script executed successfully'",
+      "else",
+      "  echo 'ERROR: EFS setup script failed'",
+      "  cat /tmp/efs-setup.sh",
       "  exit 1",
       "fi",
       "",
-      "# Create symlinks for container access (directories created by EFS stack)",
+      "# Verify directory structure was created",
+      "echo 'Verifying EFS directory structure...'",
+      "if [ ! -d '/mnt/efs/prometheus-data' ]; then",
+      "  echo 'ERROR: EFS setup script failed to create prometheus-data directory'",
+      "  ls -la /mnt/efs/",
+      "  exit 1",
+      "fi",
+      "",
+      "if [ ! -d '/mnt/efs/grafana-data' ]; then",
+      "  echo 'ERROR: EFS setup script failed to create grafana-data directory'",
+      "  ls -la /mnt/efs/",
+      "  exit 1",
+      "fi",
+      "",
+      "# Create symlinks for container access",
+      "echo 'Creating symlinks for container access...'",
       "ln -sf /mnt/efs/prometheus-data /mnt/prometheus-data",
       "ln -sf /mnt/efs/grafana-data /mnt/grafana-data",
       "ln -sf /mnt/efs/config/prometheus /mnt/prometheus-config",
       "ln -sf /mnt/efs/config/grafana/provisioning /mnt/grafana-provisioning",
       "ln -sf /mnt/efs/config/grafana/dashboards /mnt/grafana-dashboards",
       "",
-      "# Verify symlinks were created successfully",
-      "ls -la /mnt/ | grep -E '(prometheus|grafana)' || echo 'WARNING: Some symlinks may not have been created'"
+      "# Verify symlinks and permissions",
+      "echo 'Verifying symlinks and permissions...'",
+      "ls -la /mnt/ | grep -E '(prometheus|grafana)'",
+      "ls -la /mnt/efs/grafana-data/",
+      "ls -la /mnt/efs/prometheus-data/",
+      "",
+      "echo 'User data script completed successfully'"
     );
 
     // Security group rules

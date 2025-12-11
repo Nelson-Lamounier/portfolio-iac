@@ -164,7 +164,7 @@ set -e
 
 echo "Setting up EFS directory structure and permissions..."
 
-# Create directory structure
+# Create directory structure with proper ownership from the start
 mkdir -p /mnt/efs/prometheus-data
 mkdir -p /mnt/efs/grafana-data/plugins
 mkdir -p /mnt/efs/grafana-data/logs
@@ -176,16 +176,36 @@ mkdir -p /mnt/efs/config/grafana/provisioning/dashboards
 mkdir -p /mnt/efs/config/grafana/dashboards
 mkdir -p /mnt/efs/config/alertmanager
 
-# Set permissions
+# Set ownership and permissions for Prometheus (UID 65534)
 chown -R 65534:65534 /mnt/efs/prometheus-data /mnt/efs/config/prometheus
+chmod -R 755 /mnt/efs/prometheus-data /mnt/efs/config/prometheus
+
+# Set ownership and permissions for Grafana (UID 472, GID 0)
 chown -R 472:0 /mnt/efs/grafana-data /mnt/efs/config/grafana
-chmod -R 777 /mnt/efs/prometheus-data /mnt/efs/grafana-data
-chmod -R 755 /mnt/efs/config/prometheus /mnt/efs/config/grafana
+chmod -R 755 /mnt/efs/grafana-data /mnt/efs/config/grafana
+
+# Ensure Grafana can write to its data directories
+chmod -R 777 /mnt/efs/grafana-data/plugins
+chmod -R 777 /mnt/efs/grafana-data/logs
+chmod -R 777 /mnt/efs/grafana-data/csv
+chmod -R 777 /mnt/efs/grafana-data/png
 
 # Create configuration files from SSM
-aws ssm get-parameter --name "/monitoring/${stackName}/prometheus-config-yaml" --query "Parameter.Value" --output text > /mnt/efs/config/prometheus/prometheus.yml
-aws ssm get-parameter --name "/monitoring/${stackName}/grafana-datasource-config-yaml" --query "Parameter.Value" --output text > /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml
-aws ssm get-parameter --name "/monitoring/${stackName}/grafana-dashboard-config-yaml" --query "Parameter.Value" --output text > /mnt/efs/config/grafana/provisioning/dashboards/dashboards.yml
+echo "Creating configuration files from SSM parameters..."
+aws ssm get-parameter --region ${region} --name "/monitoring/${stackName}/prometheus-config-yaml" --query "Parameter.Value" --output text > /mnt/efs/config/prometheus/prometheus.yml
+aws ssm get-parameter --region ${region} --name "/monitoring/${stackName}/grafana-datasource-config-yaml" --query "Parameter.Value" --output text > /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml
+aws ssm get-parameter --region ${region} --name "/monitoring/${stackName}/grafana-dashboard-config-yaml" --query "Parameter.Value" --output text > /mnt/efs/config/grafana/provisioning/dashboards/dashboards.yml
+
+# Set proper ownership for config files
+chown 65534:65534 /mnt/efs/config/prometheus/prometheus.yml
+chown 472:0 /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml
+chown 472:0 /mnt/efs/config/grafana/provisioning/dashboards/dashboards.yml
+
+# Verify directory structure and permissions
+echo "Verifying directory structure:"
+ls -la /mnt/efs/
+ls -la /mnt/efs/grafana-data/
+ls -la /mnt/efs/config/grafana/
 
 echo "EFS setup completed successfully"
 `;
