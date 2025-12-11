@@ -237,7 +237,7 @@ jobs:
           # Set flag for VPC Peering redeployment
           echo "VPC_PEERING_NEEDS_REDEPLOY=$VPC_PEERING_DESTROYED" >> $GITHUB_ENV
         env:
-          AWS_PIPELINE_ACCOUNT_ID: ${{ vars.AWS_PIPELINE_ACCOUNT_ID }}
+          AWS_PIPELINE_ACCOUNT_ID: ${{ env.AWS_PIPELINE_ACCOUNT_ID }}
 
       - name: Check Existing VPC Peering Stack
         id: check-existing
@@ -277,24 +277,24 @@ jobs:
         run: |
           cd infrastructure
 
-          echo "🔗 Deploying VpcPeeringStack-pipeline..."
+          echo "Deploying VpcPeeringStack-pipeline..."
           echo "Target environment: ${{ github.event.inputs.target_environment || 'development' }}"
           echo ""
 
           # Deploy VPC Peering stack
           ENVIRONMENT=pipeline yarn cdk deploy VpcPeeringStack-pipeline --require-approval never
 
-          echo "✅ VPC Peering stack deployed successfully"
+          echo "VPC Peering stack deployed successfully"
 
       - name: Skip Deployment (No Changes)
         if: steps.check-existing.outputs.no_changes == 'true'
         run: |
-          echo "✅ VpcPeeringStack-pipeline is up to date"
+          echo "VpcPeeringStack-pipeline is up to date"
           echo "No deployment needed - use force_redeploy=true to redeploy anyway"
 
       - name: Verify Peering Connections
         run: |
-          echo "🔍 Verifying VPC peering connections..."
+          echo "Verifying VPC peering connections..."
 
           # List all peering connections
           aws ec2 describe-vpc-peering-connections \
@@ -313,60 +313,3 @@ jobs:
   # ============================================================================
   # JOB 3: Test Connectivity
   # ============================================================================
-  test-connectivity:
-    name: Test Connectivity
-    runs-on: ubuntu-latest
-    environment: pipeline
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Test Route Tables
-        run: |
-          echo "🔍 Testing route table configurations..."
-
-          # Get pipeline VPC route tables
-          PIPELINE_VPC="${{ needs.validate-prerequisites.outputs.pipeline_vpc_id }}"
-
-          if [ "$PIPELINE_VPC" != "NOT_FOUND" ]; then
-            echo "Pipeline VPC Route Tables:"
-            aws ec2 describe-route-tables \
-              --filters "Name=vpc-id,Values=$PIPELINE_VPC" \
-              --query 'RouteTables[*].{
-                RouteTableId:RouteTableId,
-                Routes:Routes[?VpcPeeringConnectionId!=null].{
-                  Destination:DestinationCidrBlock,
-                  PeeringConnection:VpcPeeringConnectionId,
-                  State:State
-                }
-              }' \
-              --output table
-          fi
-
-      - name: Test Network Connectivity
-        continue-on-error: true
-        run: |
-          echo "🔍 Testing network connectivity..."
-
-          # This would typically test actual connectivity to peer VPCs
-          # For now, we'll check if peering connections are active
-
-          ACTIVE_PEERINGS=$(aws ec2 describe-vpc-peering-connections \
-            --filters "Name=status-code,Values=active" \
-            --query 'length(VpcPeeringConnections)' \
-            --output text)
-
-          echo "Active peering connections: $ACTIVE_PEERINGS"
-
-          if [ "$ACTIVE_PEERINGS" -gt 0 ]; then
-            echo "VPC peering connections are active"
-          else
-            echo "No active VPC peering connections found"
-          fi
