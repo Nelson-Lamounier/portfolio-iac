@@ -1,44 +1,36 @@
 # @format
 
-name: Deploy Pipeline Monitoring
+name: Deploy Pipeline Monitoring (Simplified)
 
 on:
   push:
     branches:
-      - feature/testing-pipeline # Specific branch for monitoring work /
-    # paths:
-    #   # - "infrastructure/lib/stacks/monitoring/**"
-    #   # - "infrastructure/config/**"
-    #   # - "infrastructure/bin/app.ts"
-    #   # - "monitoring/**"
-    #   # - "scripts/monitoring/**"
-    #   # - "scripts/deploy/pipeline-monitoring.sh"
-    #   # - "Makefile"
-    #   # - ".github/workflows/deploy-pipeline-monitoring.yml"
+      - feature/testing-pipeline
+      - main
+    paths:
+      - "infrastructure/lib/stacks/monitoring/**"
+      - "infrastructure/lib/stacks/networking/**"
+      - "infrastructure/bin/app.ts"
+      - ".github/workflows/deploy-pipeline.yml"
   workflow_dispatch:
     inputs:
-      action:
-        description: "Action to perform"
+      stack:
+        description: "Stack to deploy"
         required: true
         type: choice
-        default: "deploy-all"
+        default: "all"
         options:
-          - deploy-all
-          - deploy-infra-only
-          - deploy-services-only
-          - deploy-vpc-peering
-          - sync-config-only
+          - all
+          - networking
+          - monitoring-infra
+          - monitoring-services
+          - vpc-peering
           - destroy-all
-      run_health_checks:
-        description: "Run post-deployment health checks"
+      skip_validation:
+        description: "Skip pre-deployment validation"
         required: false
         type: boolean
-        default: true
-      fix_grafana:
-        description: "Automatically fix Grafana datasource"
-        required: false
-        type: boolean
-        default: true
+        default: false
 
 env:
   NODE_VERSION: "22"
@@ -49,6 +41,515 @@ permissions:
   contents: read
 
 jobs:
+  # ============================================================================
+  # JOB 1: Validation & Setup
+  # ============================================================================
+  validate-setup:
+    name: Validate & Setup
+    runs-on: ubuntu-latest
+    environment: pipeline
+    if: github.event.inputs.skip_validation != 'true'
+    outputs:
+      pipeline_account_id: ${{ steps.setup.outputs.pipeline_account_id }}
+      dev_vpc_id: ${{ steps.dev-info.outputs.vpc_id }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Environment Variables
+        id: setup
+        run: |
+          # Get current account ID
+          CURRENT_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          echo "pipeline_account_id=$CURRENT_ACCOUNT" >> $GITHUB_OUTPUT
+          echo "AWS_PIPELINE_ACCOUNT_ID=$CURRENT_ACCOUNT" >> $GITHUB_ENV
+
+          echo "✅ Pipeline Account ID: $CURRENT_ACCOUNT"
+          echo "✅ Region: ${{ env.AWS_REGION }}"
+
+      - name: Get Dev Account VPC Info
+        id: dev-info
+        if: vars.AWS_ACCOUNT_ID_DEV != ''
+        continue-on-error: true
+        run: |
+          # Switch to dev account to get VPC info
+          aws sts assume-role \
+            --role-arn "arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/GitHubDeploymentRole" \
+            --role-session-name "GetVpcInfo" \
+            --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+            --output text | {
+              read access_key secret_key session_token
+              export AWS_ACCESS_KEY_ID=$access_key
+              export AWS_SECRET_ACCESS_KEY=$secret_key
+              export AWS_SESSION_TOKEN=$session_token
+              
+              DEV_VPC=$(aws ec2 describe-vpcs \
+                --filters "Name=tag:Environment,Values=development" \
+                --query 'Vpcs[0].VpcId' \
+                --output text 2>/dev/null || echo "NOT_FOUND")
+              
+              echo "vpc_id=$DEV_VPC" >> $GITHUB_OUTPUT
+              echo "Dev VPC ID: $DEV_VPC"
+            }
+
+  # ============================================================================
+  # JOB 2: Deploy Networking Stack
+  # ============================================================================
+  deploy-networking:
+    name: Deploy Networking Stack
+    needs: [validate-setup]
+    runs-on: ubuntu-latest
+    environment: pipeline
+    if: |
+      always() &&
+      (needs.validate-setup.result == 'success' || needs.validate-setup.result == 'skipped') &&
+      (github.event.inputs.stack == 'all' || github.event.inputs.stack == 'networking' || github.event.inputs.stack == '')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install Dependencies
+        run: yarn install --immutable
+
+      - name: Build Infrastructure
+        run: |
+          cd infrastructure
+          yarn build
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy NetworkingStack
+        run: |
+          echo "Deploying NetworkingStack-pipeline..."
+          cd infrastructure
+
+          # Check current stack status
+          STACK_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name NetworkingStack-pipeline \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null || echo "NOT_FOUND")
+
+          echo "Current status: $STACK_STATUS"
+
+          # Deploy with appropriate flags based on status
+          if [ "$STACK_STATUS" = "UPDATE_ROLLBACK_COMPLETE" ]; then
+            echo "Stack in rollback state - deploying with --exclusively flag"
+            ENVIRONMENT=pipeline yarn cdk deploy NetworkingStack-pipeline --require-approval never --exclusively
+          else
+            ENVIRONMENT=pipeline yarn cdk deploy NetworkingStack-pipeline --require-approval never
+          fi
+
+          echo "NetworkingStack-pipeline deployed successfully"
+        env:
+          AWS_PIPELINE_ACCOUNT_ID: ${{ needs.validate-setup.outputs.pipeline_account_id }}
+          DEV_VPC_ID: ${{ needs.validate-setup.outputs.dev_vpc_id }}
+          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+
+  # ============================================================================
+  # JOB 3: Deploy VPC Peering (Optional)
+  # ============================================================================
+  deploy-vpc-peering:
+    name: Deploy VPC Peering
+    needs: [validate-setup, deploy-networking]
+    runs-on: ubuntu-latest
+    environment: pipeline
+    if: |
+      always() &&
+      needs.deploy-networking.result == 'success' &&
+      needs.validate-setup.outputs.dev_vpc_id != 'NOT_FOUND' &&
+      needs.validate-setup.outputs.dev_vpc_id != '' &&
+      (github.event.inputs.stack == 'all' || github.event.inputs.stack == 'vpc-peering')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install Dependencies
+        run: yarn install --immutable
+
+      - name: Build Infrastructure
+        run: |
+          cd infrastructure
+          yarn build
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy VPC Peering
+        run: |
+          echo "Deploying VpcPeeringStack-pipeline..."
+          cd infrastructure
+
+          ENVIRONMENT=pipeline yarn cdk deploy VpcPeeringStack-pipeline --require-approval never
+
+          echo "VpcPeeringStack-pipeline deployed successfully"
+        env:
+          AWS_PIPELINE_ACCOUNT_ID: ${{ needs.validate-setup.outputs.pipeline_account_id }}
+          DEV_VPC_ID: ${{ needs.validate-setup.outputs.dev_vpc_id }}
+          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+
+  # ============================================================================
+  # JOB 4: Deploy Monitoring Infrastructure
+  # ============================================================================
+  deploy-monitoring-infra:
+    name: Deploy Monitoring Infrastructure
+    needs: [validate-setup, deploy-networking]
+    runs-on: ubuntu-latest
+    environment: pipeline
+    if: |
+      always() &&
+      needs.deploy-networking.result == 'success' &&
+      (github.event.inputs.stack == 'all' || github.event.inputs.stack == 'monitoring-infra' || github.event.inputs.stack == '')
+
+    outputs:
+      alb_dns: ${{ steps.deploy.outputs.alb_dns }}
+      efs_id: ${{ steps.deploy.outputs.efs_id }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install Dependencies
+        run: yarn install --immutable
+
+      - name: Build Infrastructure
+        run: |
+          cd infrastructure
+          yarn build
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Domain Configuration
+        run: |
+          echo "Setting up domain configuration..."
+
+          # Try to get domain config from SSM
+          ROOT_DOMAIN=$(aws ssm get-parameter \
+            --name "/portfolio/domain/root-domain-name" \
+            --query "Parameter.Value" \
+            --output text 2>/dev/null || echo "")
+
+          CERT_ARN=$(aws ssm get-parameter \
+            --name "/portfolio/domain/acm-arn" \
+            --query "Parameter.Value" \
+            --output text 2>/dev/null || echo "")
+
+          if [ -n "$ROOT_DOMAIN" ] && [ -n "$CERT_ARN" ]; then
+            # Validate certificate is in same account
+            CERT_ACCOUNT=$(echo "$CERT_ARN" | cut -d: -f5)
+            CURRENT_ACCOUNT="${{ needs.validate-setup.outputs.pipeline_account_id }}"
+            
+            if [ "$CERT_ACCOUNT" = "$CURRENT_ACCOUNT" ]; then
+              echo "ROOT_DOMAIN_NAME=$ROOT_DOMAIN" >> $GITHUB_ENV
+              echo "CERTIFICATE_ARN=$CERT_ARN" >> $GITHUB_ENV
+              echo "HTTPS enabled for monitoring.$ROOT_DOMAIN"
+            else
+              echo "Certificate from different account - using HTTP only"
+            fi
+          else
+            echo "No domain configuration found - using HTTP only"
+          fi
+
+      - name: Deploy MonitoringInfraStack
+        id: deploy
+        run: |
+          echo "Deploying MonitoringInfraStack-pipeline..."
+          cd infrastructure
+
+          # Check for failed states and handle recovery
+          STACK_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name MonitoringInfraStack-pipeline \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null || echo "NOT_FOUND")
+
+          echo "Current status: $STACK_STATUS"
+
+          if [ "$STACK_STATUS" = "UPDATE_ROLLBACK_COMPLETE" ]; then
+            echo "Stack in rollback state - attempting recovery..."
+            # Try to continue update rollback first
+            aws cloudformation continue-update-rollback \
+              --stack-name MonitoringInfraStack-pipeline 2>/dev/null || true
+            sleep 30
+          fi
+
+          # Deploy the stack
+          ENVIRONMENT=pipeline yarn cdk deploy MonitoringInfraStack-pipeline --require-approval never
+
+          # Get outputs
+          ALB_DNS=$(aws cloudformation describe-stacks \
+            --stack-name MonitoringInfraStack-pipeline \
+            --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerDns`].OutputValue' \
+            --output text 2>/dev/null || echo "")
+
+          EFS_ID=$(aws cloudformation describe-stacks \
+            --stack-name MonitoringInfraStack-pipeline \
+            --query 'Stacks[0].Outputs[?OutputKey==`EfsFileSystemId`].OutputValue' \
+            --output text 2>/dev/null || echo "")
+
+          echo "alb_dns=$ALB_DNS" >> $GITHUB_OUTPUT
+          echo "efs_id=$EFS_ID" >> $GITHUB_OUTPUT
+
+          echo "MonitoringInfraStack-pipeline deployed successfully"
+          echo "   ALB DNS: $ALB_DNS"
+          echo "   EFS ID: $EFS_ID"
+        env:
+          AWS_PIPELINE_ACCOUNT_ID: ${{ needs.validate-setup.outputs.pipeline_account_id }}
+          DEV_VPC_ID: ${{ needs.validate-setup.outputs.dev_vpc_id }}
+          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+
+  # ============================================================================
+  # JOB 5: Deploy Monitoring Services
+  # ============================================================================
+  deploy-monitoring-services:
+    name: Deploy Monitoring Services
+    needs: [validate-setup, deploy-monitoring-infra]
+    runs-on: ubuntu-latest
+    environment: pipeline
+    if: |
+      always() &&
+      needs.deploy-monitoring-infra.result == 'success' &&
+      (github.event.inputs.stack == 'all' || github.event.inputs.stack == 'monitoring-services' || github.event.inputs.stack == '')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install Dependencies
+        run: yarn install --immutable
+
+      - name: Build Infrastructure
+        run: |
+          cd infrastructure
+          yarn build
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy MonitoringServiceStack
+        run: |
+          echo "Deploying MonitoringServiceStack-pipeline..."
+          cd infrastructure
+
+          ENVIRONMENT=pipeline yarn cdk deploy MonitoringServiceStack-pipeline --require-approval never
+
+          echo "MonitoringServiceStack-pipeline deployed successfully"
+        env:
+          AWS_PIPELINE_ACCOUNT_ID: ${{ needs.validate-setup.outputs.pipeline_account_id }}
+          DEV_VPC_ID: ${{ needs.validate-setup.outputs.dev_vpc_id }}
+          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+
+      - name: Initialize Configuration
+        run: |
+          echo "⚙️ Initializing monitoring configuration..."
+          chmod +x ./scripts/monitoring/init-config.sh
+          ./scripts/monitoring/init-config.sh --env pipeline
+
+          echo "Configuration initialized"
+
+      - name: Wait for Services
+        run: |
+          echo "Waiting for services to stabilize..."
+          sleep 60
+
+          CLUSTER="pipeline-monitoring-cluster"
+
+          for SERVICE in pipeline-prometheus pipeline-grafana pipeline-monitoring-node-exporter; do
+            echo "Checking $SERVICE..."
+            
+            RUNNING=$(aws ecs describe-services \
+              --cluster "$CLUSTER" \
+              --services "$SERVICE" \
+              --query 'services[0].runningCount' \
+              --output text 2>/dev/null || echo "0")
+            
+            DESIRED=$(aws ecs describe-services \
+              --cluster "$CLUSTER" \
+              --services "$SERVICE" \
+              --query 'services[0].desiredCount' \
+              --output text 2>/dev/null || echo "0")
+            
+            echo "$SERVICE: $RUNNING/$DESIRED tasks running"
+          done
+
+  # ============================================================================
+  # JOB 6: Health Checks & Validation
+  # ============================================================================
+  health-checks:
+    name: Health Checks
+    needs: [validate-setup, deploy-monitoring-infra, deploy-monitoring-services]
+    runs-on: ubuntu-latest
+    environment: pipeline
+    if: |
+      always() &&
+      needs.deploy-monitoring-services.result == 'success' &&
+      github.event.inputs.stack != 'destroy-all'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Test Endpoints
+        continue-on-error: true
+        run: |
+          ALB_DNS="${{ needs.deploy-monitoring-infra.outputs.alb_dns }}"
+
+          if [ -n "$ALB_DNS" ]; then
+            echo "Testing monitoring endpoints..."
+            
+            # Test Prometheus
+            PROM_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              "http://${ALB_DNS}/prometheus/-/healthy" || echo "000")
+            
+            # Test Grafana  
+            GRAFANA_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              "http://${ALB_DNS}/grafana/api/health" || echo "000")
+            
+            echo "Prometheus health: HTTP $PROM_STATUS"
+            echo "Grafana health: HTTP $GRAFANA_STATUS"
+            
+            if [ "$PROM_STATUS" = "200" ] && [ "$GRAFANA_STATUS" = "200" ]; then
+              echo "All endpoints healthy"
+            else
+              echo "Some endpoints not responding"
+            fi
+          fi
+
+      - name: Generate Summary
+        if: always()
+        run: |
+          echo "## Pipeline Monitoring Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Stack**: ${{ github.event.inputs.stack || 'all' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Account**: ${{ needs.validate-setup.outputs.pipeline_account_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Region**: ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          ALB_DNS="${{ needs.deploy-monitoring-infra.outputs.alb_dns }}"
+          if [ -n "$ALB_DNS" ]; then
+            echo "### Access URLs" >> $GITHUB_STEP_SUMMARY
+            echo "- **Grafana**: http://${ALB_DNS}/grafana (admin/admin)" >> $GITHUB_STEP_SUMMARY
+            echo "- **Prometheus**: http://${ALB_DNS}/prometheus" >> $GITHUB_STEP_SUMMARY
+            echo "- **Targets**: http://${ALB_DNS}/prometheus/targets" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # ============================================================================
+  # JOB 7: Destroy (Optional)
+  # ============================================================================
+  destroy-all:
+    name: Destroy All Stacks
+    runs-on: ubuntu-latest
+    environment: pipeline
+    if: github.event.inputs.stack == 'destroy-all'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install Dependencies
+        run: yarn install --immutable
+
+      - name: Build Infrastructure
+        run: |
+          cd infrastructure
+          yarn build
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Destroy Stacks in Order
+        run: |
+          echo "Destroying all pipeline monitoring stacks..."
+          cd infrastructure
+
+          # Destroy in reverse dependency order
+          echo "1. Destroying MonitoringServiceStack-pipeline..."
+          ENVIRONMENT=pipeline yarn cdk destroy MonitoringServiceStack-pipeline --force 2>/dev/null || true
+
+          echo "2. Destroying MonitoringInfraStack-pipeline..."
+          ENVIRONMENT=pipeline yarn cdk destroy MonitoringInfraStack-pipeline --force 2>/dev/null || true
+
+          echo "3. Destroying VpcPeeringStack-pipeline..."
+          ENVIRONMENT=pipeline yarn cdk destroy VpcPeeringStack-pipeline --force 2>/dev/null || true
+
+          echo "4. Destroying NetworkingStack-pipeline..."
+          ENVIRONMENT=pipeline yarn cdk destroy NetworkingStack-pipeline --force 2>/dev/null || true
+
+          echo "All stacks destroyed"
+        env:
+          AWS_PIPELINE_ACCOUNT_ID: ${{ needs.validate-setup.outputs.pipeline_account_id }}
+          DEV_VPC_ID: ${{ needs.validate-setup.outputs.dev_vpc_id }}
+          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
   # ============================================================================
   # JOB 1: Deploy Infrastructure (Networking, VPC Peering, ECS, EFS, ALB)
   # ============================================================================
@@ -85,10 +586,12 @@ jobs:
         run: corepack enable
 
       - name: Install Dependencies
-        run: make install
+        run: yarn install --immutable
 
       - name: Build Infrastructure
-        run: make build-infrastructure
+        run: |
+          cd infrastructure
+          yarn build
 
       - name: Configure AWS Credentials (OIDC - Pipeline Account)
         uses: aws-actions/configure-aws-credentials@v4
@@ -238,6 +741,8 @@ jobs:
           echo "VPC_PEERING_NEEDS_REDEPLOY=$VPC_PEERING_DESTROYED" >> $GITHUB_ENV
         env:
           AWS_PIPELINE_ACCOUNT_ID: ${{ env.AWS_PIPELINE_ACCOUNT_ID }}
+          DEV_VPC_ID: ${{ env.DEV_VPC_ID }}
+          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
 
       # Deploy Layer 1: Infrastructure (ECS, EFS, ALB)
       - name: Deploy Layer 1 - Infrastructure
@@ -257,7 +762,7 @@ jobs:
             echo "This usually means a previous deployment failed due to resource conflicts"
             
             # Check for ALB resource conflicts (common cause of failures)
-            echo "🔍 Checking for ALB resource conflicts..."
+            echo "Checking for ALB resource conflicts..."
             ALB_EXISTS=$(aws elbv2 describe-load-balancers \
               --names "pipeline-monitoring-alb" \
               --query 'LoadBalancers[0].LoadBalancerArn' \
@@ -299,7 +804,7 @@ jobs:
               --output text 2>/dev/null || echo "")
             
             if [[ "$STACK_EVENTS" == *"not found"* ]] || [[ "$STACK_EVENTS" == *"NotFound"* ]]; then
-              echo "🔄 Detected resource reference mismatch - deleting and recreating stack..."
+              echo "Detected resource reference mismatch - deleting and recreating stack..."
               
               # Delete the stack to clear invalid references
               ENVIRONMENT=pipeline yarn cdk destroy MonitoringInfraStack-pipeline --force 2>/dev/null || true
@@ -332,8 +837,8 @@ jobs:
           echo "EFS ID: $EFS_ID"
 
           # Log HTTP-only status for monitoring
-          echo "ℹ️ Monitoring configured for HTTP-only access"
-          echo "## 🌐 HTTP-Only Monitoring Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "ℹMonitoring configured for HTTP-only access"
+          echo "## HTTP-Only Monitoring Configuration" >> $GITHUB_STEP_SUMMARY
           echo "- **HTTP URL**: http://$ALB_DNS" >> $GITHUB_STEP_SUMMARY
           echo "- **Reason**: Cross-account certificate usage not supported" >> $GITHUB_STEP_SUMMARY
           echo "- **Security**: Internal monitoring network, HTTP acceptable" >> $GITHUB_STEP_SUMMARY
@@ -431,19 +936,19 @@ jobs:
 
           # Check if EFS is mounted (with fallback)
           if [ "$COMMAND_ID" != "FAILED" ] && echo "$OUTPUT" | grep -q "efs"; then
-            echo "✅ EFS is mounted successfully"
+            echo "EFS is mounted successfully"
             echo "efs_mounted=true" >> $GITHUB_OUTPUT
           else
-            echo "⚠️ EFS mount status unknown (will be validated later)"
+            echo "EFS mount status unknown (will be validated later)"
             echo "efs_mounted=unknown" >> $GITHUB_OUTPUT
           fi
 
           # Check if config directories exist (with fallback)
           if [ "$COMMAND_ID" != "FAILED" ] && echo "$OUTPUT" | grep -q "prometheus"; then
-            echo "✅ Config directories created"
+            echo "Config directories created"
             echo "config_created=true" >> $GITHUB_OUTPUT
           else
-            echo "⚠️ Config directory status unknown (will be validated later)"
+            echo "Config directory status unknown (will be validated later)"
             echo "config_created=unknown" >> $GITHUB_OUTPUT
           fi
 
@@ -464,11 +969,11 @@ jobs:
 
           # If instance is running, assume UserData is executing
           if [ "$INSTANCE_STATE" = "running" ]; then
-            echo "✅ Instance is running - UserData should be executing"
+            echo "Instance is running - UserData should be executing"
             echo "Waiting additional time for UserData to complete..."
             sleep 60
           else
-            echo "⚠️ Instance is not in running state: $INSTANCE_STATE"
+            echo "Instance is not in running state: $INSTANCE_STATE"
           fi
 
       # Fix EFS DNS Resolution Issue
@@ -507,9 +1012,9 @@ jobs:
           echo "$OUTPUT"
 
           if echo "$OUTPUT" | grep -q "efs"; then
-            echo "✅ EFS mounted successfully using IP address"
+            echo "EFS mounted successfully using IP address"
           else
-            echo "❌ EFS mount still failed"
+            echo "EFS mount still failed"
             exit 1
           fi
 
@@ -524,6 +1029,8 @@ jobs:
           echo "Services deployed successfully"
         env:
           AWS_PIPELINE_ACCOUNT_ID: ${{ env.AWS_PIPELINE_ACCOUNT_ID }}
+          DEV_VPC_ID: ${{ env.DEV_VPC_ID }}
+          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
 
       # Initialize Configuration
       - name: Initialize Configuration
@@ -597,10 +1104,12 @@ jobs:
         run: corepack enable
 
       - name: Install Dependencies
-        run: make install
+        run: yarn install --immutable
 
       - name: Build Infrastructure
-        run: make build-infrastructure
+        run: |
+          cd infrastructure
+          yarn build
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -618,6 +1127,8 @@ jobs:
           ENVIRONMENT=pipeline yarn cdk deploy MonitoringServiceStack-pipeline --require-approval never
         env:
           AWS_PIPELINE_ACCOUNT_ID: ${{ env.AWS_PIPELINE_ACCOUNT_ID }}
+          DEV_VPC_ID: ${{ env.DEV_VPC_ID }}
+          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
           ROOT_DOMAIN_NAME: ${{ vars.ROOT_DOMAIN_NAME }}
           HOSTED_ZONE_ID: ${{ vars.HOSTED_ZONE_ID }}
 
