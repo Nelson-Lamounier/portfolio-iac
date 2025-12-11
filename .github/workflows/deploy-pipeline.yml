@@ -244,7 +244,7 @@ jobs:
           cd infrastructure
 
           echo "Checking VPC Peering deployment need..."
-          echo "${{ steps.dev-params.outputs.vpc_id }}""
+          echo "${{ steps.dev-params.outputs.vpc_id }}"
           echo "VPC Peering needs redeploy: ${{ env.VPC_PEERING_NEEDS_REDEPLOY }}"
 
           # Check if VPC Peering already exists and is healthy
