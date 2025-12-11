@@ -43,6 +43,7 @@ export interface MonitoringInfraStackProps extends cdk.StackProps {
   efsAccessPoint: efs.IAccessPoint;
   efsAvailabilityZone: string;
   efsSecurityGroup: ec2.ISecurityGroup;
+  efsInitializationComplete: cdk.CustomResource;
 }
 
 export class MonitoringInfraStack extends cdk.Stack {
@@ -73,6 +74,7 @@ export class MonitoringInfraStack extends cdk.Stack {
       efsAccessPoint,
       efsAvailabilityZone,
       efsSecurityGroup,
+      efsInitializationComplete,
     } = props;
 
     // Store external EFS resources
@@ -125,7 +127,8 @@ export class MonitoringInfraStack extends cdk.Stack {
       envName,
       this.fileSystem,
       this.efsAvailabilityZone,
-      efsSecurityGroup
+      efsSecurityGroup,
+      efsInitializationComplete
     );
 
     // ========================================================================
@@ -226,7 +229,8 @@ export class MonitoringInfraStack extends cdk.Stack {
     envName: string,
     fileSystem: efs.IFileSystem,
     availabilityZone: string,
-    efsSecurityGroup: ec2.ISecurityGroup
+    efsSecurityGroup: ec2.ISecurityGroup,
+    efsInitializationComplete: cdk.CustomResource
   ): autoscaling.AutoScalingGroup {
     // CRITICAL: Constrain ASG to same AZ as EFS One Zone mount target
     // This ensures EC2 instances can always mount the EFS filesystem
@@ -287,7 +291,7 @@ export class MonitoringInfraStack extends cdk.Stack {
       })
     );
 
-    // User data script - mount EFS, execute setup script, then create symlinks
+    // User data script - robust EFS mounting and setup with proper error handling
     asg.addUserData(
       "#!/bin/bash",
       "set -e",
@@ -295,20 +299,157 @@ export class MonitoringInfraStack extends cdk.Stack {
       "# Enable detailed logging",
       "exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1",
       "echo 'Starting EFS setup user data script...'",
+      "date",
       "",
-      "# Install EFS utilities",
-      "yum install -y amazon-efs-utils",
+      "# Install required packages",
+      "echo 'Installing required packages...'",
+      "yum update -y",
       "",
-      "# Create mount point and mount EFS with IAM authentication",
+      "# Install amazon-efs-utils with verification and fallback",
+      "echo 'Installing amazon-efs-utils package...'",
+      "if yum install -y amazon-efs-utils; then",
+      "  echo 'amazon-efs-utils installed via yum successfully'",
+      "else",
+      "  echo 'Standard yum installation failed, trying alternative method...'",
+      "  # Fallback: Install from GitHub releases",
+      "  yum install -y git rpm-build make",
+      "  cd /tmp",
+      "  git clone https://github.com/aws/efs-utils",
+      "  cd efs-utils",
+      "  make rpm",
+      "  yum install -y build/amazon-efs-utils*rpm",
+      "  cd /",
+      "  rm -rf /tmp/efs-utils",
+      "fi",
+      "",
+      "# Verify amazon-efs-utils installation",
+      "echo 'Verifying amazon-efs-utils installation...'",
+      "if rpm -qa | grep -q amazon-efs-utils; then",
+      "  echo 'amazon-efs-utils package installed successfully'",
+      "  EFS_UTILS_VERSION=$(rpm -qa | grep amazon-efs-utils)",
+      '  echo "Installed version: $EFS_UTILS_VERSION"',
+      "else",
+      "  echo 'ERROR: amazon-efs-utils package not found after installation attempts'",
+      "  echo 'Available packages:'",
+      "  yum list available | grep efs || echo 'No EFS packages available'",
+      "  exit 1",
+      "fi",
+      "",
+      "# Verify EFS mount helper is available",
+      "if command -v mount.efs >/dev/null 2>&1; then",
+      "  echo 'EFS mount helper (mount.efs) is available'",
+      "else",
+      "  echo 'ERROR: EFS mount helper (mount.efs) not found'",
+      "  echo 'Checking /sbin/ directory:'",
+      "  ls -la /sbin/mount.* | grep efs || echo 'No EFS mount helpers found'",
+      "  exit 1",
+      "fi",
+      "",
+      "# Install AWS CLI",
+      "echo 'Installing AWS CLI...'",
+      "yum install -y awscli",
+      "",
+      "# Verify AWS CLI is working",
+      "echo 'Verifying AWS CLI...'",
+      "aws --version",
+      "aws sts get-caller-identity",
+      "",
+      "# Configure EFS utils for One Zone file system",
+      "echo 'Configuring EFS utils for One Zone file system...'",
+      "cat > /etc/efs-fscache.conf << 'EOF'",
+      "# EFS Intelligent Tiering cache configuration for One Zone",
+      "optimize_for_performance = true",
+      "cache_size_mb = 256",
+      "EOF",
+      "",
+      "# Configure EFS utils main configuration",
+      "cat >> /etc/efs-utils.conf << 'EOF'",
+      "",
+      "# One Zone EFS configuration",
+      "[mount]",
+      "# Use regional mount targets for One Zone file systems",
+      "region = " + this.region,
+      "# Enable IAM authentication by default",
+      "iam = true",
+      "# Use TLS encryption in transit",
+      "tls = true",
+      "# Optimize for One Zone performance",
+      "rsize = 1048576",
+      "wsize = 1048576",
+      "hard = true",
+      "intr = true",
+      "timeo = 600",
+      "EOF",
+      "",
+      "# Verify EFS utils configuration",
+      "echo 'Verifying EFS utils configuration...'",
+      "if [ -f /etc/efs-utils.conf ]; then",
+      "  echo 'EFS utils configuration file exists'",
+      "  echo 'Configuration contents:'",
+      "  cat /etc/efs-utils.conf",
+      "else",
+      "  echo 'ERROR: EFS utils configuration file not found'",
+      "  exit 1",
+      "fi",
+      "",
+      "if [ -f /etc/efs-fscache.conf ]; then",
+      "  echo 'EFS cache configuration file exists'",
+      "  echo 'Cache configuration contents:'",
+      "  cat /etc/efs-fscache.conf",
+      "else",
+      "  echo 'ERROR: EFS cache configuration file not found'",
+      "  exit 1",
+      "fi",
+      "",
+      "# Test EFS mount helper availability",
+      "echo 'Testing EFS mount helper...'",
+      "mount.efs --help >/dev/null 2>&1 && echo 'EFS mount helper is functional' || echo 'WARNING: EFS mount helper may have issues'",
+      "",
+      "# Create mount point",
       "mkdir -p /mnt/efs",
-      `echo 'Mounting EFS ${fileSystem.fileSystemId}...'`,
-      `mount -t efs -o tls,iam ${fileSystem.fileSystemId}:/ /mnt/efs`,
       "",
-      "# Add to fstab for persistence across reboots",
-      `echo "${fileSystem.fileSystemId}:/ /mnt/efs efs _netdev,tls,iam 0 0" >> /etc/fstab`,
+      "# Mount EFS using mount helper with retry logic",
+      `echo 'Mounting One Zone EFS ${fileSystem.fileSystemId} using mount helper...'`,
+      "MOUNT_RETRIES=5",
+      "MOUNT_DELAY=10",
+      "for i in $(seq 1 $MOUNT_RETRIES); do",
+      `  echo "Mount attempt $i of $MOUNT_RETRIES for EFS ${fileSystem.fileSystemId}"`,
+      "  ",
+      "  # Use EFS mount helper for One Zone file system with IAM authentication",
+      `  if timeout 60 mount -t efs -o tls,iam,regional ${fileSystem.fileSystemId}:/ /mnt/efs; then`,
+      "    echo 'EFS mounted successfully using mount helper'",
+      "    break",
+      "  else",
+      '    echo "Mount attempt $i failed, retrying in $MOUNT_DELAY seconds..."',
+      "    if [ $i -eq $MOUNT_RETRIES ]; then",
+      "      echo 'ERROR: Failed to mount EFS after all retries'",
+      "      echo 'Checking EFS mount helper configuration:'",
+      "      cat /etc/efs-fscache.conf",
+      "      echo 'Network connectivity test:'",
+      "      ping -c 3 8.8.8.8 || echo 'No internet connectivity'",
+      "      echo 'EFS mount targets in region:'",
+      `      aws efs describe-mount-targets --file-system-id ${fileSystem.fileSystemId} || echo 'Failed to describe mount targets'`,
+      "      echo 'Checking EFS utils version:'",
+      "      rpm -qa | grep amazon-efs-utils",
+      "      exit 1",
+      "    fi",
+      "    sleep $MOUNT_DELAY",
+      "  fi",
+      "done",
       "",
-      "# Wait a moment for EFS to be fully mounted",
-      "sleep 5",
+      "# Verify mount was successful",
+      "if ! mountpoint -q /mnt/efs; then",
+      "  echo 'ERROR: EFS is not properly mounted'",
+      "  mount | grep efs || echo 'No EFS mounts found'",
+      "  exit 1",
+      "fi",
+      "",
+      "# Add to fstab for persistence across reboots using mount helper",
+      `echo "${fileSystem.fileSystemId}:/ /mnt/efs efs defaults,_netdev,tls,iam,regional 0 0" >> /etc/fstab`,
+      "",
+      "# Wait for EFS to be fully ready",
+      "echo 'Waiting for EFS to be fully ready...'",
+      "sleep 10",
       "",
       "# Check if directories already exist (EFS might be persistent from previous deployments)",
       "if [ -d '/mnt/efs/prometheus-data' ] && [ -d '/mnt/efs/grafana-data' ]; then",
@@ -381,6 +522,11 @@ export class MonitoringInfraStack extends cdk.Stack {
 
     cdk.Tags.of(this.cluster).add("Environment", envName);
     cdk.Tags.of(this.cluster).add("Purpose", "Monitoring");
+
+    // CRITICAL: Ensure ASG waits for EFS initialization to complete
+    // This prevents EC2 instances from starting before the Lambda has created
+    // the SSM parameters containing the EFS setup script
+    asg.node.addDependency(efsInitializationComplete);
 
     return asg;
   }

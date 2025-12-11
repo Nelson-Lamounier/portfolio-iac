@@ -38,6 +38,7 @@ export class MonitoringEfsStack extends cdk.Stack {
   public readonly accessPoint: efs.AccessPoint;
   public readonly mountTargetSecurityGroup: ec2.SecurityGroup;
   public readonly efsAvailabilityZone: string;
+  public efsInitializationComplete: cdk.CustomResource;
 
   constructor(scope: Construct, id: string, props: MonitoringEfsStackProps) {
     super(scope, id, props);
@@ -457,7 +458,7 @@ export class MonitoringEfsStack extends cdk.Stack {
     // The dynamically generated resource name may not match regex patterns perfectly
 
     // Create Custom Resource
-    const customResource = new cdk.CustomResource(
+    this.efsInitializationComplete = new cdk.CustomResource(
       this,
       "EfsInitCustomResource",
       {
@@ -473,8 +474,17 @@ export class MonitoringEfsStack extends cdk.Stack {
     );
 
     // Ensure Custom Resource runs after EFS is ready
-    customResource.node.addDependency(this.fileSystem);
-    customResource.node.addDependency(this.accessPoint);
+    this.efsInitializationComplete.node.addDependency(this.fileSystem);
+    this.efsInitializationComplete.node.addDependency(this.accessPoint);
+
+    // Add output to track initialization completion
+    new cdk.CfnOutput(this, "EfsInitializationStatus", {
+      value: this.efsInitializationComplete
+        .getAtt("InitializationStatus")
+        .toString(),
+      description: "EFS initialization completion status",
+      exportName: `${this.stackName}-efs-init-status`,
+    });
   }
 
   private applyCdkNagSuppressions() {
