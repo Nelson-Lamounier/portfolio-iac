@@ -52,13 +52,22 @@ export class MonitoringEfsStack extends cdk.Stack {
     } = props;
 
     // ========================================================================
+    // SECURITY GROUP FOR MOUNT TARGETS (Create first)
+    // ========================================================================
+    this.mountTargetSecurityGroup = this.createMountTargetSecurityGroup(
+      vpc,
+      envName
+    );
+
+    // ========================================================================
     // EFS FILE SYSTEM
     // ========================================================================
     const efsResult = this.createEfsFileSystem(
       vpc,
       envName,
       enableEncryption,
-      lifecyclePolicy
+      lifecyclePolicy,
+      this.mountTargetSecurityGroup
     );
     this.fileSystem = efsResult.fileSystem;
     this.efsAvailabilityZone = efsResult.availabilityZone;
@@ -67,14 +76,6 @@ export class MonitoringEfsStack extends cdk.Stack {
     // EFS ACCESS POINT
     // ========================================================================
     this.accessPoint = this.createEfsAccessPoint(this.fileSystem);
-
-    // ========================================================================
-    // SECURITY GROUP FOR MOUNT TARGETS
-    // ========================================================================
-    this.mountTargetSecurityGroup = this.createMountTargetSecurityGroup(
-      vpc,
-      envName
-    );
 
     // ========================================================================
     // CONFIGURATION FILES & DIRECTORY STRUCTURE
@@ -106,7 +107,8 @@ export class MonitoringEfsStack extends cdk.Stack {
     vpc: ec2.IVpc,
     envName: string,
     enableEncryption: boolean,
-    lifecyclePolicy: efs.LifecyclePolicy
+    lifecyclePolicy: efs.LifecyclePolicy,
+    securityGroup: ec2.SecurityGroup
   ): { fileSystem: efs.FileSystem; availabilityZone: string } {
     // Use first public subnet's AZ for One Zone EFS (cost optimization)
     const publicSubnets = vpc.selectSubnets({
@@ -128,6 +130,8 @@ export class MonitoringEfsStack extends cdk.Stack {
         availabilityZones: [availabilityZone],
         subnetType: ec2.SubnetType.PUBLIC, // Use public subnets since no NAT Gateway
       },
+      // Explicitly attach security group to mount targets
+      securityGroup: securityGroup,
       // Note: Backup policy needs to be configured separately
     });
 
@@ -170,11 +174,18 @@ export class MonitoringEfsStack extends cdk.Stack {
       allowAllOutbound: false,
     });
 
-    // Allow NFS traffic from VPC
+    // Allow NFS traffic from VPC CIDR
     securityGroup.addIngressRule(
       ec2.Peer.ipv4(vpc.vpcCidrBlock),
       ec2.Port.tcp(2049),
-      "Allow NFS traffic from VPC"
+      "Allow NFS traffic from VPC CIDR"
+    );
+
+    // Allow NFS traffic from anywhere in VPC (more permissive for troubleshooting)
+    securityGroup.addIngressRule(
+      ec2.Peer.ipv4("10.0.0.0/16"),
+      ec2.Port.tcp(2049),
+      "Allow NFS traffic from VPC 10.0.0.0/16"
     );
 
     cdk.Tags.of(securityGroup).add("Name", `${envName}-efs-mount-target-sg`);

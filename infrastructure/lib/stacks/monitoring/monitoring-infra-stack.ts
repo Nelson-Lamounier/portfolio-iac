@@ -34,6 +34,7 @@ import {
 export interface MonitoringInfraStackProps extends cdk.StackProps {
   vpc: ec2.IVpc;
   envName: string;
+  efsStackName: string;
   allowedIpRanges?: string[];
   certificateArn?: string;
   enableHttps?: boolean;
@@ -267,9 +268,6 @@ export class MonitoringInfraStack extends cdk.Stack {
       "Allow ECS instances to mount EFS"
     );
 
-    // EFS security group is managed by MonitoringEfsStack
-    // No additional configuration needed here
-
     // Grant EFS IAM permissions for mounting with IAM authentication
     asg.role.addToPrincipalPolicy(
       new iam.PolicyStatement({
@@ -301,7 +299,7 @@ export class MonitoringInfraStack extends cdk.Stack {
         effect: iam.Effect.ALLOW,
         actions: ["ssm:GetParameter", "ssm:GetParameters"],
         resources: [
-          `arn:aws:ssm:${this.region}:${this.account}:parameter/monitoring/${this.stackName}/*`,
+          `arn:aws:ssm:${this.region}:${this.account}:parameter/monitoring/${this.efsStackName}/*`,
         ],
       })
     );
@@ -498,7 +496,7 @@ export class MonitoringInfraStack extends cdk.Stack {
       "  ",
       "  # Download and execute EFS setup script from SSM",
       "  echo 'Downloading EFS setup script from SSM...'",
-      `  aws ssm get-parameter --region ${this.region} --name "/monitoring/${this.stackName}/efs-setup-script" --query "Parameter.Value" --output text > /tmp/efs-setup.sh`,
+      `  aws ssm get-parameter --region ${this.region} --name "/monitoring/${this.efsStackName}/efs-setup-script" --query "Parameter.Value" --output text > /tmp/efs-setup.sh`,
       "  chmod +x /tmp/efs-setup.sh",
       "  ",
       "  # Execute setup script with error handling",
