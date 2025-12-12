@@ -60,6 +60,7 @@ export class MonitoringInfraStack extends cdk.Stack {
   public readonly alb: AlbConstruct;
   public readonly listeners: AlbListenerConstruct;
   public readonly efsAvailabilityZone: string;
+  private readonly efsStackName: string;
 
   constructor(scope: Construct, id: string, props: MonitoringInfraStackProps) {
     super(scope, id, props);
@@ -67,6 +68,7 @@ export class MonitoringInfraStack extends cdk.Stack {
     const {
       vpc,
       envName,
+      efsStackName,
       allowedIpRanges = ["0.0.0.0/0"],
       certificateArn,
       enableHttps = !!certificateArn,
@@ -82,6 +84,7 @@ export class MonitoringInfraStack extends cdk.Stack {
     this.fileSystem = fileSystem;
     this.efsAccessPoint = efsAccessPoint;
     this.efsAvailabilityZone = efsAvailabilityZone;
+    this.efsStackName = efsStackName;
 
     // ========================================================================
     // S3 BUCKET (Configuration Storage)
