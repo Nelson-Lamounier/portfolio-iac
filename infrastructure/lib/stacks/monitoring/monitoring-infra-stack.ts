@@ -18,7 +18,7 @@ import {
 } from "../../constructs/networking/alb";
 
 /**
- * LAYER 1: Monitoring Infrastructure Stack
+ * LAYER 1: Monitoring Infrastructure Stack Testing
  *
  * This stack contains long-lived infrastructure resources that rarely change: // Test
  * - VPC references
