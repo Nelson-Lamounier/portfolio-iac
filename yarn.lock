@@ -4997,7 +4997,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"aws-cdk@npm:^2.150.0":
+"aws-cdk@npm:^2.232.1":
   version: 2.1034.0
   resolution: "aws-cdk@npm:2.1034.0"
   dependencies:
@@ -7529,7 +7529,7 @@ __metadata:
     "@types/aws-lambda": "npm:^8.10.159"
     "@types/jest": "npm:^29.5.11"
     "@types/node": "npm:^20.10.0"
-    aws-cdk: "npm:^2.150.0"
+    aws-cdk: "npm:^2.232.1"
     aws-cdk-lib: "npm:^2.232.1"
     aws-sdk-client-mock: "npm:^4.1.0"
     aws-sdk-client-mock-jest: "npm:^4.1.0"
