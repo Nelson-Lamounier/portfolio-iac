@@ -20,7 +20,7 @@ import {
 /**
  * LAYER 1: Monitoring Infrastructure Stack
  *
- * This stack contains long-lived infrastructure resources that rarely change:
+ * This stack contains long-lived infrastructure resources that rarely change: // Test
  * - VPC references
  * - ECS Cluster
  * - EC2 Auto Scaling Group
