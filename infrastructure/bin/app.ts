@@ -380,6 +380,7 @@ if (config.isMonitoringAccount) {
     {
       ...stackProps,
       envName: config.envName,
+      efsStackName: `MonitoringEfsStack-${config.envName}`,
       vpc: networkingStack.vpc,
       certificateArn: monitoringCertificateArn,
       enableHttps: !!monitoringCertificateArn,
