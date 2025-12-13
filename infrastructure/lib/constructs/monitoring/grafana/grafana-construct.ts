@@ -88,6 +88,78 @@ export class GrafanaConstruct extends Construct {
       description: "Task role for Grafana",
     });
 
+    // Add CloudWatch permissions if enabled (default: true)
+    if (props.enableCloudWatch !== false) {
+      // CloudWatch Metrics - these actions don't support resource-level permissions
+      taskRole.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          sid: "CloudWatchMetricsReadOnly",
+          effect: iam.Effect.ALLOW,
+          actions: [
+            "cloudwatch:DescribeAlarmsForMetric",
+            "cloudwatch:DescribeAlarmHistory",
+            "cloudwatch:DescribeAlarms",
+            "cloudwatch:ListMetrics",
+            "cloudwatch:GetMetricData",
+            "cloudwatch:GetMetricStatistics",
+          ],
+          resources: ["*"], // Required - these actions don't support resource-level permissions
+        })
+      );
+
+      // CloudWatch Logs - scope to specific log groups if possible
+      taskRole.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          sid: "CloudWatchLogsReadOnly",
+          effect: iam.Effect.ALLOW,
+          actions: [
+            "logs:DescribeLogGroups",
+            "logs:GetLogGroupFields",
+            "logs:StartQuery",
+            "logs:StopQuery",
+            "logs:GetQueryResults",
+            "logs:GetLogEvents",
+          ],
+          resources: [
+            `arn:aws:logs:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:log-group:*`,
+          ],
+        })
+      );
+
+      // EC2 describe for region discovery (read-only, low risk)
+      taskRole.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          sid: "EC2DescribeReadOnly",
+          effect: iam.Effect.ALLOW,
+          actions: [
+            "ec2:DescribeTags",
+            "ec2:DescribeInstances",
+            "ec2:DescribeRegions",
+          ],
+          resources: ["*"], // Required - EC2 Describe actions don't support resource-level permissions
+        })
+      );
+
+      // Add CDK Nag suppressions
+      NagSuppressions.addResourceSuppressions(
+        taskRole,
+        [
+          {
+            id: "AwsSolutions-IAM5",
+            reason:
+              "CloudWatch metrics and EC2 describe actions do not support resource-level permissions. " +
+              "These are read-only actions required for Grafana CloudWatch datasource. " +
+              "See: https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazoncloudwatch.html",
+            appliesTo: [
+              "Resource::*",
+              "Resource::arn:aws:logs:<AWS::Region>:<AWS::AccountId>:log-group:*",
+            ],
+          },
+        ],
+        true // Apply to children
+      );
+    }
+
     // ========================================================================
     // 1. CREATE TASK DEFINITION USING EcsTaskDefinitionConstruct
     // ========================================================================

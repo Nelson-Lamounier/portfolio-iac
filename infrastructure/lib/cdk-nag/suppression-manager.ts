@@ -375,7 +375,6 @@ export class SuppressionManager {
     stackType:
       | "ComputeStack"
       | "MonitoringStack"
-      | "MonitoringEcsStack"
       | "MonitoringEfsStack"
       | "MonitoringInfraStack"
       | "MonitoringServiceStack"
@@ -403,7 +402,6 @@ export class SuppressionManager {
         break;
 
       case "MonitoringStack":
-      case "MonitoringEcsStack":
       case "MonitoringInfraStack":
         suppressions.push(...this.getMonitoringSuppressions());
         suppressions.push(...this.getEcsEnvironmentVariableSuppressions());

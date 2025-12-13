@@ -19,6 +19,7 @@ import {
   LoadBalancerStack,
   VpcPeeringStack,
 } from "../lib/stacks";
+import { CrossAccountTarget } from "../lib/types";
 import { VpcPeeringAcceptorRole } from "../lib/constructs/iam/vpc-peering-acceptor-role";
 import { CertificateStack } from "../lib/stacks/networking/security/acm-stack";
 import { environments } from "../config/environments";
@@ -316,17 +317,18 @@ if (ecsSecurityGroup) {
 }
 
 // ========================================
-// 10. Monitoring Stacks (Optional)
+// 10. Monitoring Stacks
 // ========================================
-// Creates CloudWatch alarms, dashboards, and Prometheus/Grafana on ECS
+// Production-ready layered monitoring architecture for all environments
 //
 // ========================================
-// PIPELINE ACCOUNT: Centralized Monitoring
+// CENTRALIZED MONITORING (Pipeline Account)
 // ========================================
 if (config.isMonitoringAccount) {
   console.log("\n========================================");
-  console.log("PIPELINE ACCOUNT: Centralized Monitoring");
+  console.log("CENTRALIZED MONITORING DEPLOYMENT");
   console.log("========================================");
+  console.log(`Environment: ${config.envName}`);
   console.log(`VPC CIDR: ${vpcCidrMap[config.envName]}`);
   console.log(
     `Monitoring accounts: ${config.monitoredAccounts?.join(", ") || "none"}\n`
@@ -348,11 +350,33 @@ if (config.isMonitoringAccount) {
     console.log("⚠️ No certificate - using HTTP only");
   }
 
-  // Layer 0: EFS Storage & Configuration (NEW - Phase 1)
+  // Layer 0: EFS Storage & Configuration
   console.log("Layer 0: EFS Storage & Configuration");
-  console.log("  - EFS FileSystem for persistent storage");
-  console.log("  - Configuration files (prometheus.yml, grafana configs)");
+  console.log("  - EFS FileSystem (One Zone - cost optimized)");
+  console.log("  - Lambda-based configuration management");
+  console.log("  - SSM parameter storage");
   console.log("  - Access points and security groups\n");
+
+  // Configure cross-account monitoring targets (controlled by pipeline)
+  const crossAccountTargets: CrossAccountTarget[] = [];
+
+  // Cross-account targets are configured via CDK context from the pipeline
+  // This allows the pipeline to control monitoring configuration dynamically
+  const crossAccountConfig = app.node.tryGetContext("crossAccountTargets");
+
+  if (crossAccountConfig && Array.isArray(crossAccountConfig)) {
+    console.log("🔗 Cross-account monitoring targets configured by pipeline:");
+    crossAccountConfig.forEach((target: CrossAccountTarget) => {
+      console.log(
+        `   ${target.envName}: ${target.privateIp}:${target.port} (${target.targetType})`
+      );
+      crossAccountTargets.push(target);
+    });
+    console.log("");
+  } else {
+    console.log("ℹ️  Cross-account monitoring: Not configured by pipeline");
+    console.log("   Pipeline can set targets via CDK context\n");
+  }
 
   const monitoringEfsStack = new MonitoringEfsStack(
     app,
@@ -361,7 +385,7 @@ if (config.isMonitoringAccount) {
       ...stackProps,
       envName: config.envName,
       vpc: networkingStack.vpc,
-      // TODO: Add crossAccountTargets when available
+      crossAccountTargets, // Add cross-account targets
       enableEncryption: true,
     }
   );
@@ -369,10 +393,11 @@ if (config.isMonitoringAccount) {
 
   // Layer 1: Infrastructure
   console.log("Layer 1: Infrastructure Stack");
-  console.log("  - ECS Cluster: pipeline-monitoring-cluster");
-  console.log("  - Auto Scaling Group: 1x t3.small");
+  console.log("  - ECS Cluster with EC2 capacity");
+  console.log("  - Auto Scaling Group (constrained to EFS AZ)");
   console.log("  - Application Load Balancer");
-  console.log("  - Uses external EFS from MonitoringEfsStack\n");
+  console.log("  - Centralized UserData management");
+  console.log("  - CloudWatch Log Groups\n");
 
   const monitoringInfraStack = new MonitoringInfraStack(
     app,
@@ -401,11 +426,12 @@ if (config.isMonitoringAccount) {
     monitoringEfsStack.fileSystem.fileSystemId
   );
 
-  // Layer 2: Services //
+  // Layer 2: Services
   console.log("Layer 2: Services Stack");
-  console.log("  - Prometheus (metrics collection)");
-  console.log("  - Grafana (visualization)");
-  console.log("  - Node Exporter (host metrics)\n");
+  console.log("  - Prometheus (metrics collection & storage)");
+  console.log("  - Grafana (visualization & dashboards)");
+  console.log("  - Node Exporter (host metrics)");
+  console.log("  - Load balancer routing & health checks\n");
 
   const monitoringServiceStack = new MonitoringServiceStack(
     app,
@@ -421,14 +447,17 @@ if (config.isMonitoringAccount) {
   );
   monitoringServiceStack.addDependency(monitoringInfraStack);
 
-  console.log("✅ Pipeline monitoring stacks configured");
+  console.log("✅ Centralized monitoring stacks configured");
+  console.log("   Deploy order: EFS → Infrastructure → Services\n");
 } else {
-  // Application accounts: Local monitoring (CloudWatch + ECS monitoring)
-  console.log(`\n📊 Local monitoring for ${config.envName}`);
-  console.log(`   isMonitoringAccount: ${config.isMonitoringAccount}`);
-  console.log(`   This should be FALSE for application accounts\n`);
+  // ========================================
+  // APPLICATION ACCOUNT MONITORING
+  // ========================================
+  console.log(`\n📊 Application Account Monitoring: ${config.envName}`);
+  console.log(`   Account Type: Application (isMonitoringAccount: false)`);
+  console.log(`   Monitoring Type: CloudWatch + Cross-Account Integration\n`);
 
-  // CloudWatch Monitoring Stack
+  // CloudWatch Monitoring Stack (always deployed in application accounts)
   const monitoringStack = new MonitoringStack(
     app,
     `MonitoringStack-${config.envName}`,
@@ -445,38 +474,10 @@ if (config.isMonitoringAccount) {
   );
   monitoringStack.addDependency(computeStack);
 
-  // ECS Monitoring Stack (Prometheus + Grafana on ECS)
-  // CRITICAL: Only deploy in application accounts, NOT in monitoring accounts
-  if (!config.isMonitoringAccount) {
-    console.log(`   Adding ECS monitoring (Prometheus + Grafana)`);
-
-    // Import MonitoringEcsStack only when needed to avoid conflicts
-    const { MonitoringEcsStack } = require("../lib/stacks");
-
-    const monitoringEcsStack = new MonitoringEcsStack(
-      app,
-      `MonitoringEcsStack-${config.envName}`,
-      {
-        ...stackProps,
-        envName: config.envName,
-        vpc: networkingStack.vpc,
-        albDnsName: loadBalancerStack.alb.loadBalancer.loadBalancerDnsName,
-        // Enable EFS for persistent storage (data survives instance replacement)
-        enablePersistence: true,
-        // Optional: Restrict access to specific IPs for security
-        // allowedIpRanges: ['YOUR_IP/32'],
-      }
-    );
-
-    monitoringEcsStack.addDependency(networkingStack);
-    monitoringEcsStack.addDependency(loadBalancerStack);
-
-    console.log(`✅ Local ECS monitoring configured for ${config.envName}`);
-  } else {
-    console.log(`   Skipping ECS monitoring (this is a monitoring account)`);
-  }
-
-  console.log(`✅ Local monitoring configured for ${config.envName}`);
+  console.log(`✅ CloudWatch monitoring configured for ${config.envName}`);
+  console.log(
+    `   Metrics will be scraped by centralized monitoring via VPC peering\n`
+  );
 }
 
 // ========================================

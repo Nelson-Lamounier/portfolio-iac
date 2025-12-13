@@ -7,7 +7,7 @@ import { Template } from "aws-cdk-lib/assertions";
 import { NetworkingStack } from "../../lib/stacks/networking/networking-stack";
 import { LoadBalancerStack } from "../../lib/stacks/load-balancer/load-balancer-stack";
 import { ComputeStack } from "../../lib/stacks/compute/compute-stack";
-import { MonitoringEcsStack } from "../../lib/stacks/monitoring/monitoring-ecs-stack";
+// MonitoringEcsStack removed - use layered approach (MonitoringEfsStack + MonitoringInfraStack + MonitoringServiceStack)
 import { VpcConstruct } from "../../lib/constructs/networking/vpc-construct";
 import { CertificateStack } from "../../lib/stacks/networking/security/acm-stack";
 import { AcmCertificateConstruct } from "../../lib/constructs/networking/security/acm-certificate-construct";
@@ -110,33 +110,11 @@ export function createTestComputeStack(
 }
 
 /**
- * Creates a test MonitoringEcsStack with default test configuration
+ * MonitoringEcsStack has been removed in favor of the layered approach.
+ * Use MonitoringEfsStack + MonitoringInfraStack + MonitoringServiceStack instead.
+ *
+ * For testing, create individual layer stacks as needed.
  */
-export function createTestMonitoringEcsStack(
-  vpc: ec2.IVpc,
-  props?: Partial<{
-    envName: string;
-    account: string;
-    region: string;
-    albDnsName: string;
-  }>
-) {
-  const app = new cdk.App();
-  const stack = new MonitoringEcsStack(app, "TestMonitoringEcsStack", {
-    env: {
-      account: props?.account || TEST_CONSTANTS.DEFAULT_ACCOUNT,
-      region: props?.region || TEST_CONSTANTS.DEFAULT_REGION,
-    },
-    envName: props?.envName || TEST_CONSTANTS.DEFAULT_ENV_NAME,
-    vpc,
-    albDnsName: props?.albDnsName,
-  });
-  return {
-    app,
-    stack,
-    template: Template.fromStack(stack),
-  };
-}
 
 /**
  * Creates a test VpcConstruct in an isolated stack

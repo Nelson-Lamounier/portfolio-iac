@@ -10,3 +10,6 @@ export * from "./ecs";
 
 // Monitoring constructs
 export * from "./monitoring";
+
+// UserData constructs
+export * from "./user-data";
