@@ -167,6 +167,25 @@ export class SuppressionManager {
   }
 
   /**
+   * Monitoring Configuration Bucket Permissions
+   * For EC2 instances that need to access monitoring configuration files
+   */
+  static getMonitoringConfigBucketPermissions(): NagPackSuppression[] {
+    return [
+      {
+        id: "AwsSolutions-IAM5",
+        reason:
+          "Monitoring configuration bucket permissions use wildcard for objects within the monitoring config bucket. This allows EC2 instances to read configuration files (Prometheus configs, Grafana dashboards, etc.) stored in the bucket. The wildcard is scoped to the specific monitoring configuration bucket and permissions are read-only for operational configuration management.",
+        appliesTo: [
+          {
+            regex: "/^Resource::<ConfigBucket.*\\.Arn>\\/\\*$/",
+          },
+        ],
+      },
+    ];
+  }
+
+  /**
    * CloudWatch Logs Permissions
    * For services that need to write logs
    */
@@ -409,6 +428,7 @@ export class SuppressionManager {
         suppressions.push(...this.getPublicAccessSuppressions());
         suppressions.push(...this.getLoadBalancerSuppressions());
         suppressions.push(...this.getS3AssetPermissions());
+        suppressions.push(...this.getMonitoringConfigBucketPermissions());
         if (envName) {
           suppressions.push(...this.getCloudWatchLogsSuppressions(envName));
         }
