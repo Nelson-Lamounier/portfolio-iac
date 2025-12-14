@@ -111,7 +111,9 @@ export class EcsClusterConstruct extends Construct {
     this.cluster = new ecs.Cluster(this, "Cluster", {
       vpc,
       clusterName,
-      containerInsights: enableContainerInsights,
+      containerInsightsV2: enableContainerInsights
+        ? ecs.ContainerInsights.ENABLED
+        : ecs.ContainerInsights.DISABLED,
       enableFargateCapacityProviders: false, // Using EC2 for compute
       executeCommandConfiguration: enableExecuteCommand
         ? {
@@ -188,8 +190,8 @@ export class EcsClusterConstruct extends Construct {
           ? ec2.SubnetType.PUBLIC
           : ec2.SubnetType.PRIVATE_WITH_EGRESS,
       },
-      healthCheck: autoscaling.HealthCheck.ec2({
-        grace: cdk.Duration.seconds(300),
+      healthChecks: autoscaling.HealthChecks.ec2({
+        gracePeriod: cdk.Duration.seconds(300),
       }),
     });
 

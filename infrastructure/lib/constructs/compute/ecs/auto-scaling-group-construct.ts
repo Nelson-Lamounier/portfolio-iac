@@ -192,8 +192,8 @@ export class AutoScalingGroupConstruct extends Construct {
         vpcSubnets: {
           subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
         },
-        healthCheck: autoscaling.HealthCheck.ec2({
-          grace: cdk.Duration.seconds(300),
+        healthChecks: autoscaling.HealthChecks.ec2({
+          gracePeriod: cdk.Duration.seconds(300),
         }),
         updatePolicy: autoscaling.UpdatePolicy.rollingUpdate({
           maxBatchSize: 1,
