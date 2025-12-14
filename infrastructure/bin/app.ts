@@ -9,6 +9,7 @@ import * as cdk from "aws-cdk-lib";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import { Aspects } from "aws-cdk-lib";
 import { AwsSolutionsChecks } from "cdk-nag";
+
 import {
   NetworkingStack,
   ComputeStack,
@@ -58,7 +59,7 @@ if (process.env.ROOT_DOMAIN_NAME && process.env.HOSTED_ZONE_ID) {
         rootDomainName = undefined;
         hostedZoneId = undefined;
       }
-    } catch (error) {
+    } catch {
       // Parameters don't exist, continue without HTTPS
       rootDomainName = undefined;
       hostedZoneId = undefined;
@@ -222,7 +223,7 @@ if (process.env.CERTIFICATE_ARN) {
       console.log(`✓ Using certificate ARN from SSM Parameter Store`);
       console.log(`  Certificate: ${certificateArn}`);
     }
-  } catch (error) {
+  } catch {
     // Parameter doesn't exist
     certificateArn = undefined;
     console.log("⚠ Certificate ARN not configured - HTTPS will be disabled");
@@ -571,7 +572,7 @@ if (
       } else if (devVpcId) {
         console.log(`✓ Found Dev VPC ID in SSM: ${devVpcId}`);
       }
-    } catch (error) {
+    } catch {
       console.log("⚠ Could not lookup Dev VPC ID from SSM");
       devVpcId = undefined;
     }
