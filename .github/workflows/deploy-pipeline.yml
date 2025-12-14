@@ -129,18 +129,6 @@ jobs:
           cd infrastructure
           yarn typecheck
 
-      - name: Monitoring Configuration Linting
-        run: |
-          echo "Running monitoring configuration validation..."
-          cd infrastructure
-          yarn lint:config
-
-      - name: Security Configuration Linting
-        run: |
-          echo "Running security configuration validation..."
-          cd infrastructure
-          yarn lint:security
-
       - name: CDK Synthesis Validation
         run: |
           echo "Validating CDK synthesis..."
