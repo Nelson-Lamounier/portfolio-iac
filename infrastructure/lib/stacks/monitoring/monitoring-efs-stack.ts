@@ -4,7 +4,7 @@ import * as cdk from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as efs from "aws-cdk-lib/aws-efs";
 import * as iam from "aws-cdk-lib/aws-iam";
-import * as lambda from "aws-cdk-lib/aws-lambda";
+
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import { Construct } from "constructs";
 import { SuppressionManager } from "../../cdk-nag";
@@ -100,8 +100,8 @@ export class MonitoringEfsStack extends cdk.Stack {
         fileSystem: this.fileSystem,
         envName,
         path: "/monitoring",
-        posixUser: { uid: 0, gid: 0 },
-        creationAcl: { ownerUid: 0, ownerGid: 0, permissions: "755" },
+        posixUser: { uid: "0", gid: "0" },
+        creationAcl: { ownerUid: "0", ownerGid: "0", permissions: "755" },
       }
     );
 

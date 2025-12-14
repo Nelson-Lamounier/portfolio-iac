@@ -23,20 +23,20 @@ export interface EfsAccessPointConstructProps {
 
   /**
    * POSIX user for the access point
-   * @default { uid: 0, gid: 0 }
+   * @default { uid: "0", gid: "0" }
    */
   posixUser?: {
-    uid: number;
-    gid: number;
+    uid: string;
+    gid: string;
   };
 
   /**
    * Creation ACL for the root directory
-   * @default { ownerUid: 0, ownerGid: 0, permissions: "755" }
+   * @default { ownerUid: "0", ownerGid: "0", permissions: "755" }
    */
   creationAcl?: {
-    ownerUid: number;
-    ownerGid: number;
+    ownerUid: string;
+    ownerGid: string;
     permissions: string;
   };
 }
@@ -58,8 +58,8 @@ export class EfsAccessPointConstruct extends Construct {
       fileSystem,
       envName,
       path = "/monitoring",
-      posixUser = { uid: 0, gid: 0 },
-      creationAcl = { ownerUid: 0, ownerGid: 0, permissions: "755" },
+      posixUser = { uid: "0", gid: "0" },
+      creationAcl = { ownerUid: "0", ownerGid: "0", permissions: "755" },
     } = props;
 
     // Create EFS access point
