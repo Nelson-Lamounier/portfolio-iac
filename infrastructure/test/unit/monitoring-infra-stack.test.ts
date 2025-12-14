@@ -2,6 +2,7 @@
 
 import * as cdk from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
+import * as efs from "aws-cdk-lib/aws-efs";
 import { Template, Match } from "aws-cdk-lib/assertions";
 
 import { VpcConstruct } from "../../lib/constructs/networking/vpc-construct";
@@ -11,6 +12,9 @@ describe("MonitoringInfraStack", () => {
   let app: cdk.App;
   // let stack: cdk.Stack; // Unused in current tests
   let vpc: ec2.IVpc;
+  let mockFileSystem: efs.IFileSystem;
+  let mockAccessPoint: efs.IAccessPoint;
+  let mockSecurityGroup: ec2.ISecurityGroup;
 
   beforeEach(() => {
     app = new cdk.App();
@@ -25,6 +29,57 @@ describe("MonitoringInfraStack", () => {
       natGateways: 0,
     });
     vpc = vpcConstruct.vpc;
+
+    // Create mock EFS resources
+    const efsStack = new cdk.Stack(app, "TestEfsStack", {
+      env: {
+        account: "123456789012",
+        region: "eu-west-1",
+      },
+    });
+
+    // Create actual EFS file system for testing
+    mockFileSystem = new efs.FileSystem(efsStack, "TestFileSystem", {
+      vpc,
+      performanceMode: efs.PerformanceMode.GENERAL_PURPOSE,
+      throughputMode: efs.ThroughputMode.BURSTING,
+      encrypted: true,
+    });
+
+    mockAccessPoint = new efs.AccessPoint(efsStack, "TestAccessPoint", {
+      fileSystem: mockFileSystem,
+      path: "/monitoring",
+      creationInfo: {
+        ownerUid: 1000,
+        ownerGid: 1000,
+        permissions: "755",
+      },
+    });
+
+    mockSecurityGroup = new ec2.SecurityGroup(
+      efsStack,
+      "TestEfsSecurityGroup",
+      {
+        vpc,
+        description: "Test EFS Security Group",
+      }
+    );
+  });
+
+  // Helper function to create stack props with all required EFS resources
+  const createStackProps = (overrides: Partial<any> = {}) => ({
+    env: {
+      account: "123456789012",
+      region: "eu-west-1",
+    },
+    vpc,
+    envName: "pipeline",
+    efsStackName: "test-efs-stack",
+    fileSystem: mockFileSystem,
+    efsAccessPoint: mockAccessPoint,
+    efsAvailabilityZone: "eu-west-1a",
+    efsSecurityGroup: mockSecurityGroup,
+    ...overrides,
   });
 
   describe("Stack Creation", () => {
@@ -32,14 +87,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       expect(infraStack.stackName).toBe("MonitoringInfraStack-pipeline");
@@ -51,14 +99,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       const template = Template.fromStack(infraStack);
@@ -69,14 +110,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       const template = Template.fromStack(infraStack);
@@ -91,14 +125,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       expect(infraStack.configBucket).toBeDefined();
@@ -111,14 +138,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       const template = Template.fromStack(infraStack);
@@ -129,14 +149,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       const template = Template.fromStack(infraStack);
@@ -149,14 +162,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       const template = Template.fromStack(infraStack);
@@ -167,14 +173,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       const template = Template.fromStack(infraStack);
@@ -191,14 +190,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       expect(infraStack.fileSystem).toBeDefined();
@@ -211,14 +203,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       const template = Template.fromStack(infraStack);
@@ -229,14 +214,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       const template = Template.fromStack(infraStack);
@@ -249,14 +227,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       expect(infraStack.cluster).toBeDefined();
@@ -270,14 +241,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       const template = Template.fromStack(infraStack);
@@ -288,14 +252,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       const template = Template.fromStack(infraStack);
@@ -310,14 +267,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       expect(infraStack.autoScalingGroup).toBeDefined();
@@ -329,14 +279,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       const template = Template.fromStack(infraStack);
@@ -350,14 +293,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       const template = Template.fromStack(infraStack);
@@ -371,14 +307,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       expect(infraStack.taskLogGroup).toBeDefined();
@@ -391,14 +320,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       const template = Template.fromStack(infraStack);
@@ -409,14 +331,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       const template = Template.fromStack(infraStack);
@@ -432,14 +347,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       const template = Template.fromStack(infraStack);
@@ -453,14 +361,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       expect(infraStack.loadBalancer).toBeDefined();
@@ -471,14 +372,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       expect(infraStack.listener).toBeDefined();
@@ -491,14 +385,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       const template = Template.fromStack(infraStack);
@@ -510,14 +397,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       const template = Template.fromStack(infraStack);
@@ -534,14 +414,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       const template = Template.fromStack(infraStack);
@@ -554,14 +427,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       const template = Template.fromStack(infraStack);
@@ -583,14 +449,7 @@ describe("MonitoringInfraStack", () => {
       const infraStack = new MonitoringInfraStack(
         app,
         "MonitoringInfraStack-pipeline",
-        {
-          env: {
-            account: "123456789012",
-            region: "eu-west-1",
-          },
-          vpc,
-          envName: "pipeline",
-        }
+        createStackProps()
       );
 
       const template = Template.fromStack(infraStack);

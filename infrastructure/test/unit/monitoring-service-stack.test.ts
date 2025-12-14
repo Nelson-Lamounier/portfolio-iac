@@ -2,6 +2,7 @@
 
 import * as cdk from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
+import * as efs from "aws-cdk-lib/aws-efs";
 import { Template, Match } from "aws-cdk-lib/assertions";
 
 import { VpcConstruct } from "../../lib/constructs/networking/vpc-construct";
@@ -12,6 +13,9 @@ describe("MonitoringServiceStack", () => {
   let app: cdk.App;
   let vpc: ec2.IVpc;
   let infraStack: MonitoringInfraStack;
+  let mockFileSystem: efs.IFileSystem;
+  let mockAccessPoint: efs.IAccessPoint;
+  let mockSecurityGroup: ec2.ISecurityGroup;
 
   beforeEach(() => {
     app = new cdk.App();
@@ -27,6 +31,40 @@ describe("MonitoringServiceStack", () => {
     });
     vpc = vpcConstruct.vpc;
 
+    // Create mock EFS resources
+    const efsStack = new cdk.Stack(app, "TestEfsStack", {
+      env: {
+        account: "123456789012",
+        region: "eu-west-1",
+      },
+    });
+
+    mockFileSystem = new efs.FileSystem(efsStack, "TestFileSystem", {
+      vpc,
+      performanceMode: efs.PerformanceMode.GENERAL_PURPOSE,
+      throughputMode: efs.ThroughputMode.BURSTING,
+      encrypted: true,
+    });
+
+    mockAccessPoint = new efs.AccessPoint(efsStack, "TestAccessPoint", {
+      fileSystem: mockFileSystem,
+      path: "/monitoring",
+      creationInfo: {
+        ownerUid: 1000,
+        ownerGid: 1000,
+        permissions: "755",
+      },
+    });
+
+    mockSecurityGroup = new ec2.SecurityGroup(
+      efsStack,
+      "TestEfsSecurityGroup",
+      {
+        vpc,
+        description: "Test EFS Security Group",
+      }
+    );
+
     infraStack = new MonitoringInfraStack(
       app,
       "MonitoringInfraStack-pipeline",
@@ -37,6 +75,11 @@ describe("MonitoringServiceStack", () => {
         },
         vpc,
         envName: "pipeline",
+        efsStackName: "test-efs-stack",
+        fileSystem: mockFileSystem,
+        efsAccessPoint: mockAccessPoint,
+        efsAvailabilityZone: "eu-west-1a",
+        efsSecurityGroup: mockSecurityGroup,
       }
     );
   });

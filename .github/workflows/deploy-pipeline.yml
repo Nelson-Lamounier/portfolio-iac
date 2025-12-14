@@ -11,7 +11,7 @@ on:
     #   - "infrastructure/lib/stacks/monitoring/**"
     #   - "infrastructure/lib/stacks/networking/**"
     #   - "infrastructure/bin/app.ts"
-    #   - ".github/workflows/deploy-pipeline.yml"
+    #   - ".github/workflows/deploy-pipeline.yml" // test
   workflow_dispatch:
     inputs:
       stack:

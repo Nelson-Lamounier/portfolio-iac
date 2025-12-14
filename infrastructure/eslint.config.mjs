@@ -26,7 +26,6 @@ export default [
       "dist/**",
       "build/**",
       "playground/**",
-      "test/**",
     ],
   },
 
@@ -119,6 +118,45 @@ export default [
       "no-console": "off",
       "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-require-imports": "off",
+    },
+  },
+
+  // Test files configuration
+  {
+    files: ["test/**/*.ts", "test/**/*.js"],
+    languageOptions: {
+      parser: tseslint.parser,
+      parserOptions: {
+        ecmaVersion: "latest",
+        sourceType: "module",
+        tsconfigRootDir: __dirname,
+        project: "./tsconfig.test.json",
+      },
+      globals: {
+        // Jest globals
+        describe: "readonly",
+        test: "readonly",
+        it: "readonly",
+        expect: "readonly",
+        beforeAll: "readonly",
+        afterAll: "readonly",
+        beforeEach: "readonly",
+        afterEach: "readonly",
+        jest: "readonly",
+      },
+    },
+    plugins: {
+      "@typescript-eslint": tseslint.plugin,
+      import: importPlugin,
+    },
+    rules: {
+      "no-console": "off",
+      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-require-imports": "off",
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_" },
+      ],
     },
   },
 

@@ -30,8 +30,11 @@
   },
   "packageManager": "yarn@4.0.0",
   "devDependencies": {
-    "eslint": "^9.32.0",
-    "turbo": "^2.6.1"
+    "@eslint/js": "^9.39.2",
+    "eslint": "^9.39.2",
+    "turbo": "^2.6.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.49.0"
   },
   "dependencies": {
     "quokka-treasure-chest": "^1.0.3"

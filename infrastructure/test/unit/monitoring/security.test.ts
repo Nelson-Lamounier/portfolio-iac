@@ -209,10 +209,9 @@ describe("Security Configuration", () => {
   // ---------------------------------------------------------------------------
   describe("Encryption", () => {
     test("EBS volumes are encrypted", () => {
-      // Check Launch Configuration for EBS encryption
-      testSetup.template.hasResourceProperties(
-        "AWS::AutoScaling::LaunchConfiguration",
-        {
+      // Check Launch Template for EBS encryption (modern approach)
+      testSetup.template.hasResourceProperties("AWS::EC2::LaunchTemplate", {
+        LaunchTemplateData: {
           BlockDeviceMappings: Match.arrayWith([
             Match.objectLike({
               Ebs: {
@@ -220,8 +219,8 @@ describe("Security Configuration", () => {
               },
             }),
           ]),
-        }
-      );
+        },
+      });
     });
 
     test("CloudWatch log groups have encryption", () => {
@@ -246,11 +245,8 @@ describe("Security Configuration", () => {
     });
 
     test("monitoring instances network configuration", () => {
-      // Check Launch Configuration exists (public IP assignment is environment-dependent)
-      testSetup.template.resourceCountIs(
-        "AWS::AutoScaling::LaunchConfiguration",
-        1
-      );
+      // Check Launch Template exists (modern approach)
+      testSetup.template.resourceCountIs("AWS::EC2::LaunchTemplate", 1);
 
       // Verify instances are in Auto Scaling Group with proper VPC configuration
       testSetup.template.hasResourceProperties(

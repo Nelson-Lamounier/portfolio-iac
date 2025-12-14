@@ -103,6 +103,7 @@ export class MonitoringInfraStack extends cdk.Stack {
       enableExecuteCommand: true,
       logRetention: logs.RetentionDays.TWO_WEEKS,
       clusterName: `${envName}-monitoring-cluster`,
+      additionalSecurityGroups: [efsSecurityGroup],
     });
 
     this.cluster = ecsClusterConstruct.cluster;
@@ -127,33 +128,8 @@ export class MonitoringInfraStack extends cdk.Stack {
     // ========================================================================
     // AUTO SCALING GROUP
     // ========================================================================
-    // Use cluster.addCapacity to match original implementation (creates LaunchConfiguration)
-    this.autoScalingGroup = this.cluster.addCapacity("MonitoringCapacity", {
-      instanceType: ec2.InstanceType.of(
-        ec2.InstanceClass.T3,
-        ec2.InstanceSize.SMALL
-      ),
-      minCapacity: 1,
-      maxCapacity: 1,
-      desiredCapacity: 1,
-      machineImage: ecs.EcsOptimizedImage.amazonLinux2(),
-      vpcSubnets: {
-        subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
-      },
-      blockDevices: [
-        {
-          deviceName: "/dev/xvda",
-          volume: autoscaling.BlockDeviceVolume.ebs(30, {
-            volumeType: autoscaling.EbsDeviceVolumeType.GP3,
-            encrypted: true,
-            deleteOnTermination: true,
-          }),
-        },
-      ],
-    });
-
-    // Add EFS security group to ASG
-    this.autoScalingGroup.addSecurityGroup(efsSecurityGroup);
+    // Use the ASG from the ECS cluster construct (avoids duplicate ASGs)
+    this.autoScalingGroup = ecsClusterConstruct.asg;
 
     // Add EFS permissions to ASG role
     this.autoScalingGroup.role.addToPrincipalPolicy(

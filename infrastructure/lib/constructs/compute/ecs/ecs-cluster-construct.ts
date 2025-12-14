@@ -6,6 +6,7 @@ import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
+import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 
 export interface EcsClusterConstructProps {
@@ -72,6 +73,12 @@ export interface EcsClusterConstructProps {
    * @default false
    */
   usePublicSubnets?: boolean;
+
+  /**
+   * Additional security groups to attach to the instances
+   * @default []
+   */
+  additionalSecurityGroups?: ec2.ISecurityGroup[];
 }
 
 /**
@@ -98,6 +105,7 @@ export class EcsClusterConstruct extends Construct {
       maxCapacity = 1,
       desiredCapacity = 1,
       usePublicSubnets = false,
+      additionalSecurityGroups = [],
     } = props;
 
     // Create CloudWatch log group for cluster
@@ -148,6 +156,21 @@ export class EcsClusterConstruct extends Construct {
       ],
     });
 
+    // Suppress CDK Nag warnings for AWS managed policies
+    // These are standard AWS managed policies required for ECS instances
+    NagSuppressions.addResourceSuppressions(instanceRole, [
+      {
+        id: "AwsSolutions-IAM4",
+        reason:
+          "AWS managed policies are required for ECS instances to function properly",
+        appliesTo: [
+          "Policy::arn:<AWS::Partition>:iam::aws:policy/AmazonSSMManagedInstanceCore",
+          "Policy::arn:<AWS::Partition>:iam::aws:policy/CloudWatchAgentServerPolicy",
+          "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role",
+        ],
+      },
+    ]);
+
     // Create user data for ECS instances
     const userData = ec2.UserData.forLinux();
     userData.addCommands(
@@ -166,7 +189,10 @@ export class EcsClusterConstruct extends Construct {
       machineImage: ecs.EcsOptimizedImage.amazonLinux2(),
       userData,
       role: instanceRole,
-      securityGroup: this.securityGroup,
+      // Use securityGroup (singular) if no additional groups, securityGroups (plural) if additional groups
+      ...(additionalSecurityGroups.length > 0
+        ? { securityGroups: [this.securityGroup, ...additionalSecurityGroups] }
+        : { securityGroup: this.securityGroup }),
       blockDevices: [
         {
           deviceName: "/dev/xvda",

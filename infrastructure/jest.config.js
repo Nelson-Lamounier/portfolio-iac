@@ -1,7 +1,6 @@
 /** @format */
 
 module.exports = {
-  preset: "ts-jest",
   testEnvironment: "node",
   roots: ["<rootDir>/test"],
   testMatch: ["**/*.test.ts"],
@@ -13,14 +12,22 @@ module.exports = {
   forceExit: true,
   setupFilesAfterEnv: ["<rootDir>/test/jest-setup.ts"],
   transform: {
-    "^.+\\.ts$": [
-      "ts-jest",
-      {
-        tsconfig: "tsconfig.test.json",
-      },
-    ],
+    "^.+\\.(ts|tsx)$": "babel-jest",
   },
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/lib/$1",
+  },
+  moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json", "node"],
+  // Ensure Jest globals are available
+  globals: {
+    "ts-jest": {
+      useESM: false,
+    },
+  },
+  // Add Jest environment for better TypeScript support
+  testEnvironmentOptions: {
+    node: {
+      globals: true,
+    },
   },
 };
