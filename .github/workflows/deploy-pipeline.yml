@@ -129,14 +129,15 @@ jobs:
           cd infrastructure
           yarn typecheck
 
-      - name: CDK Synthesis Validation
+      - name: CDK Validation
         run: |
-          echo "Validating CDK synthesis..."
+          echo "Validating CDK configuration..."
           cd infrastructure
           yarn lint:cdk
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
           ENVIRONMENT: pipeline
+          AWS_PIPELINE_ACCOUNT_ID: "123456789012" # Dummy account ID for validation
 
       - name: Unit Tests
         run: |

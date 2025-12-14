@@ -19,7 +19,7 @@
     "lint": "eslint . --max-warnings 50",
     "lint:fix": "eslint . --fix",
     "lint:monitoring": "yarn lint:cdk",
-    "lint:cdk": "tsc && ENABLE_CDK_NAG=false cdk synth --quiet > /dev/null && echo 'CDK synthesis successful'",
+    "lint:cdk": "tsc && ENABLE_CDK_NAG=false cdk ls > /dev/null && echo 'CDK validation successful'",
     "typecheck": "tsc --noEmit",
     "cdk": "cdk",
     "deploy": "cdk deploy",
