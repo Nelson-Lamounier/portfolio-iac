@@ -57,6 +57,10 @@
         "bin/**",
         "*.ts",
         "*.js",
+        "*.tsx",
+        "*.jsx",
+        "eslint.config.js",
+        "eslint.config.mjs",
         ".eslintrc*",
         "tsconfig.json",
         "scripts/**"
