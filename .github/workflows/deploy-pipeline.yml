@@ -62,12 +62,12 @@ jobs:
           STACK="${{ github.event.inputs.stack }}"
 
           if [[ -n "$STACK" && ! " $ALLOWED_STACKS " =~ " $STACK " ]]; then
-            echo "❌ Invalid stack selection: $STACK"
+            echo "ERROR: Invalid stack selection: $STACK"
             echo "Allowed values: $ALLOWED_STACKS"
             exit 1
           fi
 
-          echo "✅ Stack input validation passed"
+          echo "SUCCESS: Stack input validation passed"
 
       - name: Security - Check for Secrets in Code
         run: |
@@ -76,15 +76,15 @@ jobs:
 
           # Check for common secret patterns (excluding this workflow file)
           if grep -r -E "(password|secret|key|token).*=.*['\"][^'\"]{8,}" --exclude="*.yml" --exclude="*.yaml" . || true; then
-            echo "⚠️ Potential hardcoded secrets detected. Please review."
+            echo "WARNING: Potential hardcoded secrets detected. Please review."
           fi
 
           # Check for AWS account IDs in code
           if grep -r -E "[0-9]{12}" --exclude-dir=".git" --exclude="*.yml" --exclude="*.yaml" . || true; then
-            echo "⚠️ Potential AWS account IDs found in code. Ensure they're properly masked."
+            echo "WARNING: Potential AWS account IDs found in code. Ensure they're properly masked."
           fi
 
-          echo "✅ Security scan completed"
+          echo "SUCCESS: Security scan completed"
 
   # ============================================================================
   # JOB 1: Lint & Quality Checks
@@ -120,32 +120,32 @@ jobs:
 
       - name: TypeScript Linting
         run: |
-          echo "🔍 Running TypeScript/ESLint checks..."
+          echo "Running TypeScript/ESLint checks..."
           yarn turbo lint --filter=infrastructure
 
       - name: Type Checking
         run: |
-          echo "🔍 Running TypeScript type checking..."
+          echo "Running TypeScript type checking..."
           cd infrastructure
           yarn typecheck
 
       - name: Monitoring Configuration Linting
         run: |
-          echo "🔍 Running monitoring configuration validation..."
+          echo "Running monitoring configuration validation..."
           cd infrastructure
           chmod +x scripts/lint-monitoring-config.js
           yarn lint:config
 
       - name: Security Configuration Linting
         run: |
-          echo "🔍 Running security configuration validation..."
+          echo "Running security configuration validation..."
           cd infrastructure
           chmod +x scripts/lint-security-config.js
           yarn lint:security
 
       - name: CDK Synthesis Validation
         run: |
-          echo "🔍 Validating CDK synthesis..."
+          echo "Validating CDK synthesis..."
           cd infrastructure
           yarn lint:cdk
         env:
@@ -154,37 +154,37 @@ jobs:
 
       - name: Unit Tests
         run: |
-          echo "🧪 Running unit tests..."
+          echo "Running unit tests..."
           cd infrastructure
           yarn test:ci
 
       - name: Monitoring Infrastructure Tests
         run: |
-          echo "🔍 Running monitoring-specific tests..."
+          echo "Running monitoring-specific tests..."
           cd infrastructure
           yarn test:monitoring
 
       - name: Security Compliance Tests
         run: |
-          echo "🛡️ Running security compliance tests..."
+          echo "Running security compliance tests..."
           cd infrastructure
           yarn test:security
 
       - name: Integration Tests
         run: |
-          echo "🔗 Running integration tests..."
+          echo "Running integration tests..."
           cd infrastructure
           yarn test:integration
 
       - name: Generate Test Coverage Report
         if: always()
         run: |
-          echo "📊 Generating test coverage report..."
+          echo "Generating test coverage report..."
           cd infrastructure
 
           # Generate coverage summary if tests ran
           if [ -f "coverage/coverage-summary.json" ]; then
-            echo "## 🧪 Test Coverage Summary" >> ../test-coverage-report.md
+            echo "## Test Coverage Summary" >> ../test-coverage-report.md
             echo "" >> ../test-coverage-report.md
             
             # Extract coverage percentages using node
@@ -203,7 +203,7 @@ jobs:
             " >> ../test-coverage-report.md
             echo "" >> ../test-coverage-report.md
           else
-            echo "## 🧪 Test Coverage Summary" >> ../test-coverage-report.md
+            echo "## Test Coverage Summary" >> ../test-coverage-report.md
             echo "- Coverage data not available" >> ../test-coverage-report.md
           fi
 
@@ -220,7 +220,7 @@ jobs:
 
       - name: Shell Script Linting
         run: |
-          echo "🔍 Running shell script validation..."
+          echo "Running shell script validation..."
 
           # Install shellcheck
           sudo apt-get update -qq
@@ -229,12 +229,12 @@ jobs:
           # Find and lint shell scripts
           find scripts -name "*.sh" -type f | while read -r script; do
             echo "Linting $script..."
-            shellcheck "$script" || echo "⚠️ Shellcheck issues found in $script"
+            shellcheck "$script" || echo "WARNING: Shellcheck issues found in $script"
           done
 
       - name: YAML/JSON Linting
         run: |
-          echo "🔍 Running YAML/JSON validation..."
+          echo "Running YAML/JSON validation..."
 
           # Install yamllint
           pip install yamllint
@@ -242,18 +242,18 @@ jobs:
           # Lint workflow files
           find .github/workflows -name "*.yml" -o -name "*.yaml" | while read -r file; do
             echo "Linting $file..."
-            yamllint "$file" || echo "⚠️ YAML issues found in $file"
+            yamllint "$file" || echo "WARNING: YAML issues found in $file"
           done
 
           # Validate JSON files
           find . -name "*.json" -not -path "./node_modules/*" -not -path "./.turbo/*" | while read -r file; do
             echo "Validating $file..."
-            python -m json.tool "$file" > /dev/null || echo "⚠️ JSON syntax error in $file"
+            python -m json.tool "$file" > /dev/null || echo "WARNING: JSON syntax error in $file"
           done
 
       - name: Documentation Linting
         run: |
-          echo "🔍 Running documentation validation..."
+          echo "Running documentation validation..."
 
           # Check for required documentation files
           required_docs=(
@@ -264,32 +264,32 @@ jobs:
 
           for doc in "${required_docs[@]}"; do
             if [ -f "$doc" ]; then
-              echo "✅ Found required documentation: $doc"
+              echo "SUCCESS: Found required documentation: $doc"
             else
-              echo "⚠️ Missing required documentation: $doc"
+              echo "WARNING: Missing required documentation: $doc"
             fi
           done
 
           # Check for broken links in markdown files (basic check)
           find docs -name "*.md" | while read -r file; do
             if grep -q "](.*\.md)" "$file"; then
-              echo "📄 $file contains internal links - manual verification recommended"
+              echo "INFO: $file contains internal links - manual verification recommended"
             fi
           done
 
       - name: Generate Linting Report
         if: always()
         run: |
-          echo "📊 Generating comprehensive linting report..."
+          echo "Generating comprehensive linting report..."
 
           cat > linting-report.md << 'EOF'
-          # 🔍 Code Quality & Linting Report
+          # Code Quality & Linting Report
 
           **Timestamp**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
           **Branch**: ${{ github.ref_name }}
           **Commit**: ${{ github.sha }}
 
-          ## ✅ Completed Checks
+          ## Completed Checks
 
           ### Code Quality
           - **TypeScript Linting**: ESLint with security rules
@@ -310,13 +310,13 @@ jobs:
           - **Required Files**: Documentation completeness check
           - **Link Validation**: Internal reference verification
 
-          ## 🛡️ Security Validations
-          - ✅ No hardcoded secrets detected
-          - ✅ Security group configurations validated
-          - ✅ IAM role configurations checked
-          - ✅ Encryption settings verified
+          ## Security Validations
+          - No hardcoded secrets detected
+          - Security group configurations validated
+          - IAM role configurations checked
+          - Encryption settings verified
 
-          ## 📋 Recommendations
+          ## Recommendations
           - Keep dependencies updated regularly
           - Review and address any linting warnings
           - Ensure all new code follows established patterns
@@ -422,8 +422,8 @@ jobs:
           echo "::add-mask::$CURRENT_ACCOUNT"
 
           # Log non-sensitive information only
-          echo "✅ Pipeline Account ID: ***MASKED***"
-          echo "✅ Region: ${{ env.AWS_REGION }}"
+          echo "SUCCESS: Pipeline Account ID: ***MASKED***"
+          echo "SUCCESS: Region: ${{ env.AWS_REGION }}"
 
       - name: Get Dev Account VPC Info
         id: dev-info
@@ -674,7 +674,7 @@ jobs:
             echo "Mount Targets: $MOUNT_TARGETS"
             
             if [ "$EFS_STATE" = "available" ] && [ "$MOUNT_TARGETS" -gt "0" ]; then
-              echo "✅ EFS is ready for use"
+              echo "SUCCESS: EFS is ready for use"
             else
               echo "EFS may not be fully ready yet"
             fi
@@ -932,7 +932,7 @@ jobs:
 
       - name: Initialize Configuration
         run: |
-          echo "⚙️ Initializing monitoring configuration..."
+          echo "Initializing monitoring configuration..."
           chmod +x ./scripts/monitoring/init-config.sh
           ./scripts/monitoring/init-config.sh --env pipeline
 
@@ -1016,16 +1016,16 @@ jobs:
           export ALB_DNS="$ALB_DNS"
 
           # Run comprehensive health check
-          echo "🔍 Running comprehensive monitoring infrastructure validation..."
+          echo "Running comprehensive monitoring infrastructure validation..."
           echo ""
 
           # Capture health check results
           if ./scripts/monitoring/monitoring-health-check.sh; then
             echo "health_check_status=success" >> $GITHUB_OUTPUT
-            echo "✅ All monitoring infrastructure health checks passed!"
+            echo "SUCCESS: All monitoring infrastructure health checks passed!"
           else
             echo "health_check_status=failed" >> $GITHUB_OUTPUT
-            echo "❌ Some monitoring infrastructure health checks failed!"
+            echo "ERROR: Some monitoring infrastructure health checks failed!"
             exit 1
           fi
         env:
@@ -1037,7 +1037,7 @@ jobs:
         if: vars.AWS_ACCOUNT_ID_DEV != ''
         continue-on-error: true
         run: |
-          echo "🔗 Testing cross-account connectivity..."
+          echo "Testing cross-account connectivity..."
 
           # Security: Mask dev account ID
           echo "::add-mask::${{ vars.AWS_ACCOUNT_ID_DEV }}"
@@ -1046,7 +1046,7 @@ jobs:
           DEV_VPC_ID="${{ needs.validate-setup.outputs.dev_vpc_id }}"
 
           if [ -n "$DEV_VPC_ID" ] && [ "$DEV_VPC_ID" != "NOT_FOUND" ]; then
-            echo "✅ Dev VPC connectivity configured"
+            echo "SUCCESS: Dev VPC connectivity configured"
             
             # Check VPC peering status
             PEERING_ID=$(aws ec2 describe-vpc-peering-connections \
@@ -1055,19 +1055,19 @@ jobs:
               --output text 2>/dev/null || echo "")
             
             if [ -n "$PEERING_ID" ] && [ "$PEERING_ID" != "None" ]; then
-              echo "✅ VPC Peering connection active: ***MASKED***"
+              echo "SUCCESS: VPC Peering connection active: ***MASKED***"
               echo "::add-mask::$PEERING_ID"
             else
-              echo "⚠️ No active VPC peering connection found"
+              echo "WARNING: No active VPC peering connection found"
             fi
           else
-            echo "ℹ️ Cross-account monitoring not configured"
+            echo "INFO: Cross-account monitoring not configured"
           fi
 
       - name: Generate Health Check Report
         if: always()
         run: |
-          echo "📊 Generating monitoring health check report..."
+          echo "Generating monitoring health check report..."
 
           # Create detailed health report
           cat > health-report.md << 'EOF'
@@ -1081,7 +1081,7 @@ jobs:
 
           ## Infrastructure Components
 
-          ### ✅ Successfully Validated
+          ### Successfully Validated
           - Monitoring EFS Stack deployment
           - Monitoring Infrastructure Stack deployment  
           - Monitoring Services Stack deployment
@@ -1089,22 +1089,22 @@ jobs:
           - Grafana health endpoints
           - ECS service status
 
-          ### 🔍 Validation Details
+          ### Validation Details
           - **Prometheus**: Health and readiness checks passed
           - **Grafana**: API health check passed
           - **ECS Services**: All services running with desired task count
           - **Network**: VPC and security group configurations validated
           - **Storage**: EFS mount targets and access points verified
 
-          ### 🔗 Cross-Account Features
+          ### Cross-Account Features
           - **VPC Peering**: ${{ vars.AWS_ACCOUNT_ID_DEV != '' && 'Configured' || 'Not configured' }}
           - **Dev Environment**: ${{ vars.AWS_ACCOUNT_ID_DEV != '' && 'Connected' || 'Standalone deployment' }}
 
           ## Security Validation
-          - ✅ All sensitive data masked in logs
-          - ✅ OIDC authentication used
-          - ✅ Minimal IAM permissions applied
-          - ✅ Environment protection enabled
+          - All sensitive data masked in logs
+          - OIDC authentication used
+          - Minimal IAM permissions applied
+          - Environment protection enabled
 
           ---
           *This report was generated automatically by the monitoring pipeline*
@@ -1115,7 +1115,7 @@ jobs:
       - name: Generate Summary
         if: always()
         run: |
-          echo "## 🚀 Pipeline Monitoring Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "## Pipeline Monitoring Deployment" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Stack**: ${{ github.event.inputs.stack }}" >> $GITHUB_STEP_SUMMARY
           echo "**Account**: ***MASKED***" >> $GITHUB_STEP_SUMMARY
@@ -1126,17 +1126,17 @@ jobs:
 
           # Health check status badge
           if [ "${{ steps.health-check.outputs.health_check_status }}" == "success" ]; then
-            echo "### ✅ Deployment Status: SUCCESS" >> $GITHUB_STEP_SUMMARY
+            echo "### Deployment Status: SUCCESS" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "All monitoring infrastructure components are healthy and operational." >> $GITHUB_STEP_SUMMARY
           else
-            echo "### ❌ Deployment Status: FAILED" >> $GITHUB_STEP_SUMMARY
+            echo "### Deployment Status: FAILED" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "Some monitoring infrastructure components failed health checks. Review the logs above." >> $GITHUB_STEP_SUMMARY
           fi
 
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔗 Access Information" >> $GITHUB_STEP_SUMMARY
+          echo "### Access Information" >> $GITHUB_STEP_SUMMARY
 
           ALB_DNS="${{ needs.deploy-monitoring-infra.outputs.alb_dns }}"
           if [ -n "$ALB_DNS" ]; then
@@ -1149,14 +1149,14 @@ jobs:
           fi
 
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🛡️ Security Features" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ All sensitive data masked in logs" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ OIDC authentication used" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Environment protection enabled" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Comprehensive health validation performed" >> $GITHUB_STEP_SUMMARY
+          echo "### Security Features" >> $GITHUB_STEP_SUMMARY
+          echo "- All sensitive data masked in logs" >> $GITHUB_STEP_SUMMARY
+          echo "- OIDC authentication used" >> $GITHUB_STEP_SUMMARY
+          echo "- Environment protection enabled" >> $GITHUB_STEP_SUMMARY
+          echo "- Comprehensive health validation performed" >> $GITHUB_STEP_SUMMARY
 
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📊 Infrastructure Components" >> $GITHUB_STEP_SUMMARY
+          echo "### Infrastructure Components" >> $GITHUB_STEP_SUMMARY
           echo "- **Networking Stack**: Deployed" >> $GITHUB_STEP_SUMMARY
           echo "- **EFS Storage**: Deployed and validated" >> $GITHUB_STEP_SUMMARY
           echo "- **Monitoring Infrastructure**: Deployed with ALB" >> $GITHUB_STEP_SUMMARY
@@ -1164,7 +1164,7 @@ jobs:
           echo "- **Cross-Account**: ${{ vars.AWS_ACCOUNT_ID_DEV != '' && 'Configured' || 'Standalone' }}" >> $GITHUB_STEP_SUMMARY
 
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "> ⚠️ **Security Note**: Actual URLs and resource IDs are masked in logs for security. Access the AWS Console to view real endpoints." >> $GITHUB_STEP_SUMMARY
+          echo "> **Security Note**: Actual URLs and resource IDs are masked in logs for security. Access the AWS Console to view real endpoints." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "---" >> $GITHUB_STEP_SUMMARY
           echo "*Generated by automated monitoring pipeline validation*" >> $GITHUB_STEP_SUMMARY
@@ -1228,7 +1228,7 @@ jobs:
           echo "5. Destroying NetworkingStack-pipeline..."
           ENVIRONMENT=pipeline yarn cdk destroy NetworkingStack-pipeline --force 2>/dev/null || true
 
-          echo "✅ All stacks destroyed"
+          echo "SUCCESS: All stacks destroyed"
         env:
           AWS_PIPELINE_ACCOUNT_ID: ${{ needs.validate-setup.outputs.pipeline_account_id }}
           DEV_VPC_ID: ${{ needs.validate-setup.outputs.dev_vpc_id }}
