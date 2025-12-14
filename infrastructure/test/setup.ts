@@ -31,8 +31,7 @@ afterAll(() => {
   delete process.env.NODE_ENV;
 });
 
-// Increase timeout for CDK synthesis tests
-jest.setTimeout(30000);
+// Timeout is handled by Jest config
 
 // AWS SDK mocking removed - not needed for CDK unit tests
 // CDK unit tests only test CloudFormation template generation, not actual AWS API calls
@@ -45,9 +44,9 @@ const originalConsoleError = console.error;
 beforeEach(() => {
   // Suppress CDK output during tests unless explicitly enabled
   if (!process.env.VERBOSE_TESTS) {
-    console.log = jest.fn();
-    console.warn = jest.fn();
-    console.error = jest.fn();
+    console.log = () => {};
+    console.warn = () => {};
+    console.error = () => {};
   }
 });
 

@@ -18,7 +18,7 @@
     "experimentalDecorators": true,
     "strictPropertyInitialization": false,
     "typeRoots": ["./node_modules/@types"],
-    "types": ["jest", "node"],
+    "types": ["node"],
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
@@ -30,7 +30,6 @@
     "lib/**/*",
     "config/**/*",
     "types/**/*",
-    "test/**/*",
     "lambda/**/*"
   ],
   "exclude": ["node_modules", "cdk.out"]

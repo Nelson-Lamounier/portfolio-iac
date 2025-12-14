@@ -1,14 +1,15 @@
 /** @format */
 
-/// <reference types="jest" />
-
-// Jest setup file to ensure types are available
-// Global test configuration
-jest.setTimeout(10000);
+// Jest setup file - simplified to avoid TypeScript issues
+// Global test configuration is handled by Jest config
 
 // Suppress console output during tests unless explicitly enabled
 if (!process.env.VERBOSE_TESTS) {
-  console.log = jest.fn();
-  console.warn = jest.fn();
-  console.error = jest.fn();
+  const originalLog = console.log;
+  const originalWarn = console.warn;
+  const originalError = console.error;
+
+  console.log = () => {};
+  console.warn = () => {};
+  console.error = () => {};
 }

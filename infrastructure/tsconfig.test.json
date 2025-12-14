@@ -3,7 +3,8 @@
   "compilerOptions": {
     "types": ["jest", "node"],
     "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "typeRoots": ["./node_modules/@types", "./types"]
   },
   "include": ["test/**/*", "lib/**/*", "bin/**/*", "config/**/*", "types/**/*"],
   "exclude": ["node_modules", "cdk.out"]
