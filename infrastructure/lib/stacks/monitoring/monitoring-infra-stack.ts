@@ -11,6 +11,7 @@ import * as events_targets from "aws-cdk-lib/aws-events-targets";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
 import { Construct } from "constructs";
+
 import { SuppressionManager } from "../../cdk-nag";
 import { MonitoringConfigBucketConstruct } from "../../constructs/monitoring";
 import { MonitoringUserDataConstruct } from "../../constructs/compute/user-data/monitoring-user-data-construct";
@@ -66,13 +67,13 @@ export class MonitoringInfraStack extends cdk.Stack {
       vpc,
       envName,
       efsStackName,
-      allowedIpRanges = ["0.0.0.0/0"],
+      // allowedIpRanges = ["0.0.0.0/0"], // Not used in current implementation
       certificateArn,
       enableHttps = false,
       enableAccessLogs = false,
       fileSystem,
-      efsAccessPoint,
-      efsAvailabilityZone,
+      // efsAccessPoint, // Not used in current implementation
+      // efsAvailabilityZone, // Not used in current implementation
       efsSecurityGroup,
       efsInitializationComplete,
     } = props;
@@ -244,7 +245,7 @@ export class MonitoringInfraStack extends cdk.Stack {
     // ========================================================================
     // CLOUDWATCH EVENT RULE FOR ECS EVENTS
     // ========================================================================
-    const ecsEventRule = new events.Rule(this, "EcsEventRule", {
+    new events.Rule(this, "EcsEventRule", {
       description: "Capture ECS task state changes for monitoring",
       eventPattern: {
         source: ["aws.ecs"],

@@ -1,5 +1,7 @@
 /** @format */
 
+import * as path from "path";
+
 import * as cdk from "aws-cdk-lib";
 import * as autoscaling from "aws-cdk-lib/aws-autoscaling";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
@@ -9,8 +11,8 @@ import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as s3_assets from "aws-cdk-lib/aws-s3-assets";
-import * as path from "path";
 import { Construct } from "constructs";
+
 import {
   GrafanaConstruct,
   PrometheusConstruct,
@@ -169,7 +171,10 @@ export class MonitoringEcsStack extends cdk.Stack {
    *
    * Uses One Zone storage class for cost optimization (~47% cheaper than Standard)
    */
-  private createEfsFileSystem(vpc: ec2.IVpc, envName: string): efs.FileSystem {
+  private createEfsFileSystem(
+    _vpc: ec2.IVpc,
+    _envName: string
+  ): efs.FileSystem {
     throw new Error(
       "DEPRECATED: MonitoringEcsStack.createEfsFileSystem() is deprecated. " +
         "Use MonitoringEfsStack for new deployments to avoid multiple EFS instances. " +

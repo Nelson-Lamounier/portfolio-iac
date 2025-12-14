@@ -2,7 +2,8 @@
 
 /// <reference types="jest" />
 
-import { Template, Match } from "aws-cdk-lib/assertions";
+import { Match } from "aws-cdk-lib/assertions";
+
 import { createTestMonitoringInfraStack } from "../../helpers/test-helpers";
 
 describe("MonitoringInfraStack", () => {

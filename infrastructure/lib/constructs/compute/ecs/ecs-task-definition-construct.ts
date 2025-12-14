@@ -1,12 +1,10 @@
 /** @format */
 
-import * as cdk from "aws-cdk-lib";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as iam from "aws-cdk-lib/aws-iam";
 import { Tags } from "aws-cdk-lib";
 import { Construct } from "constructs";
-import { NagSuppressions } from "cdk-nag";
-import { SuppressionManager } from "../../../cdk-nag";
+
 import { EcsTaskExecutionRole } from "../../iam";
 
 export interface ContainerConfig {
@@ -93,7 +91,7 @@ export class EcsTaskDefinitionConstruct extends Construct {
   /**
    * Add a container to the task definition
    */
-  private addContainer(config: ContainerConfig, envName: string): void {
+  private addContainer(config: ContainerConfig, _envName: string): void {
     const container = this.taskDefinition.addContainer(config.name, {
       image: config.image,
       logging: config.logStreamPrefix

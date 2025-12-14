@@ -3,12 +3,13 @@
 import * as cdk from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import { Template, Match } from "aws-cdk-lib/assertions";
+
 import { VpcConstruct } from "../../lib/constructs/networking/vpc-construct";
 import { MonitoringInfraStack } from "../../lib/stacks/monitoring/monitoring-infra-stack";
 
 describe("MonitoringInfraStack", () => {
   let app: cdk.App;
-  let stack: cdk.Stack;
+  // let stack: cdk.Stack; // Unused in current tests
   let vpc: ec2.IVpc;
 
   beforeEach(() => {

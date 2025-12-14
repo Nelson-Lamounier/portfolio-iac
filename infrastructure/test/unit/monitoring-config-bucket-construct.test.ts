@@ -2,6 +2,7 @@
 
 import * as cdk from "aws-cdk-lib";
 import { Template, Match } from "aws-cdk-lib/assertions";
+
 import { MonitoringConfigBucketConstruct } from "../../lib/constructs/monitoring/monitoring-config-bucket-construct";
 
 describe("MonitoringConfigBucketConstruct", () => {

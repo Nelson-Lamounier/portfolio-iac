@@ -5,6 +5,7 @@ import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as logs from "aws-cdk-lib/aws-logs";
 import { Tags } from "aws-cdk-lib";
 import { Construct } from "constructs";
+
 import { EcsTaskExecutionRole } from "../../iam";
 
 export interface NodeExporterConstructProps {

@@ -34,17 +34,10 @@ export interface SubnetConstructProps {
 export class SubnetConstruct extends Construct {
   public readonly subnet: ec2.ISubnet;
 
-  constructor(scope: Construct, id: string, props: SubnetConstructProps) {
+  constructor(scope: Construct, id: string, _props: SubnetConstructProps) {
     super(scope, id);
 
-    const {
-      vpc,
-      availabilityZone,
-      cidrBlock,
-      subnetType,
-      name,
-      mapPublicIpOnLaunch = false,
-    } = props;
+    // Props are available but not used in this reference implementation
 
     // Note: CDK's Vpc construct handles subnet creation automatically
     // This construct is provided for reference and custom scenarios

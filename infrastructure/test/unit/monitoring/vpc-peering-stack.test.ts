@@ -24,7 +24,7 @@ describe("VpcPeeringStack", () => {
       });
 
       // Create test VPC
-      const vpc = new cdk.aws_ec2.Vpc(stack, "TestVpc", {
+      const _vpc = new cdk.aws_ec2.Vpc(stack, "TestVpc", {
         ipAddresses: cdk.aws_ec2.IpAddresses.cidr("10.0.0.0/16"),
         maxAzs: 2,
         subnetConfiguration: [
@@ -48,7 +48,7 @@ describe("VpcPeeringStack", () => {
         CidrBlock: "10.0.0.0/16",
       });
 
-      expect(vpc.vpcId).toBeDefined();
+      expect(_vpc.vpcId).toBeDefined();
     });
 
     test("VPC has correct subnet configuration", () => {
@@ -56,7 +56,7 @@ describe("VpcPeeringStack", () => {
         env: { account: "559780231478", region: "eu-west-1" },
       });
 
-      const vpc = new cdk.aws_ec2.Vpc(stack, "TestVpc", {
+      new cdk.aws_ec2.Vpc(stack, "TestVpc", {
         ipAddresses: cdk.aws_ec2.IpAddresses.cidr("10.0.0.0/16"),
         maxAzs: 2,
         subnetConfiguration: [

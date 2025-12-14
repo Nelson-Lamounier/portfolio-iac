@@ -2,7 +2,6 @@
 
 import * as cdk from "aws-cdk-lib";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
-import * as certificatemanager from "aws-cdk-lib/aws-certificatemanager";
 import { Construct } from "constructs";
 
 export interface AlbListenerConstructProps {

@@ -2,6 +2,7 @@
 
 import * as cdk from "aws-cdk-lib";
 import { Template, Match } from "aws-cdk-lib/assertions";
+
 import { CrossAccountMonitoringRole } from "../../lib/constructs/iam/cross-account-monitoring-role";
 import { VpcPeeringAcceptorRole } from "../../lib/constructs/iam/vpc-peering-acceptor-role";
 import { EventBridgeCrossAccountRole } from "../../lib/constructs/iam/eventbridge-cross-account-role";

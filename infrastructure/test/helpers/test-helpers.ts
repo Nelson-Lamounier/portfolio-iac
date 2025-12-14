@@ -5,6 +5,7 @@ import * as cdk from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as efs from "aws-cdk-lib/aws-efs";
 import { Template, Match } from "aws-cdk-lib/assertions";
+
 import { MonitoringEfsStack } from "../../lib/stacks/monitoring/monitoring-efs-stack";
 import { MonitoringInfraStack } from "../../lib/stacks/monitoring/monitoring-infra-stack";
 
@@ -122,7 +123,7 @@ export function createTestMonitoringEfsStack(
   };
 
   // Create EFS Access Point
-  const accessPoint = new efs.AccessPoint(stack, "MonitoringEfsAccessPoint", {
+  new efs.AccessPoint(stack, "MonitoringEfsAccessPoint", {
     fileSystem: fileSystem,
     path: "/monitoring",
     createAcl: {

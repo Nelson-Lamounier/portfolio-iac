@@ -3,6 +3,7 @@
 import * as cdk from "aws-cdk-lib";
 import { Template } from "aws-cdk-lib/assertions";
 import * as ecr from "aws-cdk-lib/aws-ecr";
+
 import { EcrConstruct } from "../../lib/constructs/storage/ecr-construct";
 
 describe("EcrConstruct", () => {

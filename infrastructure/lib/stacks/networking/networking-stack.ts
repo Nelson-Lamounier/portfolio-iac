@@ -4,6 +4,7 @@ import * as cdk from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import { Construct } from "constructs";
+
 import { VpcConstruct } from "../../constructs/networking/vpc/vpc-construct";
 import { VpcFlowLogsConstruct } from "../../constructs/networking/vpc/vpc-flow-logs-construct";
 import { SubnetConfigurationHelper } from "../../constructs/networking/vpc/subnet-construct";

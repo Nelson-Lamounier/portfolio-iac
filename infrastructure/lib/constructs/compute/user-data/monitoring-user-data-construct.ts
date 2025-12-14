@@ -3,6 +3,7 @@
 import * as autoscaling from "aws-cdk-lib/aws-autoscaling";
 import * as s3_assets from "aws-cdk-lib/aws-s3-assets";
 import { Construct } from "constructs";
+
 import { CrossAccountTarget } from "../../../types";
 
 export interface MonitoringUserDataProps {

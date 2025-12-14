@@ -3,8 +3,8 @@
 import * as cdk from "aws-cdk-lib";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
-import * as iam from "aws-cdk-lib/aws-iam";
 import { Template, Match } from "aws-cdk-lib/assertions";
+
 import { LambdaFunctionConstruct } from "../../lib/constructs/compute/lambda/lambda-function-construct";
 
 describe("LambdaFunctionConstruct", () => {

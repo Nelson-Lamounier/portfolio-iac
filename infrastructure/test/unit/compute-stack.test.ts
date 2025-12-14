@@ -3,6 +3,7 @@
 import { App, Stack } from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import { Template, Match, Capture } from "aws-cdk-lib/assertions";
+
 import { ComputeStack } from "../../lib/stacks/compute/compute-stack";
 
 describe("ComputeStack Test Suite", () => {

@@ -4,6 +4,7 @@ import * as cdk from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as route53 from "aws-cdk-lib/aws-route53";
 import { Template } from "aws-cdk-lib/assertions";
+
 import { NetworkingStack } from "../../lib/stacks/networking/networking-stack";
 import { LoadBalancerStack } from "../../lib/stacks/load-balancer/load-balancer-stack";
 import { ComputeStack } from "../../lib/stacks/compute/compute-stack";

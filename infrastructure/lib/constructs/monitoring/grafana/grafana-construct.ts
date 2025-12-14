@@ -6,6 +6,7 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
 import { Construct } from "constructs";
 import { NagSuppressions } from "cdk-nag";
+
 import { EcsTaskDefinitionConstruct } from "../../compute/ecs/ecs-task-definition-construct";
 import { EcsServiceConstruct } from "../../compute/ecs/ecs-service-construct";
 

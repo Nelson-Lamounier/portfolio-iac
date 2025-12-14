@@ -62,7 +62,7 @@ export class EfsSecurityGroupConstruct extends Construct {
     });
 
     // Add ingress rules for NFS traffic from allowed CIDRs
-    allowedCidrs.forEach((cidr, index) => {
+    allowedCidrs.forEach((cidr, _index) => {
       this.securityGroup.addIngressRule(
         ec2.Peer.ipv4(cidr),
         ec2.Port.tcp(2049),
@@ -71,7 +71,7 @@ export class EfsSecurityGroupConstruct extends Construct {
     });
 
     // Add ingress rules for NFS traffic from allowed security groups
-    allowedSecurityGroups.forEach((sg, index) => {
+    allowedSecurityGroups.forEach((sg, _index) => {
       this.securityGroup.addIngressRule(
         ec2.Peer.securityGroupId(sg.securityGroupId),
         ec2.Port.tcp(2049),

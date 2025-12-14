@@ -2,17 +2,13 @@
 
 // test/unit/monitoring/comprehensive-monitoring.test.ts
 import { Template, Match } from "aws-cdk-lib/assertions";
+
 import {
   createTestMonitoringEfsStack,
   createTestMonitoringInfraStack,
   createTestMonitoringServiceStack,
   assertNoPublicIngress,
-  assertAllResourcesTagged,
-  assertMonitoringSecurityCompliance,
   assertMonitoringNetworking,
-  assertCrossAccountAccess,
-  assertCostOptimization,
-  MONITORING_TEST_CONSTANTS,
   disableCdkNag,
 } from "../../helpers/test-helpers";
 
@@ -25,14 +21,14 @@ describe("Comprehensive Monitoring Infrastructure Tests", () => {
   // ---------------------------------------------------------------------------
   describe("MonitoringEfsStack", () => {
     let template: Template;
-    let stack: any;
+    // let stack: any; // Unused in current tests
 
     beforeEach(() => {
       const result = createTestMonitoringEfsStack({
         envName: "pipeline",
       });
       template = result.template;
-      stack = result.stack;
+      // stack = result.stack; // Unused in current tests
     });
 
     test("creates encrypted EFS file system", () => {

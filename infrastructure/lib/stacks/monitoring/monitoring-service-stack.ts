@@ -4,10 +4,10 @@ import * as cdk from "aws-cdk-lib";
 import * as autoscaling from "aws-cdk-lib/aws-autoscaling";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecs from "aws-cdk-lib/aws-ecs";
-import * as efs from "aws-cdk-lib/aws-efs";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as logs from "aws-cdk-lib/aws-logs";
 import { Construct } from "constructs";
+
 import {
   GrafanaConstruct,
   PrometheusConstruct,
@@ -50,8 +50,13 @@ export class MonitoringServiceStack extends cdk.Stack {
   ) {
     super(scope, id, props);
 
-    const { cluster, autoScalingGroup, loadBalancer, listener, envName } =
-      props;
+    const {
+      cluster,
+      // autoScalingGroup, // Not used in current implementation
+      loadBalancer,
+      listener,
+      envName,
+    } = props;
 
     // ========================================================================
     // ECS SERVICES

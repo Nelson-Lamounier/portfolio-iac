@@ -4,6 +4,7 @@
 import * as cdk from "aws-cdk-lib";
 import { Annotations, Match } from "aws-cdk-lib/assertions";
 import { AwsSolutionsChecks } from "cdk-nag";
+
 import { MonitoringInfraStack } from "../../../lib/stacks/monitoring/monitoring-infra-stack";
 import { createTestMonitoringInfraStack } from "../../helpers/test-helpers";
 
@@ -175,7 +176,8 @@ describe("CDK Nag Compliance", () => {
     // Test that CDK Nag respects the ENABLE_CDK_NAG environment variable
     delete process.env.ENABLE_CDK_NAG;
 
-    const testApp = new cdk.App();
+    // Test that CDK Nag respects the ENABLE_CDK_NAG environment variable
+    // const testApp = new cdk.App(); // Unused - using existing test setup
     const testStack = createTestMonitoringInfraStack({
       envName: "test-disabled",
       account: "123456789012",

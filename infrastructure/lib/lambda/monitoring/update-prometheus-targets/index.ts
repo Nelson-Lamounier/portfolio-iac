@@ -90,7 +90,7 @@ async function getEnvironmentTargets(): Promise<EnvironmentTarget[]> {
         targets.push({ ...env, ip });
         console.log(`✓ ${env.environment}: ${ip}`);
       }
-    } catch (error) {
+    } catch {
       console.warn(`⚠ ${env.environment}: not found or not running`);
     }
   }

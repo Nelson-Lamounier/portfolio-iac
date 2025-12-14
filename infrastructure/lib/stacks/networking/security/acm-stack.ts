@@ -4,6 +4,7 @@ import * as cdk from "aws-cdk-lib";
 import * as route53 from "aws-cdk-lib/aws-route53";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import { Construct } from "constructs";
+
 import { AcmCertificateConstruct } from "../../../constructs/networking/security/acm-certificate-construct";
 import { SuppressionManager } from "../../../cdk-nag";
 

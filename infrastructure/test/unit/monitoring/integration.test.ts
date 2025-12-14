@@ -3,6 +3,7 @@
 // test/monitoring/integration.test.ts
 import * as cdk from "aws-cdk-lib";
 import { Template } from "aws-cdk-lib/assertions";
+
 import { MonitoringInfraStack } from "../../../lib/stacks/monitoring/monitoring-infra-stack";
 import { createTestMonitoringInfraStack } from "../../helpers/test-helpers";
 

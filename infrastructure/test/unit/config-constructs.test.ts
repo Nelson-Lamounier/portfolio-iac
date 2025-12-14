@@ -4,7 +4,8 @@ import * as cdk from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecr from "aws-cdk-lib/aws-ecr";
 import * as ecs from "aws-cdk-lib/aws-ecs";
-import { Template, Match } from "aws-cdk-lib/assertions";
+import { Template } from "aws-cdk-lib/assertions";
+
 import { SsmParametersConstruct } from "../../lib/constructs/config/ssm-parameters-construct";
 import { StackOutputsConstruct } from "../../lib/constructs/config/stack-outputs-construct";
 

@@ -7,6 +7,7 @@ import * as cr from "aws-cdk-lib/custom-resources";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import { Construct } from "constructs";
 import { NagSuppressions } from "cdk-nag";
+
 import { LambdaFunctionConstruct } from "../compute/lambda";
 
 export interface VpcPeeringConstructProps {
@@ -176,7 +177,7 @@ export class VpcPeeringConstruct extends Construct {
    */
   private createPeeringProvider(
     peerRoleArn: string,
-    region: string
+    _region: string
   ): cr.Provider {
     const lambdaFunction = new LambdaFunctionConstruct(
       this,
@@ -258,7 +259,7 @@ export class VpcPeeringConstruct extends Construct {
    */
   private createUpdateRoutesProvider(
     peerRoleArn: string,
-    region: string
+    _region: string
   ): cr.Provider {
     const lambdaFunction = new LambdaFunctionConstruct(
       this,

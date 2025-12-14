@@ -2,8 +2,9 @@
 
 /// <reference types="jest" />
 
-import * as cdk from "aws-cdk-lib";
+// import * as cdk from "aws-cdk-lib"; // Unused import
 import { Template, Match } from "aws-cdk-lib/assertions";
+
 import {
   createTestMonitoringServiceStack,
   disableCdkNag,
