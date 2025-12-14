@@ -4,7 +4,8 @@
   "private": true,
   "workspaces": [
     "frontend",
-    "infrastructure"
+    "infrastructure",
+    "monitoring"
   ],
   "scripts": {
     "build": "turbo run build",
@@ -18,7 +19,14 @@
     "infra:build": "turbo run build --filter=infrastructure",
     "infra:test": "turbo run test --filter=infrastructure",
     "infra:synth": "yarn workspace infrastructure synth",
-    "infra:deploy": "yarn workspace infrastructure deploy"
+    "infra:deploy": "yarn workspace infrastructure deploy",
+    "monitoring:build": "turbo run build --filter=monitoring",
+    "monitoring:test": "turbo run test --filter=monitoring",
+    "monitoring:synth": "yarn workspace monitoring synth",
+    "monitoring:deploy": "yarn workspace monitoring deploy",
+    "monitoring:deploy:efs": "yarn workspace monitoring deploy:efs",
+    "monitoring:deploy:infra": "yarn workspace monitoring deploy:infra",
+    "monitoring:deploy:services": "yarn workspace monitoring deploy:services"
   },
   "packageManager": "yarn@4.0.0",
   "devDependencies": {

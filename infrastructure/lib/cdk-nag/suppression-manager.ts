@@ -58,7 +58,7 @@ export class SuppressionManager {
         appliesTo: [
           {
             regex:
-              "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+              "/^Resource::arn:<AWS::Partition>:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
           },
         ],
       },
@@ -229,7 +229,7 @@ export class SuppressionManager {
         appliesTo: [
           {
             regex:
-              "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+              "/^Resource::arn:<AWS::Partition>:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
           },
         ],
       },

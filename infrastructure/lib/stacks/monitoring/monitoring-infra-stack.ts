@@ -6,28 +6,30 @@ import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as efs from "aws-cdk-lib/aws-efs";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
+import * as events from "aws-cdk-lib/aws-events";
+import * as events_targets from "aws-cdk-lib/aws-events-targets";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
 import { Construct } from "constructs";
 import { SuppressionManager } from "../../cdk-nag";
 import { MonitoringConfigBucketConstruct } from "../../constructs/monitoring";
 import { MonitoringUserDataConstruct } from "../../constructs/compute/user-data/monitoring-user-data-construct";
-
+import { EcsClusterConstruct } from "../../constructs/compute/ecs";
 import {
-  AlbConstruct,
+  ApplicationLoadBalancerConstruct,
   AlbListenerConstruct,
 } from "../../constructs/networking/alb";
 
 /**
- * LAYER 1: Monitoring Infrastructure Stack Testing
+ * LAYER 1: Monitoring Infrastructure Stack (Refactored)
  *
- * This stack contains long-lived infrastructure resources that rarely change: // Test
- * - VPC references
- * - ECS Cluster
- * - EC2 Auto Scaling Group
- * - Application Load Balancer
- * - Security Groups
- * - IAM Roles
+ * This stack contains long-lived infrastructure resources using standardized
+ * constructs following DevOps best practices:
+ * - ECS Cluster with Container Insights
+ * - EC2 Auto Scaling Group with proper configuration
+ * - Application Load Balancer with listeners
+ * - Security Groups and IAM Roles
+ * - CloudWatch Log Groups
  *
  * Deploy: Only when infrastructure changes (rare)
  * Depends on: NetworkingStack, MonitoringEfsStack
@@ -51,17 +53,11 @@ export interface MonitoringInfraStackProps extends cdk.StackProps {
 export class MonitoringInfraStack extends cdk.Stack {
   public readonly cluster: ecs.Cluster;
   public readonly autoScalingGroup: autoscaling.AutoScalingGroup;
-  public readonly fileSystem: efs.IFileSystem;
   public readonly loadBalancer: elbv2.ApplicationLoadBalancer;
   public readonly listener: elbv2.ApplicationListener;
   public readonly taskLogGroup: logs.LogGroup;
   public readonly eventLogGroup: logs.LogGroup;
-  public readonly efsAccessPoint: efs.IAccessPoint;
   public readonly configBucket: MonitoringConfigBucketConstruct;
-  public readonly alb: AlbConstruct;
-  public readonly listeners: AlbListenerConstruct;
-  public readonly efsAvailabilityZone: string;
-  private readonly efsStackName: string;
 
   constructor(scope: Construct, id: string, props: MonitoringInfraStackProps) {
     super(scope, id, props);
@@ -72,8 +68,8 @@ export class MonitoringInfraStack extends cdk.Stack {
       efsStackName,
       allowedIpRanges = ["0.0.0.0/0"],
       certificateArn,
-      enableHttps = !!certificateArn,
-      enableAccessLogs = true,
+      enableHttps = false,
+      enableAccessLogs = false,
       fileSystem,
       efsAccessPoint,
       efsAvailabilityZone,
@@ -81,165 +77,57 @@ export class MonitoringInfraStack extends cdk.Stack {
       efsInitializationComplete,
     } = props;
 
-    // Store external EFS resources
-    this.fileSystem = fileSystem;
-    this.efsAccessPoint = efsAccessPoint;
-    this.efsAvailabilityZone = efsAvailabilityZone;
-    this.efsStackName = efsStackName;
-
-    // ========================================================================
-    // S3 BUCKET (Configuration Storage)
-    // ========================================================================
-    // Stores monitoring configuration files with versioning for rollback
-    this.configBucket = new MonitoringConfigBucketConstruct(
-      this,
-      "ConfigBucket",
-      {
-        envName,
-        enableVersioning: true,
-      }
-    );
-
-    // ========================================================================
-    // EFS FILE SYSTEM (External - from MonitoringEfsStack)
-    // ========================================================================
-    // EFS resources are now provided by the external MonitoringEfsStack
-    // This ensures proper separation of concerns and independent lifecycle management
-
-    // ========================================================================
-    // ECS CLUSTER
-    // ========================================================================
-    this.cluster = new ecs.Cluster(this, "MonitoringCluster", {
-      vpc,
-      clusterName: `${envName}-monitoring-cluster`,
-    });
-
-    // Enable Container Insights for enhanced monitoring
-    const cfnCluster = this.cluster.node.defaultChild as ecs.CfnCluster;
-    cfnCluster.clusterSettings = [
-      {
-        name: "containerInsights",
-        value: "enabled",
-      },
-    ];
-
-    // ========================================================================
-    // EC2 AUTO SCALING GROUP
-    // ========================================================================
-    // CRITICAL: ASG must be in same AZ as EFS One Zone mount target
-    this.autoScalingGroup = this.createAutoScalingGroup(
-      vpc,
-      envName,
-      this.fileSystem,
-      this.efsAvailabilityZone,
-      efsSecurityGroup,
-      efsInitializationComplete
-    );
-
     // ========================================================================
     // CLOUDWATCH LOG GROUPS
     // ========================================================================
-    this.taskLogGroup = new logs.LogGroup(this, "MonitoringTaskLogs", {
+    this.taskLogGroup = new logs.LogGroup(this, "TaskLogGroup", {
       logGroupName: `/ecs/${this.stackName}/tasks`,
       retention: logs.RetentionDays.TWO_WEEKS,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    this.eventLogGroup = new logs.LogGroup(this, "MonitoringEcsEvents", {
+    this.eventLogGroup = new logs.LogGroup(this, "EventLogGroup", {
       logGroupName: `/ecs/${this.stackName}/events`,
       retention: logs.RetentionDays.TWO_WEEKS,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    // ECS Event Rule
-    new cdk.aws_events.Rule(this, "MonitoringEcsEventRule", {
-      description: `Capture ECS events for ${envName} monitoring cluster`,
-      eventPattern: {
-        source: ["aws.ecs"],
-        detailType: [
-          "ECS Task State Change",
-          "ECS Container Instance State Change",
-          "ECS Service Action",
-        ],
-        detail: {
-          clusterArn: [this.cluster.clusterArn],
-        },
-      },
-      targets: [
-        new cdk.aws_events_targets.CloudWatchLogGroup(this.eventLogGroup),
-      ],
+    // ========================================================================
+    // ECS CLUSTER
+    // ========================================================================
+    const ecsClusterConstruct = new EcsClusterConstruct(this, "EcsCluster", {
+      vpc,
+      envName,
+      enableContainerInsights: true,
+      enableExecuteCommand: true,
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+      clusterName: `${envName}-monitoring-cluster`,
     });
 
-    // ========================================================================
-    // APPLICATION LOAD BALANCER
-    // ========================================================================
-    this.loadBalancer = this.createLoadBalancer(vpc, envName, allowedIpRanges);
-
-    if (enableHttps && certificateArn) {
-      // HTTPS listener with certificate
-      this.listener = this.loadBalancer.addListener("MonitoringListener", {
-        port: 443,
-        protocol: elbv2.ApplicationProtocol.HTTPS,
-        certificates: [elbv2.ListenerCertificate.fromArn(certificateArn)],
-        defaultAction: elbv2.ListenerAction.redirect({
-          path: "/grafana",
-          permanent: true,
-        }),
-      });
-
-      // HTTP to HTTPS redirect
-      this.loadBalancer.addListener("HttpRedirect", {
-        port: 80,
-        protocol: elbv2.ApplicationProtocol.HTTP,
-        defaultAction: elbv2.ListenerAction.redirect({
-          protocol: "HTTPS",
-          port: "443",
-          permanent: true,
-        }),
-      });
-    } else {
-      // HTTP only (fallback if no certificate)
-      this.listener = this.loadBalancer.addListener("MonitoringListener", {
-        port: 80,
-        protocol: elbv2.ApplicationProtocol.HTTP,
-        defaultAction: elbv2.ListenerAction.redirect({
-          path: "/grafana",
-          permanent: true,
-        }),
-      });
-    }
+    this.cluster = ecsClusterConstruct.cluster;
 
     // ========================================================================
-    // SECURITY GROUP CONNECTIONS
+    // USER DATA FOR EC2 INSTANCES
     // ========================================================================
-    this.configureSecurityGroups();
+    const userDataConstruct = new MonitoringUserDataConstruct(
+      this,
+      "UserData",
+      {
+        clusterName: this.cluster.clusterName,
+        fileSystemId: fileSystem.fileSystemId,
+        efsStackName,
+        envName,
+        region: cdk.Stack.of(this).region,
+        enableEfsMount: true,
+        enableEcsAgent: true,
+      }
+    );
 
     // ========================================================================
-    // OUTPUTS
+    // AUTO SCALING GROUP
     // ========================================================================
-    this.createOutputs(envName);
-
-    // ========================================================================
-    // CDK NAG SUPPRESSIONS & TAGS
-    // ========================================================================
-    SuppressionManager.applyToStack(this, "MonitoringInfraStack", envName);
-    cdk.Tags.of(this).add("Stack", "MonitoringInfra");
-    cdk.Tags.of(this).add("Environment", envName);
-    cdk.Tags.of(this).add("Layer", "Infrastructure");
-    cdk.Tags.of(this).add("ManagedBy", "CDK");
-  }
-
-  private createAutoScalingGroup(
-    vpc: ec2.IVpc,
-    envName: string,
-    fileSystem: efs.IFileSystem,
-    availabilityZone: string,
-    efsSecurityGroup: ec2.ISecurityGroup,
-    efsInitializationComplete: cdk.CustomResource
-  ): autoscaling.AutoScalingGroup {
-    // CRITICAL: Constrain ASG to same AZ as EFS One Zone mount target
-    // This ensures EC2 instances can always mount the EFS filesystem
-    const asg = this.cluster.addCapacity("MonitoringCapacity", {
+    // Use cluster.addCapacity to match original implementation (creates LaunchConfiguration)
+    this.autoScalingGroup = this.cluster.addCapacity("MonitoringCapacity", {
       instanceType: ec2.InstanceType.of(
         ec2.InstanceClass.T3,
         ec2.InstanceSize.SMALL
@@ -249,10 +137,8 @@ export class MonitoringInfraStack extends cdk.Stack {
       desiredCapacity: 1,
       machineImage: ecs.EcsOptimizedImage.amazonLinux2(),
       vpcSubnets: {
-        subnetType: ec2.SubnetType.PUBLIC,
-        availabilityZones: [availabilityZone], // Force same AZ as EFS
+        subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
       },
-      associatePublicIpAddress: true,
       blockDevices: [
         {
           deviceName: "/dev/xvda",
@@ -265,15 +151,11 @@ export class MonitoringInfraStack extends cdk.Stack {
       ],
     });
 
-    // Allow EFS access (connect to EFS security group)
-    asg.connections.allowTo(
-      efsSecurityGroup,
-      ec2.Port.tcp(2049),
-      "Allow ECS instances to mount EFS"
-    );
+    // Add EFS security group to ASG
+    this.autoScalingGroup.addSecurityGroup(efsSecurityGroup);
 
-    // Grant EFS IAM permissions for mounting with IAM authentication
-    asg.role.addToPrincipalPolicy(
+    // Add EFS permissions to ASG role
+    this.autoScalingGroup.role.addToPrincipalPolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         actions: [
@@ -285,20 +167,8 @@ export class MonitoringInfraStack extends cdk.Stack {
       })
     );
 
-    // Grant EFS describe permissions for debugging
-    asg.role.addToPrincipalPolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: [
-          "elasticfilesystem:DescribeFileSystems",
-          "elasticfilesystem:DescribeMountTargets",
-        ],
-        resources: ["*"], // These actions don't support resource-level permissions
-      })
-    );
-
-    // Grant SSM permissions to read monitoring configuration parameters
-    asg.role.addToPrincipalPolicy(
+    // Add SSM permissions to ASG role
+    this.autoScalingGroup.role.addToPrincipalPolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         actions: [
@@ -306,172 +176,155 @@ export class MonitoringInfraStack extends cdk.Stack {
           "ssm:GetParameters",
           "ssm:GetParametersByPath",
         ],
-        resources: [
-          `arn:aws:ssm:${this.region}:${this.account}:parameter/monitoring/${this.efsStackName}/*`,
-          `arn:aws:ssm:${this.region}:${this.account}:parameter/monitoring/*`,
-        ],
+        resources: ["*"],
       })
     );
 
-    // Grant S3 permissions for configuration assets (if needed)
-    asg.role.addToPrincipalPolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: ["s3:GetObject", "s3:ListBucket"],
-        resources: [
-          this.configBucket.bucket.bucketArn,
-          `${this.configBucket.bucket.bucketArn}/*`,
-        ],
-      })
-    );
+    // Apply user data to the Auto Scaling Group
+    userDataConstruct.applyToAutoScalingGroup(this.autoScalingGroup);
 
     // ========================================================================
-    // CENTRALIZED USER DATA MANAGEMENT
+    // APPLICATION LOAD BALANCER
     // ========================================================================
-    const userDataConstruct = new MonitoringUserDataConstruct(
+    const albConstruct = new ApplicationLoadBalancerConstruct(
       this,
-      "UserData",
-      {
-        envName,
-        region: this.region,
-        fileSystemId: fileSystem.fileSystemId,
-        efsStackName: this.efsStackName,
-        clusterName: this.cluster.clusterName,
-        enableEfsMount: true,
-        enableEcsAgent: true,
-        enableS3Assets: false, // Not needed for InfraStack
-      }
-    );
-
-    // Apply centralized UserData to Auto Scaling Group
-    userDataConstruct.applyToAutoScalingGroup(asg);
-
-    // Security group rules
-    asg.connections.allowToAnyIpv4(
-      ec2.Port.tcp(443),
-      "Allow HTTPS outbound for ECS agent"
-    );
-    asg.connections.allowInternally(
-      ec2.Port.tcp(9100),
-      "Allow Prometheus to scrape Node Exporter"
-    );
-    asg.connections.allowInternally(
-      ec2.Port.tcp(9090),
-      "Allow Grafana to query Prometheus"
-    );
-
-    cdk.Tags.of(this.cluster).add("Environment", envName);
-    cdk.Tags.of(this.cluster).add("Purpose", "Monitoring");
-
-    // CRITICAL: Ensure ASG waits for EFS initialization to complete
-    // This prevents EC2 instances from starting before the Lambda has created
-    // the SSM parameters containing the EFS setup script
-    asg.node.addDependency(efsInitializationComplete);
-
-    return asg;
-  }
-
-  private createLoadBalancer(
-    vpc: ec2.IVpc,
-    envName: string,
-    allowedIpRanges: string[]
-  ): elbv2.ApplicationLoadBalancer {
-    const albSecurityGroup = new ec2.SecurityGroup(this, "MonitoringAlbSg", {
-      vpc,
-      description: "Security group for monitoring ALB",
-      allowAllOutbound: true,
-    });
-
-    allowedIpRanges.forEach((ipRange) => {
-      // HTTP
-      albSecurityGroup.addIngressRule(
-        ec2.Peer.ipv4(ipRange),
-        ec2.Port.tcp(80),
-        `Allow HTTP access from ${ipRange}`
-      );
-
-      // HTTPS
-      albSecurityGroup.addIngressRule(
-        ec2.Peer.ipv4(ipRange),
-        ec2.Port.tcp(443),
-        `Allow HTTPS access from ${ipRange}`
-      );
-    });
-
-    const loadBalancer = new elbv2.ApplicationLoadBalancer(
-      this,
-      "MonitoringAlb",
+      "ApplicationLoadBalancer",
       {
         vpc,
+        envName,
         internetFacing: true,
+        enableAccessLogs,
+        idleTimeout: cdk.Duration.seconds(60),
+        deletionProtection: false,
         loadBalancerName: `${envName}-monitoring-alb`,
-        securityGroup: albSecurityGroup,
       }
     );
 
-    cdk.Tags.of(loadBalancer).add("Name", `${envName}-monitoring-alb`);
-    cdk.Tags.of(loadBalancer).add("Environment", envName);
-    cdk.Tags.of(loadBalancer).add("Purpose", "Monitoring");
+    this.loadBalancer = albConstruct.loadBalancer;
 
-    return loadBalancer;
-  }
-
-  private configureSecurityGroups(): void {
-    this.autoScalingGroup.connections.allowFrom(
-      this.loadBalancer,
-      ec2.Port.tcp(9090),
-      "Allow ALB to reach Prometheus"
-    );
-    this.autoScalingGroup.connections.allowFrom(
-      this.loadBalancer,
-      ec2.Port.tcp(3000),
-      "Allow ALB to reach Grafana"
-    );
-  }
-
-  private createOutputs(envName: string): void {
-    new cdk.CfnOutput(this, "ClusterArn", {
-      value: this.cluster.clusterArn,
-      description: "ECS Cluster ARN",
-      exportName: `${this.stackName}-cluster-arn`,
+    // ========================================================================
+    // ALB LISTENER
+    // ========================================================================
+    const listenerConstruct = new AlbListenerConstruct(this, "AlbListener", {
+      loadBalancer: this.loadBalancer,
+      envName,
+      port: enableHttps ? 443 : 80,
+      protocol: enableHttps
+        ? elbv2.ApplicationProtocol.HTTPS
+        : elbv2.ApplicationProtocol.HTTP,
+      certificateArn: enableHttps ? certificateArn : undefined,
+      redirectToHttps: false,
     });
 
+    this.listener = listenerConstruct.listener;
+
+    // Add HTTP to HTTPS redirect if HTTPS is enabled
+    if (enableHttps) {
+      new AlbListenerConstruct(this, "HttpRedirectListener", {
+        loadBalancer: this.loadBalancer,
+        envName,
+        port: 80,
+        protocol: elbv2.ApplicationProtocol.HTTP,
+        redirectToHttps: true,
+      });
+    }
+
+    // ========================================================================
+    // CONFIGURATION BUCKET
+    // ========================================================================
+    this.configBucket = new MonitoringConfigBucketConstruct(
+      this,
+      "ConfigBucket",
+      {
+        envName,
+        enableVersioning: true,
+      }
+    );
+
+    // ========================================================================
+    // CLOUDWATCH EVENT RULE FOR ECS EVENTS
+    // ========================================================================
+    const ecsEventRule = new events.Rule(this, "EcsEventRule", {
+      description: "Capture ECS task state changes for monitoring",
+      eventPattern: {
+        source: ["aws.ecs"],
+        detailType: [
+          "ECS Task State Change",
+          "ECS Container Instance State Change",
+          "ECS Service Action",
+        ],
+        detail: {
+          clusterArn: [this.cluster.clusterArn],
+        },
+      },
+      targets: [new events_targets.CloudWatchLogGroup(this.eventLogGroup)],
+    });
+
+    // ========================================================================
+    // DEPENDENCIES
+    // ========================================================================
+    // Ensure EFS initialization completes before creating infrastructure
+    this.cluster.node.addDependency(efsInitializationComplete);
+    this.autoScalingGroup.node.addDependency(efsInitializationComplete);
+
+    // ========================================================================
+    // CDK NAG SUPPRESSIONS & TAGS
+    // ========================================================================
+    SuppressionManager.applyToStack(this, "MonitoringInfraStack", envName);
+    cdk.Tags.of(this).add("Stack", "MonitoringInfra");
+    cdk.Tags.of(this).add("Environment", envName);
+    cdk.Tags.of(this).add("Layer", "Infrastructure");
+    cdk.Tags.of(this).add("ManagedBy", "CDK");
+
+    // ========================================================================
+    // STACK OUTPUTS
+    // ========================================================================
     new cdk.CfnOutput(this, "ClusterName", {
       value: this.cluster.clusterName,
-      description: "ECS Cluster name",
+      description: "ECS Cluster name for monitoring services",
       exportName: `${this.stackName}-cluster-name`,
     });
 
-    // EFS outputs are now handled by MonitoringEfsStack
-
-    new cdk.CfnOutput(this, "LoadBalancerDns", {
-      value: this.loadBalancer.loadBalancerDnsName,
-      description: "ALB DNS name",
-      exportName: `${this.stackName}-alb-dns`,
+    new cdk.CfnOutput(this, "ClusterArn", {
+      value: this.cluster.clusterArn,
+      description: "ECS Cluster ARN for monitoring services",
+      exportName: `${this.stackName}-cluster-arn`,
     });
 
     new cdk.CfnOutput(this, "LoadBalancerArn", {
       value: this.loadBalancer.loadBalancerArn,
-      description: "ALB ARN",
+      description: "Application Load Balancer ARN",
       exportName: `${this.stackName}-alb-arn`,
+    });
+
+    new cdk.CfnOutput(this, "LoadBalancerDns", {
+      value: this.loadBalancer.loadBalancerDnsName,
+      description: "Application Load Balancer DNS name",
+      exportName: `${this.stackName}-alb-dns`,
     });
 
     new cdk.CfnOutput(this, "ListenerArn", {
       value: this.listener.listenerArn,
-      description: "ALB Listener ARN",
+      description: "ALB Listener ARN for monitoring services",
       exportName: `${this.stackName}-listener-arn`,
     });
 
-    new cdk.CfnOutput(this, "GrafanaUrl", {
-      value: `http://${this.loadBalancer.loadBalancerDnsName}/grafana`,
-      description: "Grafana Dashboard URL",
-      exportName: `${this.stackName}-grafana-url`,
+    new cdk.CfnOutput(this, "MonitoringUrl", {
+      value: `http${enableHttps ? "s" : ""}://${this.loadBalancer.loadBalancerDnsName}`,
+      description: "Base URL for monitoring services",
+      exportName: `${this.stackName}-monitoring-url`,
     });
 
     new cdk.CfnOutput(this, "PrometheusUrl", {
-      value: `http://${this.loadBalancer.loadBalancerDnsName}/prometheus`,
+      value: `http${enableHttps ? "s" : ""}://${this.loadBalancer.loadBalancerDnsName}/prometheus`,
       description: "Prometheus URL",
       exportName: `${this.stackName}-prometheus-url`,
+    });
+
+    new cdk.CfnOutput(this, "GrafanaUrl", {
+      value: `http${enableHttps ? "s" : ""}://${this.loadBalancer.loadBalancerDnsName}/grafana`,
+      description: "Grafana URL",
+      exportName: `${this.stackName}-grafana-url`,
     });
   }
 }

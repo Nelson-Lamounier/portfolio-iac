@@ -1,90 +1,106 @@
 /** @format */
 
+import * as cdk from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecs from "aws-cdk-lib/aws-ecs";
-import * as autoscaling from "aws-cdk-lib/aws-autoscaling";
-import { Tags } from "aws-cdk-lib";
+import * as logs from "aws-cdk-lib/aws-logs";
 import { Construct } from "constructs";
-import { NagSuppressions } from "cdk-nag";
-import { SuppressionManager } from "../../../cdk-nag";
 
 export interface EcsClusterConstructProps {
+  /**
+   * VPC where the ECS cluster will be created
+   */
   vpc: ec2.IVpc;
+
+  /**
+   * Environment name for resource naming and tagging
+   */
   envName: string;
+
+  /**
+   * Whether to enable Container Insights
+   * @default true
+   */
+  enableContainerInsights?: boolean;
+
+  /**
+   * Whether to enable execute command capability
+   * @default true
+   */
+  enableExecuteCommand?: boolean;
+
+  /**
+   * CloudWatch log group retention period
+   * @default logs.RetentionDays.TWO_WEEKS
+   */
+  logRetention?: logs.RetentionDays;
+
+  /**
+   * Custom cluster name
+   * @default `${envName}-monitoring-cluster`
+   */
   clusterName?: string;
-  instanceType?: ec2.InstanceType;
-  minCapacity?: number;
-  maxCapacity?: number;
-  desiredCapacity?: number;
-  usePublicSubnets?: boolean;
 }
 
 /**
- * Reusable construct for creating an ECS Cluster with EC2 capacity
- * Handles cluster creation and Auto Scaling Group configuration // Testing
+ * Construct for creating an ECS cluster with monitoring-specific configuration
  */
 export class EcsClusterConstruct extends Construct {
   public readonly cluster: ecs.Cluster;
-  public readonly asg: autoscaling.AutoScalingGroup;
+  public readonly logGroup: logs.LogGroup;
 
   constructor(scope: Construct, id: string, props: EcsClusterConstructProps) {
     super(scope, id);
 
-    // Create ECS Cluster
-    this.cluster = new ecs.Cluster(this, "Cluster", {
-      vpc: props.vpc,
-      clusterName: props.clusterName || `ecs-cluster-${props.envName}`,
+    const {
+      vpc,
+      envName,
+      enableContainerInsights = true,
+      enableExecuteCommand = true,
+      logRetention = logs.RetentionDays.TWO_WEEKS,
+      clusterName = `${envName}-monitoring-cluster`,
+    } = props;
+
+    // Create CloudWatch log group for cluster
+    this.logGroup = new logs.LogGroup(this, "ClusterLogGroup", {
+      logGroupName: `/aws/ecs/cluster/${clusterName}`,
+      retention: logRetention,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    // Tag cluster
-    Tags.of(this.cluster).add("Environment", props.envName);
-    Tags.of(this.cluster).add("ManagedBy", "CDK");
-
-    // Add EC2 Capacity
-    this.asg = this.cluster.addCapacity("DefaultAutoScalingGroup", {
-      instanceType: props.instanceType || new ec2.InstanceType("t3.micro"),
-      minCapacity: props.minCapacity || 1,
-      maxCapacity: props.maxCapacity || 2,
-      desiredCapacity: props.desiredCapacity || 1,
-
-      // Place in PUBLIC or PRIVATE subnets based on configuration
-      vpcSubnets: {
-        subnetType:
-          props.usePublicSubnets !== false
-            ? ec2.SubnetType.PUBLIC
-            : ec2.SubnetType.PRIVATE_WITH_EGRESS,
-      },
-
-      // Auto-assign public IP if using public subnets
-      associatePublicIpAddress: props.usePublicSubnets !== false,
+    // Create ECS cluster
+    this.cluster = new ecs.Cluster(this, "MonitoringCluster", {
+      vpc,
+      clusterName,
+      containerInsights: enableContainerInsights,
+      enableFargateCapacityProviders: false, // Using EC2 for monitoring
+      executeCommandConfiguration: enableExecuteCommand
+        ? {
+            logging: ecs.ExecuteCommandLogging.OVERRIDE,
+            logConfiguration: {
+              cloudWatchLogGroup: this.logGroup,
+            },
+          }
+        : undefined,
     });
 
-    // Apply CDK Nag suppressions for Auto Scaling Group and all child resources
-    // These suppressions are managed centrally via SuppressionManager
-    NagSuppressions.addResourceSuppressions(
-      this.asg,
-      [
-        ...SuppressionManager.getCdkManagedResourceSuppressions(),
-        ...SuppressionManager.getAutoScalingSuppressions(),
-        ...SuppressionManager.getEcsServiceSuppressions(),
-        {
-          id: "AwsSolutions-SNS3",
-          reason:
-            "SNS topic is used for internal ECS lifecycle hooks managed by CDK. SSL enforcement is handled by AWS internal services. The lifecycle hook topic is used for draining ECS tasks during instance termination.",
-        },
-      ],
-      true // Apply to all children including the instance role, Lambda functions, and SNS topics
-    );
+    // Add tags
+    cdk.Tags.of(this.cluster).add("Name", clusterName);
+    cdk.Tags.of(this.cluster).add("Environment", envName);
+    cdk.Tags.of(this.cluster).add("Purpose", "MonitoringCluster");
+    cdk.Tags.of(this.cluster).add("ManagedBy", "CDK");
 
-    // Tag Auto Scaling Group
-    Tags.of(this.asg).add("Environment", props.envName);
-    Tags.of(this.asg).add("ManagedBy", "CDK");
-  }
+    // Output cluster information
+    new cdk.CfnOutput(this, "ClusterName", {
+      value: this.cluster.clusterName,
+      description: `ECS Cluster name for ${envName} monitoring`,
+      exportName: `${cdk.Stack.of(this).stackName}-cluster-name`,
+    });
 
-  /**
-   * Allow inbound traffic on specific port within the cluster
-   */
-  public allowInternalPort(port: number, description: string): void {
-    this.asg.connections.allowInternally(ec2.Port.tcp(port), description);
+    new cdk.CfnOutput(this, "ClusterArn", {
+      value: this.cluster.clusterArn,
+      description: `ECS Cluster ARN for ${envName} monitoring`,
+      exportName: `${cdk.Stack.of(this).stackName}-cluster-arn`,
+    });
   }
 }

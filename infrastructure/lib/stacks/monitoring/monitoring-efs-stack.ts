@@ -4,19 +4,23 @@ import * as cdk from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as efs from "aws-cdk-lib/aws-efs";
 import * as iam from "aws-cdk-lib/aws-iam";
-
-import * as logs from "aws-cdk-lib/aws-logs";
+import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as ssm from "aws-cdk-lib/aws-ssm";
-import * as cr from "aws-cdk-lib/custom-resources";
 import { Construct } from "constructs";
 import { SuppressionManager } from "../../cdk-nag";
 import { CrossAccountTarget } from "../../types";
 import { LambdaFunctionConstruct } from "../../constructs/compute/lambda";
+import {
+  EfsFileSystemConstruct,
+  EfsAccessPointConstruct,
+  EfsSecurityGroupConstruct,
+} from "../../constructs/storage/efs";
 
 /**
- * LAYER 0: Monitoring EFS Stack
+ * LAYER 0: Monitoring EFS Stack (Refactored)
  *
- * This stack manages persistent storage and configuration for monitoring:
+ * This stack manages persistent storage and configuration for monitoring using
+ * standardized constructs following DevOps best practices:
  * - EFS FileSystem for persistent data
  * - Configuration files (prometheus.yml, grafana configs)
  * - Directory structure setup
@@ -52,232 +56,208 @@ export class MonitoringEfsStack extends cdk.Stack {
     } = props;
 
     // ========================================================================
-    // SECURITY GROUP FOR MOUNT TARGETS (Create first)
+    // EFS SECURITY GROUP
     // ========================================================================
-    this.mountTargetSecurityGroup = this.createMountTargetSecurityGroup(
-      vpc,
-      envName
+    const efsSecurityGroupConstruct = new EfsSecurityGroupConstruct(
+      this,
+      "EfsSecurityGroup",
+      {
+        vpc,
+        envName,
+        allowedCidrs: [vpc.vpcCidrBlock],
+        allowAllOutbound: false,
+      }
     );
+
+    this.mountTargetSecurityGroup = efsSecurityGroupConstruct.securityGroup;
 
     // ========================================================================
     // EFS FILE SYSTEM
     // ========================================================================
-    const efsResult = this.createEfsFileSystem(
-      vpc,
-      envName,
-      enableEncryption,
-      lifecyclePolicy,
-      this.mountTargetSecurityGroup
+    const efsFileSystemConstruct = new EfsFileSystemConstruct(
+      this,
+      "EfsFileSystem",
+      {
+        vpc,
+        envName,
+        enableEncryption,
+        lifecyclePolicy,
+        securityGroup: this.mountTargetSecurityGroup,
+        removalPolicy: cdk.RemovalPolicy.RETAIN,
+      }
     );
-    this.fileSystem = efsResult.fileSystem;
-    this.efsAvailabilityZone = efsResult.availabilityZone;
+
+    this.fileSystem = efsFileSystemConstruct.fileSystem;
+    this.efsAvailabilityZone = efsFileSystemConstruct.availabilityZone;
 
     // ========================================================================
     // EFS ACCESS POINT
     // ========================================================================
-    this.accessPoint = this.createEfsAccessPoint(this.fileSystem);
+    const efsAccessPointConstruct = new EfsAccessPointConstruct(
+      this,
+      "EfsAccessPoint",
+      {
+        fileSystem: this.fileSystem,
+        envName,
+        path: "/monitoring",
+        posixUser: { uid: 0, gid: 0 },
+        creationAcl: { ownerUid: 0, ownerGid: 0, permissions: "755" },
+      }
+    );
+
+    this.accessPoint = efsAccessPointConstruct.accessPoint;
 
     // ========================================================================
-    // CONFIGURATION FILES & DIRECTORY STRUCTURE
+    // EFS INITIALIZATION LAMBDA
     // ========================================================================
-    this.createMonitoringConfigurations(crossAccountTargets);
-    this.createDirectoryStructure();
-
-    // ========================================================================
-    // EFS INITIALIZATION CUSTOM RESOURCE
-    // ========================================================================
-    this.createEfsInitializationCustomResource(
-      vpc,
+    const efsInitLambda = new LambdaFunctionConstruct(this, "EfsInitLambda", {
       envName,
-      crossAccountTargets
+      functionName: `${envName}-efs-initialization`,
+      entry: "lambda/handlers/efs-initialization.ts",
+      handler: "handler",
+      timeout: cdk.Duration.minutes(5),
+      environment: {
+        EFS_FILE_SYSTEM_ID: this.fileSystem.fileSystemId,
+        EFS_ACCESS_POINT_ID: this.accessPoint.accessPointId,
+        ENVIRONMENT: envName,
+      },
+    });
+
+    // Grant EFS permissions to Lambda
+    this.fileSystem.grant(
+      efsInitLambda.function,
+      "elasticfilesystem:ClientWrite"
+    );
+    efsInitLambda.function.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          "elasticfilesystem:ClientMount",
+          "elasticfilesystem:ClientWrite",
+          "elasticfilesystem:AccessedViaMountTarget",
+        ],
+        resources: [
+          this.fileSystem.fileSystemArn,
+          this.accessPoint.accessPointArn,
+        ],
+      })
+    );
+
+    // Create custom resource for EFS initialization
+    this.efsInitializationComplete = new cdk.CustomResource(
+      this,
+      "EfsInitialization",
+      {
+        serviceToken: efsInitLambda.function.functionArn,
+        properties: {
+          FileSystemId: this.fileSystem.fileSystemId,
+          AccessPointId: this.accessPoint.accessPointId,
+          Environment: envName,
+          // Force update when stack is updated
+          Timestamp: Date.now().toString(),
+        },
+      }
     );
 
     // ========================================================================
-    // OUTPUTS
+    // SSM PARAMETERS FOR CONFIGURATION
     // ========================================================================
-    this.createOutputs();
+    this.createConfigurationParameters(envName, crossAccountTargets);
 
     // ========================================================================
-    // CDK NAG SUPPRESSIONS
+    // CDK NAG SUPPRESSIONS & TAGS
     // ========================================================================
-    this.applyCdkNagSuppressions();
+    SuppressionManager.applyToStack(this, "MonitoringEfsStack", envName);
+    cdk.Tags.of(this).add("Stack", "MonitoringEfs");
+    cdk.Tags.of(this).add("Environment", envName);
+    cdk.Tags.of(this).add("Layer", "Storage");
+    cdk.Tags.of(this).add("ManagedBy", "CDK");
+
+    // ========================================================================
+    // STACK OUTPUTS
+    // ========================================================================
+    new cdk.CfnOutput(this, "EfsFileSystemId", {
+      value: this.fileSystem.fileSystemId,
+      description: "EFS File System ID for monitoring storage",
+      exportName: `${this.stackName}-efs-id`,
+    });
+
+    new cdk.CfnOutput(this, "EfsAccessPointId", {
+      value: this.accessPoint.accessPointId,
+      description: "EFS Access Point ID for monitoring",
+      exportName: `${this.stackName}-access-point-id`,
+    });
+
+    new cdk.CfnOutput(this, "EfsSecurityGroupId", {
+      value: this.mountTargetSecurityGroup.securityGroupId,
+      description: "EFS Security Group ID",
+      exportName: `${this.stackName}-efs-sg-id`,
+    });
+
+    new cdk.CfnOutput(this, "EfsAvailabilityZone", {
+      value: this.efsAvailabilityZone,
+      description: "EFS Availability Zone",
+      exportName: `${this.stackName}-efs-az`,
+    });
   }
 
-  private createEfsFileSystem(
-    vpc: ec2.IVpc,
+  private createConfigurationParameters(
     envName: string,
-    enableEncryption: boolean,
-    lifecyclePolicy: efs.LifecyclePolicy,
-    securityGroup: ec2.SecurityGroup
-  ): { fileSystem: efs.FileSystem; availabilityZone: string } {
-    // Use first public subnet's AZ for One Zone EFS (cost optimization)
-    const publicSubnets = vpc.selectSubnets({
-      subnetType: ec2.SubnetType.PUBLIC,
-    });
-    const availabilityZone = publicSubnets.availabilityZones[0];
-
-    // Create One Zone EFS (single AZ for cost optimization ~47% cheaper)
-    const fileSystem = new efs.FileSystem(this, `MonitoringEfs-${envName}`, {
-      vpc,
-      lifecyclePolicy,
-      performanceMode: efs.PerformanceMode.GENERAL_PURPOSE,
-      throughputMode: efs.ThroughputMode.PROVISIONED,
-      provisionedThroughputPerSecond: cdk.Size.mebibytes(10), // 10 MiB/s baseline
-      encrypted: enableEncryption,
-      removalPolicy: cdk.RemovalPolicy.RETAIN, // Protect data
-      // One Zone EFS: Mount target only in specified AZ
-      vpcSubnets: {
-        availabilityZones: [availabilityZone],
-        subnetType: ec2.SubnetType.PUBLIC, // Use public subnets since no NAT Gateway
-      },
-      // Explicitly attach security group to mount targets
-      securityGroup: securityGroup,
-      // Note: Backup policy needs to be configured separately
-    });
-
-    // Configure One Zone EFS by setting availabilityZoneName
-    const cfnFileSystem = fileSystem.node.defaultChild as efs.CfnFileSystem;
-    cfnFileSystem.availabilityZoneName = availabilityZone;
-
-    // Add tags
-    cdk.Tags.of(fileSystem).add("Name", `${envName}-monitoring-efs`);
-    cdk.Tags.of(fileSystem).add("Environment", envName);
-    cdk.Tags.of(fileSystem).add("Purpose", "monitoring-storage");
-    cdk.Tags.of(fileSystem).add("StorageClass", "One-Zone-IA");
-
-    return { fileSystem, availabilityZone };
-  }
-
-  private createEfsAccessPoint(fileSystem: efs.FileSystem): efs.AccessPoint {
-    return new efs.AccessPoint(this, "MonitoringEfsAccessPoint", {
-      fileSystem,
-      path: "/monitoring",
-      createAcl: {
-        ownerGid: "0",
-        ownerUid: "0",
-        permissions: "755",
-      },
-      posixUser: {
-        gid: "0",
-        uid: "0",
-      },
-    });
-  }
-
-  private createMountTargetSecurityGroup(
-    vpc: ec2.IVpc,
-    envName: string
-  ): ec2.SecurityGroup {
-    const securityGroup = new ec2.SecurityGroup(this, "EfsMountTargetSg", {
-      vpc,
-      description: `EFS mount target security group for ${envName} monitoring`,
-      allowAllOutbound: false,
-    });
-
-    // Allow NFS traffic from VPC CIDR
-    securityGroup.addIngressRule(
-      ec2.Peer.ipv4(vpc.vpcCidrBlock),
-      ec2.Port.tcp(2049),
-      "Allow NFS traffic from VPC CIDR"
-    );
-
-    // Allow NFS traffic from anywhere in VPC (more permissive for troubleshooting)
-    securityGroup.addIngressRule(
-      ec2.Peer.ipv4("10.0.0.0/16"),
-      ec2.Port.tcp(2049),
-      "Allow NFS traffic from VPC 10.0.0.0/16"
-    );
-
-    cdk.Tags.of(securityGroup).add("Name", `${envName}-efs-mount-target-sg`);
-
-    return securityGroup;
-  }
-
-  private createMonitoringConfigurations(
     crossAccountTargets?: CrossAccountTarget[]
-  ) {
-    // Create Prometheus configuration
-    this.createPrometheusConfig(crossAccountTargets);
-
-    // Create Grafana configuration
-    this.createGrafanaConfig();
-
-    // Create AlertManager configuration (future use)
-    this.createAlertManagerConfig();
-  }
-
-  private createPrometheusConfig(crossAccountTargets?: CrossAccountTarget[]) {
-    const scrapeConfigs = [
-      {
-        job_name: "prometheus",
-        static_configs: [{ targets: ["localhost:9090"] }],
-        scrape_interval: "15s",
-        metrics_path: "/prometheus/metrics",
-      },
-      {
-        job_name: "node-exporter",
-        static_configs: [{ targets: ["localhost:9100"] }],
-        scrape_interval: "15s",
-      },
-    ];
-
-    // Add cross-account targets if provided
-    if (crossAccountTargets) {
-      crossAccountTargets.forEach((target) => {
-        scrapeConfigs.push({
-          job_name: `${target.targetType}-${target.envName}`,
-          static_configs: [{ targets: [`${target.privateIp}:${target.port}`] }],
-          scrape_interval: "30s",
-          metrics_path: target.metricsPath || "/metrics",
-        });
-      });
-    }
-
+  ): void {
+    // Prometheus configuration
     const prometheusConfig = {
       global: {
         scrape_interval: "15s",
         evaluation_interval: "15s",
-        external_labels: {
-          environment: this.stackName,
-          region: this.region,
-        },
       },
-      scrape_configs: scrapeConfigs,
+      scrape_configs: [
+        {
+          job_name: "prometheus",
+          static_configs: [{ targets: ["localhost:9090"] }],
+        },
+        {
+          job_name: "node-exporter",
+          static_configs: [{ targets: ["localhost:9100"] }],
+        },
+        ...(crossAccountTargets?.map((target) => ({
+          job_name: `${target.targetType}-${target.envName}`,
+          static_configs: [{ targets: [`${target.privateIp}:${target.port}`] }],
+          metrics_path: target.metricsPath || "/metrics",
+        })) || []),
+      ],
     };
 
-    // Store configuration as SSM parameter for Custom Resource to use
     new ssm.StringParameter(this, "PrometheusConfig", {
-      parameterName: `/monitoring/${this.stackName}/prometheus-config`,
+      parameterName: `/monitoring/${envName}/prometheus-config`,
       stringValue: JSON.stringify(prometheusConfig, null, 2),
       description: "Prometheus configuration for monitoring stack",
       tier: ssm.ParameterTier.STANDARD,
     });
-  }
 
-  private createGrafanaConfig() {
-    const datasourceConfig = {
+    // Grafana datasource configuration
+    const grafanaDatasourceConfig = {
       apiVersion: 1,
       datasources: [
         {
           name: "Prometheus",
           type: "prometheus",
-          url: "http://localhost:9090/prometheus",
           access: "proxy",
+          url: "http://localhost:9090/prometheus",
           isDefault: true,
-          editable: true,
         },
       ],
     };
 
-    // Store configuration as SSM parameter
     new ssm.StringParameter(this, "GrafanaDatasourceConfig", {
-      parameterName: `/monitoring/${this.stackName}/grafana-datasource-config`,
-      stringValue: JSON.stringify(datasourceConfig, null, 2),
+      parameterName: `/monitoring/${envName}/grafana-datasource-config`,
+      stringValue: JSON.stringify(grafanaDatasourceConfig, null, 2),
       description: "Grafana datasource configuration",
       tier: ssm.ParameterTier.STANDARD,
     });
 
-    const dashboardConfig = {
+    // Grafana dashboard configuration
+    const grafanaDashboardConfig = {
       apiVersion: 1,
       providers: [
         {
@@ -289,215 +269,17 @@ export class MonitoringEfsStack extends cdk.Stack {
           updateIntervalSeconds: 10,
           allowUiUpdates: true,
           options: {
-            path: "/mnt/grafana-dashboards",
+            path: "/var/lib/grafana/dashboards",
           },
         },
       ],
     };
 
     new ssm.StringParameter(this, "GrafanaDashboardConfig", {
-      parameterName: `/monitoring/${this.stackName}/grafana-dashboard-config`,
-      stringValue: JSON.stringify(dashboardConfig, null, 2),
+      parameterName: `/monitoring/${envName}/grafana-dashboard-config`,
+      stringValue: JSON.stringify(grafanaDashboardConfig, null, 2),
       description: "Grafana dashboard provider configuration",
       tier: ssm.ParameterTier.STANDARD,
     });
-  }
-
-  private createAlertManagerConfig() {
-    const alertManagerConfig = {
-      global: {
-        smtp_smarthost: "localhost:587",
-        smtp_from: "alertmanager@example.com",
-      },
-      route: {
-        group_by: ["alertname"],
-        group_wait: "10s",
-        group_interval: "10s",
-        repeat_interval: "1h",
-        receiver: "web.hook",
-      },
-      receivers: [
-        {
-          name: "web.hook",
-          webhook_configs: [
-            {
-              url: "http://127.0.0.1:5001/",
-            },
-          ],
-        },
-      ],
-      inhibit_rules: [
-        {
-          source_match: {
-            severity: "critical",
-          },
-          target_match: {
-            severity: "warning",
-          },
-          equal: ["alertname", "dev", "instance"],
-        },
-      ],
-    };
-
-    new ssm.StringParameter(this, "AlertManagerConfig", {
-      parameterName: `/monitoring/${this.stackName}/alertmanager-config`,
-      stringValue: JSON.stringify(alertManagerConfig, null, 2),
-      description: "AlertManager configuration",
-      tier: ssm.ParameterTier.STANDARD,
-    });
-  }
-
-  private createOutputs() {
-    new cdk.CfnOutput(this, "FileSystemId", {
-      value: this.fileSystem.fileSystemId,
-      description: "EFS File System ID for monitoring",
-      exportName: `${this.stackName}-efs-id`,
-    });
-
-    new cdk.CfnOutput(this, "FileSystemArn", {
-      value: this.fileSystem.fileSystemArn,
-      description: "EFS File System ARN for monitoring",
-      exportName: `${this.stackName}-efs-arn`,
-    });
-
-    new cdk.CfnOutput(this, "AccessPointId", {
-      value: this.accessPoint.accessPointId,
-      description: "EFS Access Point ID for monitoring",
-      exportName: `${this.stackName}-access-point-id`,
-    });
-
-    new cdk.CfnOutput(this, "AccessPointArn", {
-      value: this.accessPoint.accessPointArn,
-      description: "EFS Access Point ARN for monitoring",
-      exportName: `${this.stackName}-access-point-arn`,
-    });
-
-    new cdk.CfnOutput(this, "MountTargetSecurityGroupId", {
-      value: this.mountTargetSecurityGroup.securityGroupId,
-      description: "Security Group ID for EFS mount targets",
-      exportName: `${this.stackName}-mount-sg-id`,
-    });
-
-    new cdk.CfnOutput(this, "EfsAvailabilityZone", {
-      value: this.efsAvailabilityZone,
-      description: "Availability Zone for EFS One Zone storage",
-      exportName: `${this.stackName}-efs-az`,
-    });
-  }
-
-  private createDirectoryStructure() {
-    // Create a Lambda function to initialize EFS directory structure
-    // This ensures the directories exist when the infrastructure stack mounts EFS
-
-    // For now, we'll document the expected structure
-    // In a future enhancement, this could use a CDK custom resource
-    // to create the directories via Lambda
-
-    new ssm.StringParameter(this, "EfsDirectoryStructure", {
-      parameterName: `/monitoring/${this.stackName}/efs-directory-structure`,
-      stringValue: JSON.stringify(
-        {
-          directories: [
-            "/monitoring/prometheus-data",
-            "/monitoring/grafana-data",
-            "/monitoring/config/prometheus",
-            "/monitoring/config/grafana/provisioning/datasources",
-            "/monitoring/config/grafana/provisioning/dashboards",
-            "/monitoring/config/grafana/dashboards",
-            "/monitoring/config/alertmanager",
-          ],
-          permissions: {
-            "prometheus-data": { owner: "65534:65534", mode: "777" },
-            "grafana-data": { owner: "472:0", mode: "777" },
-            "config/prometheus": { owner: "65534:65534", mode: "755" },
-            "config/grafana": { owner: "472:0", mode: "755" },
-          },
-        },
-        null,
-        2
-      ),
-      description: "EFS directory structure and permissions for monitoring",
-      tier: ssm.ParameterTier.STANDARD,
-    });
-  }
-
-  private createEfsInitializationCustomResource(
-    vpc: ec2.IVpc,
-    envName: string,
-    crossAccountTargets?: CrossAccountTarget[]
-  ) {
-    // Create EFS initialization Lambda using the existing construct
-    // Note: Lambda runs outside VPC to avoid circular dependencies
-    // It only creates configuration files in SSM - EC2 instances handle EFS setup
-    const efsInitLambda = new LambdaFunctionConstruct(this, "EfsInitLambda", {
-      envName,
-      functionName: "efs-initialization",
-      entry: "lambda/handlers/efs-initialization.ts",
-      handler: "handler",
-      timeout: cdk.Duration.minutes(5),
-      memorySize: 512,
-      environment: {
-        EFS_ID: this.fileSystem.fileSystemId,
-        EFS_ACCESS_POINT_ID: this.accessPoint.accessPointId,
-        STACK_NAME: this.stackName,
-      },
-      initialPolicy: [
-        new iam.PolicyStatement({
-          effect: iam.Effect.ALLOW,
-          actions: [
-            "ssm:GetParameter",
-            "ssm:GetParameters",
-            "ssm:PutParameter",
-          ],
-          resources: [
-            `arn:aws:ssm:${this.region}:${this.account}:parameter/monitoring/${this.stackName}/*`,
-          ],
-        }),
-      ],
-    });
-
-    // Create Custom Resource Provider
-    const provider = new cr.Provider(this, "EfsInitProvider", {
-      onEventHandler: efsInitLambda.function,
-      logRetention: logs.RetentionDays.ONE_DAY,
-    });
-
-    // Note: CDK Nag suppression for Custom Resource Provider IAM permissions
-    // is handled in SuppressionManager.getEfsCustomResourceSuppressions()
-    // The dynamically generated resource name may not match regex patterns perfectly
-
-    // Create Custom Resource
-    this.efsInitializationComplete = new cdk.CustomResource(
-      this,
-      "EfsInitCustomResource",
-      {
-        serviceToken: provider.serviceToken,
-        properties: {
-          EfsId: this.fileSystem.fileSystemId,
-          AccessPointId: this.accessPoint.accessPointId,
-          StackName: this.stackName,
-          // Force update when configuration changes
-          ConfigVersion: this.node.tryGetContext("configVersion") || "1.0.0",
-        },
-      }
-    );
-
-    // Ensure Custom Resource runs after EFS is ready
-    this.efsInitializationComplete.node.addDependency(this.fileSystem);
-    this.efsInitializationComplete.node.addDependency(this.accessPoint);
-
-    // Add output to track initialization completion
-    new cdk.CfnOutput(this, "EfsInitializationStatus", {
-      value: this.efsInitializationComplete
-        .getAtt("InitializationStatus")
-        .toString(),
-      description: "EFS initialization completion status",
-      exportName: `${this.stackName}-efs-init-status`,
-    });
-  }
-
-  private applyCdkNagSuppressions() {
-    // Apply centralized CDK Nag suppressions
-    SuppressionManager.applyToStack(this, "MonitoringEfsStack", this.stackName);
   }
 }

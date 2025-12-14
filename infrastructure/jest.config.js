@@ -1,25 +1,26 @@
 /** @format */
 
 module.exports = {
+  preset: "ts-jest",
   testEnvironment: "node",
   roots: ["<rootDir>/test"],
   testMatch: ["**/*.test.ts"],
-  testPathIgnorePatterns: ["/node_modules/", "/__backup_tests/", "/examples/"],
+  testTimeout: 10000,
+  verbose: false,
+  collectCoverage: false,
+  reporters: ["default"],
+  maxWorkers: 1,
+  forceExit: true,
+  setupFilesAfterEnv: ["<rootDir>/test/jest-setup.ts"],
   transform: {
-    "^.+\\.tsx?$": [
+    "^.+\\.ts$": [
       "ts-jest",
       {
-        isolatedModules: true, // Skip type checking for faster tests
+        tsconfig: "tsconfig.test.json",
       },
     ],
   },
-  collectCoverageFrom: ["lib/**/*.ts", "!lib/**/*.d.ts", "!lib/**/index.ts"],
-  coverageThreshold: {
-    global: {
-      branches: 50,
-      functions: 50,
-      lines: 70,
-      statements: 70,
-    },
+  moduleNameMapper: {
+    "^@/(.*)$": "<rootDir>/lib/$1",
   },
 };

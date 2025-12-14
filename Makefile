@@ -99,6 +99,14 @@ test-infrastructure:
 	@echo "Running infrastructure tests..."
 	yarn turbo run test --filter=infrastructure -- --ci --coverage
 
+test-vpc-peering:
+	@echo "Running VPC peering stack tests..."
+	cd infrastructure && yarn test test/unit/monitoring/vpc-peering-stack.test.ts --verbose
+
+test-monitoring-unit:
+	@echo "Running monitoring unit tests..."
+	cd infrastructure && yarn test test/unit/monitoring/ --verbose
+
 test-monitoring-e2e:
 	@echo "Running monitoring E2E tests..."
 	@chmod +x ./scripts/monitoring/test-setup.sh
