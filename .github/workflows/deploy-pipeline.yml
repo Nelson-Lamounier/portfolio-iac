@@ -133,14 +133,12 @@ jobs:
         run: |
           echo "Running monitoring configuration validation..."
           cd infrastructure
-          chmod +x scripts/lint-monitoring-config.js
           yarn lint:config
 
       - name: Security Configuration Linting
         run: |
           echo "Running security configuration validation..."
           cd infrastructure
-          chmod +x scripts/lint-security-config.js
           yarn lint:security
 
       - name: CDK Synthesis Validation
