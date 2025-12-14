@@ -11,21 +11,16 @@ export interface AlbListenerConstructProps {
   loadBalancer: elbv2.IApplicationLoadBalancer;
 
   /**
-   * Environment name for resource naming and tagging
+   * Whether to enable HTTP listener
+   * @default true
    */
-  envName: string;
+  enableHttp?: boolean;
 
   /**
-   * Port for the listener
-   * @default 80
+   * Whether to enable HTTPS listener
+   * @default false
    */
-  port?: number;
-
-  /**
-   * Protocol for the listener
-   * @default HTTP
-   */
-  protocol?: elbv2.ApplicationProtocol;
+  enableHttps?: boolean;
 
   /**
    * SSL certificate ARN for HTTPS listeners
@@ -33,16 +28,10 @@ export interface AlbListenerConstructProps {
   certificateArn?: string;
 
   /**
-   * Default action for the listener
-   * @default Fixed response with 404
-   */
-  defaultAction?: elbv2.ListenerAction;
-
-  /**
    * Whether to redirect HTTP to HTTPS
    * @default false
    */
-  redirectToHttps?: boolean;
+  redirectHttpToHttps?: boolean;
 
   /**
    * SSL policy for HTTPS listeners
@@ -52,69 +41,101 @@ export interface AlbListenerConstructProps {
 }
 
 /**
- * Construct for creating an ALB listener with monitoring-specific configuration
+ * Construct for creating ALB listeners (HTTP and HTTPS)
  */
 export class AlbListenerConstruct extends Construct {
-  public readonly listener: elbv2.ApplicationListener;
+  public readonly httpListener?: elbv2.ApplicationListener;
+  public readonly httpsListener?: elbv2.ApplicationListener;
+  public readonly listener: elbv2.ApplicationListener; // Primary listener for backward compatibility
 
   constructor(scope: Construct, id: string, props: AlbListenerConstructProps) {
     super(scope, id);
 
     const {
       loadBalancer,
-      envName,
-      port = 80,
-      protocol = elbv2.ApplicationProtocol.HTTP,
+      enableHttp = true,
+      enableHttps = false,
       certificateArn,
-      defaultAction,
-      redirectToHttps = false,
+      redirectHttpToHttps = false,
       sslPolicy = elbv2.SslPolicy.TLS12,
     } = props;
 
-    // Create default action if not provided
-    let listenerAction = defaultAction;
+    // Create HTTP listener if enabled
+    if (enableHttp) {
+      const httpAction =
+        redirectHttpToHttps && enableHttps
+          ? elbv2.ListenerAction.redirect({
+              protocol: "HTTPS",
+              port: "443",
+              permanent: true,
+            })
+          : elbv2.ListenerAction.fixedResponse(404, {
+              contentType: "text/plain",
+              messageBody: "Not Found",
+            });
 
-    if (!listenerAction) {
-      if (redirectToHttps && protocol === elbv2.ApplicationProtocol.HTTP) {
-        listenerAction = elbv2.ListenerAction.redirect({
-          protocol: "HTTPS",
-          port: "443",
-          permanent: true,
-        });
-      } else {
-        listenerAction = elbv2.ListenerAction.fixedResponse(404, {
-          contentType: "text/plain",
-          messageBody: "Not Found - Monitoring Services",
-        });
-      }
+      this.httpListener = loadBalancer.addListener("HttpListener", {
+        port: 80,
+        protocol: elbv2.ApplicationProtocol.HTTP,
+        defaultAction: httpAction,
+      });
     }
 
-    // Create listener
-    this.listener = loadBalancer.addListener(`MonitoringListener${port}`, {
-      port,
-      protocol,
-      defaultAction: listenerAction,
-      certificates: certificateArn
-        ? [elbv2.ListenerCertificate.fromArn(certificateArn)]
-        : undefined,
-      sslPolicy:
-        protocol === elbv2.ApplicationProtocol.HTTPS ? sslPolicy : undefined,
-    });
+    // Create HTTPS listener if enabled
+    if (enableHttps && certificateArn) {
+      this.httpsListener = loadBalancer.addListener("HttpsListener", {
+        port: 443,
+        protocol: elbv2.ApplicationProtocol.HTTPS,
+        defaultAction: elbv2.ListenerAction.fixedResponse(404, {
+          contentType: "text/plain",
+          messageBody: "Not Found",
+        }),
+        certificates: [elbv2.ListenerCertificate.fromArn(certificateArn)],
+        sslPolicy,
+      });
+    }
 
-    // Add tags
-    cdk.Tags.of(this.listener).add(
-      "Name",
-      `${envName}-monitoring-listener-${port}`
-    );
-    cdk.Tags.of(this.listener).add("Environment", envName);
-    cdk.Tags.of(this.listener).add("Purpose", "MonitoringListener");
-    cdk.Tags.of(this.listener).add("ManagedBy", "CDK");
+    // Set primary listener (HTTPS if available, otherwise HTTP)
+    this.listener = this.httpsListener || this.httpListener!;
 
     // Output listener information
-    new cdk.CfnOutput(this, "ListenerArn", {
-      value: this.listener.listenerArn,
-      description: `ALB Listener ARN for ${envName} monitoring on port ${port}`,
-      exportName: `${cdk.Stack.of(this).stackName}-listener-${port}-arn`,
+    if (this.httpListener) {
+      new cdk.CfnOutput(this, "HttpListenerArn", {
+        value: this.httpListener.listenerArn,
+        description: "HTTP Listener ARN",
+        exportName: `${cdk.Stack.of(this).stackName}-http-listener-arn`,
+      });
+    }
+
+    if (this.httpsListener) {
+      new cdk.CfnOutput(this, "HttpsListenerArn", {
+        value: this.httpsListener.listenerArn,
+        description: "HTTPS Listener ARN",
+        exportName: `${cdk.Stack.of(this).stackName}-https-listener-arn`,
+      });
+    }
+  }
+
+  /**
+   * Add a target group to the primary listener
+   */
+  public addTargetGroup(
+    id: string,
+    targetGroup: elbv2.IApplicationTargetGroup,
+    priority: number,
+    conditions: elbv2.ListenerCondition[]
+  ): void {
+    this.listener.addTargetGroups(id, {
+      targetGroups: [targetGroup],
+      priority,
+      conditions,
     });
+  }
+
+  /**
+   * Get the primary listener (HTTPS if available, otherwise HTTP)
+   */
+  public get primaryListener(): elbv2.ApplicationListener {
+    return this.listener;
   }
 }

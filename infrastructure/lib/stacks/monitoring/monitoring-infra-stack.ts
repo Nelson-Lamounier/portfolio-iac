@@ -208,27 +208,13 @@ export class MonitoringInfraStack extends cdk.Stack {
     // ========================================================================
     const listenerConstruct = new AlbListenerConstruct(this, "AlbListener", {
       loadBalancer: this.loadBalancer,
-      envName,
-      port: enableHttps ? 443 : 80,
-      protocol: enableHttps
-        ? elbv2.ApplicationProtocol.HTTPS
-        : elbv2.ApplicationProtocol.HTTP,
+      enableHttp: true,
+      enableHttps: enableHttps,
       certificateArn: enableHttps ? certificateArn : undefined,
-      redirectToHttps: false,
+      redirectHttpToHttps: enableHttps,
     });
 
     this.listener = listenerConstruct.listener;
-
-    // Add HTTP to HTTPS redirect if HTTPS is enabled
-    if (enableHttps) {
-      new AlbListenerConstruct(this, "HttpRedirectListener", {
-        loadBalancer: this.loadBalancer,
-        envName,
-        port: 80,
-        protocol: elbv2.ApplicationProtocol.HTTP,
-        redirectToHttps: true,
-      });
-    }
 
     // ========================================================================
     // CONFIGURATION BUCKET
