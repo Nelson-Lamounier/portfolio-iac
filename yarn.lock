@@ -4406,6 +4406,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/source-map-support@npm:^0.5.10":
+  version: 0.5.10
+  resolution: "@types/source-map-support@npm:0.5.10"
+  dependencies:
+    source-map: "npm:^0.6.0"
+  checksum: 48aacf32e1b5a4301407123fb69001b6a79386860d19c756a76ef3b034f71375a843846fa2af2d2461a765411dfbbcb21069b0935761b3c81f8b722b1d9d581f
+  languageName: node
+  linkType: hard
+
 "@types/stack-utils@npm:^2.0.0, @types/stack-utils@npm:^2.0.3":
   version: 2.0.3
   resolution: "@types/stack-utils@npm:2.0.3"
@@ -7697,6 +7706,7 @@ __metadata:
     "@types/aws-lambda": "npm:^8.10.159"
     "@types/jest": "npm:^29.5.11"
     "@types/node": "npm:^20.10.0"
+    "@types/source-map-support": "npm:^0.5.10"
     "@typescript-eslint/eslint-plugin": "npm:^8.18.1"
     "@typescript-eslint/parser": "npm:^8.18.1"
     aws-cdk: "npm:^2.232.1"
