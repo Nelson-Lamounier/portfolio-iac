@@ -26,6 +26,26 @@ on:
           - monitoring-services
           - vpc-peering
           - destroy-all
+      jobs_to_run:
+        description: "Jobs to run (comma-separated or 'all' or 'failed')"
+        required: false
+        type: string
+        default: "all"
+      rerun_failed_from:
+        description: "Run ID to re-run failed jobs from (leave empty for normal run)"
+        required: false
+        type: string
+        default: ""
+      enable_drift_detection:
+        description: "Enable infrastructure drift detection after deployment"
+        required: false
+        type: boolean
+        default: true
+      drift_threshold:
+        description: "Maximum drift count before failing (0 = fail on any drift)"
+        required: false
+        type: string
+        default: "5"
       skip_validation:
         description: "Skip pre-deployment validation"
         required: false
@@ -42,15 +62,292 @@ env:
 permissions:
   id-token: write
   contents: read
+  actions: read
   # Security: Minimal permissions following principle of least privilege
+  # actions: read permission needed for GitHub CLI to access workflow runs
 
 jobs:
   # ============================================================================
-  # JOB 0: Security Validation
+  # JOB 0: Determine Jobs to Run
+  # ============================================================================
+  determine-jobs:
+    name: Determine Jobs to Run
+    runs-on: ubuntu-latest
+    outputs:
+      run_security_scan: ${{ steps.decide.outputs.run_security_scan }}
+      run_lint: ${{ steps.decide.outputs.run_lint }}
+      run_build: ${{ steps.decide.outputs.run_build }}
+      run_validate_setup: ${{ steps.decide.outputs.run_validate_setup }}
+      run_deploy_networking: ${{ steps.decide.outputs.run_deploy_networking }}
+      run_deploy_efs: ${{ steps.decide.outputs.run_deploy_efs }}
+      run_deploy_peering: ${{ steps.decide.outputs.run_deploy_peering }}
+      run_deploy_infra: ${{ steps.decide.outputs.run_deploy_infra }}
+      run_deploy_services: ${{ steps.decide.outputs.run_deploy_services }}
+      run_health_checks: ${{ steps.decide.outputs.run_health_checks }}
+      run_destroy_all: ${{ steps.decide.outputs.run_destroy_all }}
+      run_rollback: ${{ steps.decide.outputs.run_rollback }}
+      run_drift_detection: ${{ steps.decide.outputs.run_drift_detection }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup GitHub CLI
+        run: |
+          # GitHub CLI is pre-installed on GitHub runners
+          gh --version
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Determine Which Jobs to Run
+        id: decide
+        run: |
+          JOBS_INPUT="${{ github.event.inputs.jobs_to_run }}"
+          RERUN_FROM="${{ github.event.inputs.rerun_failed_from }}"
+          STACK_INPUT="${{ github.event.inputs.stack }}"
+
+          echo "Input parameters:"
+          echo "  Jobs to run: $JOBS_INPUT"
+          echo "  Rerun from: $RERUN_FROM"
+          echo "  Stack: $STACK_INPUT"
+          echo ""
+
+          # Default: run all jobs
+          RUN_ALL="true"
+
+          # If rerun_failed_from is specified, check which jobs failed
+          if [ -n "$RERUN_FROM" ]; then
+            echo "🔍 Analyzing failed jobs from run $RERUN_FROM..."
+            echo ""
+            
+            # Validate run ID format
+            if ! [[ "$RERUN_FROM" =~ ^[0-9]+$ ]]; then
+              echo "❌ INVALID RUN ID FORMAT"
+              echo ""
+              echo "🚨 ERROR: Run ID must be a numeric value"
+              echo "📋 Provided: '$RERUN_FROM'"
+              echo "📋 Expected: A numeric GitHub Actions run ID (e.g., 1234567890)"
+              echo ""
+              echo "🔧 HOW TO FIND RUN ID:"
+              echo "  1. Go to Actions tab in GitHub repository"
+              echo "  2. Click on the failed workflow run"
+              echo "  3. Copy the number from the URL (e.g., github.com/user/repo/actions/runs/1234567890)"
+              echo ""
+              exit 1
+            fi
+            
+            # Get failed jobs from previous run with error handling
+            echo "📡 Fetching run information from GitHub API..."
+            if ! RUN_INFO=$(gh run view "$RERUN_FROM" --json jobs,status,conclusion,createdAt,updatedAt 2>&1); then
+              echo "❌ FAILED TO RETRIEVE RUN INFORMATION"
+              echo ""
+              echo "🚨 ERROR: Cannot access run $RERUN_FROM"
+              echo "📋 GitHub CLI Error: $RUN_INFO"
+              echo ""
+              echo "🔧 POSSIBLE CAUSES:"
+              echo "  1. Run ID does not exist"
+              echo "  2. Run is in a different repository"
+              echo "  3. Insufficient permissions to access the run"
+              echo "  4. GitHub API rate limiting"
+              echo "  5. Network connectivity issues"
+              echo ""
+              echo "💡 TROUBLESHOOTING STEPS:"
+              echo "  1. Verify the run ID exists in this repository"
+              echo "  2. Check repository permissions"
+              echo "  3. Try again in a few minutes (rate limiting)"
+              echo "  4. Use 'all' for jobs_to_run to run full pipeline"
+              echo ""
+              echo "🔄 FALLBACK: Running all jobs instead"
+              RERUN_FROM=""
+            else
+              echo "✅ Successfully retrieved run information"
+              
+              # Parse run metadata
+              RUN_STATUS=$(echo "$RUN_INFO" | jq -r '.status // "unknown"')
+              RUN_CONCLUSION=$(echo "$RUN_INFO" | jq -r '.conclusion // "unknown"')
+              RUN_CREATED=$(echo "$RUN_INFO" | jq -r '.createdAt // "unknown"')
+              
+              echo ""
+              echo "📊 Run $RERUN_FROM Details:"
+              echo "  Status: $RUN_STATUS"
+              echo "  Conclusion: $RUN_CONCLUSION"
+              echo "  Created: $RUN_CREATED"
+              echo ""
+              
+              # Get failed jobs from previous run
+              FAILED_JOBS=$(echo "$RUN_INFO" | jq -r '.jobs[] | select(.conclusion == "failure") | .name' || echo "")
+              
+              if [ -n "$FAILED_JOBS" ]; then
+                FAILED_COUNT=$(echo "$FAILED_JOBS" | wc -l)
+                echo "❌ Found $FAILED_COUNT failed job(s):"
+                echo "$FAILED_JOBS" | sed 's/^/    /'
+                echo ""
+                
+                # Show successful jobs for context
+                SUCCESSFUL_JOBS=$(echo "$RUN_INFO" | jq -r '.jobs[] | select(.conclusion == "success") | .name' || echo "")
+                if [ -n "$SUCCESSFUL_JOBS" ]; then
+                  SUCCESS_COUNT=$(echo "$SUCCESSFUL_JOBS" | wc -l)
+                  echo "✅ $SUCCESS_COUNT job(s) succeeded (will be skipped):"
+                  echo "$SUCCESSFUL_JOBS" | sed 's/^/    /'
+                  echo ""
+                fi
+              else
+                echo "🤔 NO FAILED JOBS FOUND"
+                echo ""
+                echo "📋 This could mean:"
+                echo "  1. All jobs in run $RERUN_FROM succeeded"
+                echo "  2. The run is still in progress"
+                echo "  3. The run was cancelled before jobs could fail"
+                echo ""
+                echo "🔄 FALLBACK: Running all jobs instead"
+                RERUN_FROM=""
+              fi
+            fi
+              
+              # Set outputs based on failed jobs
+              echo "$FAILED_JOBS" | grep -q "Security Validation" && echo "run_security_scan=true" >> $GITHUB_OUTPUT || echo "run_security_scan=false" >> $GITHUB_OUTPUT
+              echo "$FAILED_JOBS" | grep -q "Lint & Quality" && echo "run_lint=true" >> $GITHUB_OUTPUT || echo "run_lint=false" >> $GITHUB_OUTPUT
+              echo "$FAILED_JOBS" | grep -q "Build Infrastructure" && echo "run_build=true" >> $GITHUB_OUTPUT || echo "run_build=false" >> $GITHUB_OUTPUT
+              echo "$FAILED_JOBS" | grep -q "Validate & Setup" && echo "run_validate_setup=true" >> $GITHUB_OUTPUT || echo "run_validate_setup=false" >> $GITHUB_OUTPUT
+              echo "$FAILED_JOBS" | grep -q "Deploy Networking" && echo "run_deploy_networking=true" >> $GITHUB_OUTPUT || echo "run_deploy_networking=false" >> $GITHUB_OUTPUT
+              echo "$FAILED_JOBS" | grep -q "Deploy Monitoring EFS" && echo "run_deploy_efs=true" >> $GITHUB_OUTPUT || echo "run_deploy_efs=false" >> $GITHUB_OUTPUT
+              echo "$FAILED_JOBS" | grep -q "Deploy VPC Peering" && echo "run_deploy_peering=true" >> $GITHUB_OUTPUT || echo "run_deploy_peering=false" >> $GITHUB_OUTPUT
+              echo "$FAILED_JOBS" | grep -q "Deploy Monitoring Infrastructure" && echo "run_deploy_infra=true" >> $GITHUB_OUTPUT || echo "run_deploy_infra=false" >> $GITHUB_OUTPUT
+              echo "$FAILED_JOBS" | grep -q "Deploy Monitoring Services" && echo "run_deploy_services=true" >> $GITHUB_OUTPUT || echo "run_deploy_services=false" >> $GITHUB_OUTPUT
+              echo "$FAILED_JOBS" | grep -q "Health Checks" && echo "run_health_checks=true" >> $GITHUB_OUTPUT || echo "run_health_checks=false" >> $GITHUB_OUTPUT
+              echo "$FAILED_JOBS" | grep -q "Destroy All" && echo "run_destroy_all=true" >> $GITHUB_OUTPUT || echo "run_destroy_all=false" >> $GITHUB_OUTPUT
+              echo "$FAILED_JOBS" | grep -q "Rollback" && echo "run_rollback=true" >> $GITHUB_OUTPUT || echo "run_rollback=false" >> $GITHUB_OUTPUT
+              
+              # Always run dependencies of failed jobs
+              if echo "$FAILED_JOBS" | grep -q "Deploy\|Health"; then
+                echo "📋 Adding dependencies for deployment jobs..."
+                echo "run_security_scan=true" >> $GITHUB_OUTPUT
+                echo "run_lint=true" >> $GITHUB_OUTPUT
+                echo "run_build=true" >> $GITHUB_OUTPUT
+                echo "run_validate_setup=true" >> $GITHUB_OUTPUT
+              fi
+            else
+              echo "✅ No failed jobs found in run $RERUN_FROM"
+              # Default to all jobs if no failures found
+              echo "run_security_scan=true" >> $GITHUB_OUTPUT
+              echo "run_lint=true" >> $GITHUB_OUTPUT
+              echo "run_build=true" >> $GITHUB_OUTPUT
+              echo "run_validate_setup=true" >> $GITHUB_OUTPUT
+              echo "run_deploy_networking=true" >> $GITHUB_OUTPUT
+              echo "run_deploy_efs=true" >> $GITHUB_OUTPUT
+              echo "run_deploy_peering=true" >> $GITHUB_OUTPUT
+              echo "run_deploy_infra=true" >> $GITHUB_OUTPUT
+              echo "run_deploy_services=true" >> $GITHUB_OUTPUT
+              echo "run_health_checks=true" >> $GITHUB_OUTPUT
+              echo "run_destroy_all=false" >> $GITHUB_OUTPUT
+              echo "run_rollback=false" >> $GITHUB_OUTPUT
+            fi
+            
+          elif [ "$JOBS_INPUT" = "all" ] || [ -z "$JOBS_INPUT" ]; then
+            echo "🚀 Running all jobs (default behavior)"
+            # Run all jobs except destroy and rollback
+            echo "run_security_scan=true" >> $GITHUB_OUTPUT
+            echo "run_lint=true" >> $GITHUB_OUTPUT
+            echo "run_build=true" >> $GITHUB_OUTPUT
+            echo "run_validate_setup=true" >> $GITHUB_OUTPUT
+            echo "run_deploy_networking=true" >> $GITHUB_OUTPUT
+            echo "run_deploy_efs=true" >> $GITHUB_OUTPUT
+            echo "run_deploy_peering=true" >> $GITHUB_OUTPUT
+            echo "run_deploy_infra=true" >> $GITHUB_OUTPUT
+            echo "run_deploy_services=true" >> $GITHUB_OUTPUT
+            echo "run_health_checks=true" >> $GITHUB_OUTPUT
+            echo "run_destroy_all=false" >> $GITHUB_OUTPUT
+            echo "run_rollback=false" >> $GITHUB_OUTPUT
+            # Enable drift detection by default if enabled in inputs
+            if [ "${{ github.event.inputs.enable_drift_detection }}" = "true" ] || [ -z "${{ github.event.inputs.enable_drift_detection }}" ]; then
+              echo "run_drift_detection=true" >> $GITHUB_OUTPUT
+            else
+              echo "run_drift_detection=false" >> $GITHUB_OUTPUT
+            fi
+            
+          else
+            echo "🎯 Running selective jobs: $JOBS_INPUT"
+            # Parse comma-separated job list - start with all false
+            echo "run_security_scan=false" >> $GITHUB_OUTPUT
+            echo "run_lint=false" >> $GITHUB_OUTPUT
+            echo "run_build=false" >> $GITHUB_OUTPUT
+            echo "run_validate_setup=false" >> $GITHUB_OUTPUT
+            echo "run_deploy_networking=false" >> $GITHUB_OUTPUT
+            echo "run_deploy_efs=false" >> $GITHUB_OUTPUT
+            echo "run_deploy_peering=false" >> $GITHUB_OUTPUT
+            echo "run_deploy_infra=false" >> $GITHUB_OUTPUT
+            echo "run_deploy_services=false" >> $GITHUB_OUTPUT
+            echo "run_health_checks=false" >> $GITHUB_OUTPUT
+            echo "run_destroy_all=false" >> $GITHUB_OUTPUT
+            echo "run_rollback=false" >> $GITHUB_OUTPUT
+            echo "run_drift_detection=false" >> $GITHUB_OUTPUT
+
+            # Enable specified jobs (case-insensitive matching)
+            JOBS_LOWER=$(echo "$JOBS_INPUT" | tr '[:upper:]' '[:lower:]')
+            
+            echo "$JOBS_LOWER" | grep -q "security" && echo "run_security_scan=true" >> $GITHUB_OUTPUT
+            echo "$JOBS_LOWER" | grep -q "lint" && echo "run_lint=true" >> $GITHUB_OUTPUT
+            echo "$JOBS_LOWER" | grep -q "build" && echo "run_build=true" >> $GITHUB_OUTPUT
+            echo "$JOBS_LOWER" | grep -q "validate\|setup" && echo "run_validate_setup=true" >> $GITHUB_OUTPUT
+            echo "$JOBS_LOWER" | grep -q "networking" && echo "run_deploy_networking=true" >> $GITHUB_OUTPUT
+            echo "$JOBS_LOWER" | grep -q "efs" && echo "run_deploy_efs=true" >> $GITHUB_OUTPUT
+            echo "$JOBS_LOWER" | grep -q "peering\|vpc" && echo "run_deploy_peering=true" >> $GITHUB_OUTPUT
+            echo "$JOBS_LOWER" | grep -q "infra" && echo "run_deploy_infra=true" >> $GITHUB_OUTPUT
+            echo "$JOBS_LOWER" | grep -q "services" && echo "run_deploy_services=true" >> $GITHUB_OUTPUT
+            echo "$JOBS_LOWER" | grep -q "health" && echo "run_health_checks=true" >> $GITHUB_OUTPUT
+            echo "$JOBS_LOWER" | grep -q "destroy" && echo "run_destroy_all=true" >> $GITHUB_OUTPUT
+            echo "$JOBS_LOWER" | grep -q "rollback" && echo "run_rollback=true" >> $GITHUB_OUTPUT
+            echo "$JOBS_LOWER" | grep -q "drift" && echo "run_drift_detection=true" >> $GITHUB_OUTPUT
+            
+            # Auto-enable dependencies for deployment jobs
+            if echo "$JOBS_LOWER" | grep -q "deploy\|health"; then
+              echo "📋 Auto-enabling dependencies for deployment jobs..."
+              echo "run_security_scan=true" >> $GITHUB_OUTPUT
+              echo "run_lint=true" >> $GITHUB_OUTPUT
+              echo "run_build=true" >> $GITHUB_OUTPUT
+              echo "run_validate_setup=true" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+          # Handle stack-specific logic
+          if [ "$STACK_INPUT" = "destroy-all" ]; then
+            echo "🗑️  Destroy-all stack selected - enabling destroy job"
+            echo "run_destroy_all=true" >> $GITHUB_OUTPUT
+            # Disable deployment jobs for destroy
+            echo "run_deploy_networking=false" >> $GITHUB_OUTPUT
+            echo "run_deploy_efs=false" >> $GITHUB_OUTPUT
+            echo "run_deploy_peering=false" >> $GITHUB_OUTPUT
+            echo "run_deploy_infra=false" >> $GITHUB_OUTPUT
+            echo "run_deploy_services=false" >> $GITHUB_OUTPUT
+            echo "run_health_checks=false" >> $GITHUB_OUTPUT
+          fi
+
+          echo ""
+          echo "✅ Job execution plan determined:"
+          echo "  Security Scan: $(grep 'run_security_scan=' $GITHUB_OUTPUT | cut -d'=' -f2 | tail -1)"
+          echo "  Lint & Quality: $(grep 'run_lint=' $GITHUB_OUTPUT | cut -d'=' -f2 | tail -1)"
+          echo "  Build: $(grep 'run_build=' $GITHUB_OUTPUT | cut -d'=' -f2 | tail -1)"
+          echo "  Validate Setup: $(grep 'run_validate_setup=' $GITHUB_OUTPUT | cut -d'=' -f2 | tail -1)"
+          echo "  Deploy Networking: $(grep 'run_deploy_networking=' $GITHUB_OUTPUT | cut -d'=' -f2 | tail -1)"
+          echo "  Deploy EFS: $(grep 'run_deploy_efs=' $GITHUB_OUTPUT | cut -d'=' -f2 | tail -1)"
+          echo "  Deploy VPC Peering: $(grep 'run_deploy_peering=' $GITHUB_OUTPUT | cut -d'=' -f2 | tail -1)"
+          echo "  Deploy Infrastructure: $(grep 'run_deploy_infra=' $GITHUB_OUTPUT | cut -d'=' -f2 | tail -1)"
+          echo "  Deploy Services: $(grep 'run_deploy_services=' $GITHUB_OUTPUT | cut -d'=' -f2 | tail -1)"
+          echo "  Health Checks: $(grep 'run_health_checks=' $GITHUB_OUTPUT | cut -d'=' -f2 | tail -1)"
+          echo "  Destroy All: $(grep 'run_destroy_all=' $GITHUB_OUTPUT | cut -d'=' -f2 | tail -1)"
+          echo "  Rollback: $(grep 'run_rollback=' $GITHUB_OUTPUT | cut -d'=' -f2 | tail -1)"
+          echo "  Drift Detection: $(grep 'run_drift_detection=' $GITHUB_OUTPUT | cut -d'=' -f2 | tail -1)"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  # ============================================================================
+  # JOB 1: Security Validation
   # ============================================================================
   security-scan:
     name: Security Validation
+    needs: [determine-jobs]
     runs-on: ubuntu-latest
+    if: needs.determine-jobs.outputs.run_security_scan == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -91,8 +388,12 @@ jobs:
   # ============================================================================
   lint-and-quality:
     name: Lint & Quality Checks
-    needs: [security-scan]
+    needs: [determine-jobs, security-scan]
     runs-on: ubuntu-latest
+    if: |
+      always() &&
+      needs.determine-jobs.outputs.run_lint == 'true' &&
+      (needs.security-scan.result == 'success' || needs.security-scan.result == 'skipped')
 
     steps:
       - name: Checkout
@@ -305,8 +606,12 @@ jobs:
   # ============================================================================
   build:
     name: Build Infrastructure
-    needs: [security-scan, lint-and-quality]
+    needs: [determine-jobs, security-scan, lint-and-quality]
     runs-on: ubuntu-latest
+    if: |
+      always() &&
+      needs.determine-jobs.outputs.run_build == 'true' &&
+      (needs.lint-and-quality.result == 'success' || needs.lint-and-quality.result == 'skipped')
     outputs:
       cache-key: ${{ steps.cache-key.outputs.key }}
 
@@ -357,12 +662,16 @@ jobs:
           AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV || '123456789012' }} # Use actual dev account or dummy for validation
 
   # ============================================================================
-  # JOB 2: Validation & Setup
+  # JOB 3: Validation & Setup (Parallel with build)
   # ============================================================================
   validate-setup:
     name: Validate & Setup
-    needs: [security-scan, lint-and-quality]
+    needs: [determine-jobs, security-scan, lint-and-quality]
     runs-on: ubuntu-latest
+    if: |
+      always() &&
+      needs.determine-jobs.outputs.run_validate_setup == 'true' &&
+      (needs.lint-and-quality.result == 'success' || needs.lint-and-quality.result == 'skipped')
     environment: pipeline
     outputs:
       pipeline_account_id: ${{ steps.setup.outputs.pipeline_account_id }}
@@ -381,57 +690,227 @@ jobs:
       - name: Setup Environment Variables
         id: setup
         run: |
-          # Get current account ID
-          CURRENT_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          echo "🔍 Setting up pipeline environment variables..."
+          echo ""
+
+          # Get current account ID with error handling
+          echo "📡 Retrieving AWS account information..."
+          if ! CURRENT_ACCOUNT=$(aws sts get-caller-identity --query Account --output text 2>&1); then
+            echo "❌ FAILED TO GET AWS ACCOUNT ID"
+            echo ""
+            echo "🚨 CRITICAL ERROR: Cannot retrieve AWS account information"
+            echo "📋 AWS CLI Error: $CURRENT_ACCOUNT"
+            echo ""
+            echo "🔧 POSSIBLE CAUSES:"
+            echo "  1. AWS credentials not configured properly"
+            echo "  2. OIDC role assumption failed"
+            echo "  3. IAM permissions insufficient"
+            echo "  4. AWS STS service unavailable"
+            echo "  5. Network connectivity issues"
+            echo ""
+            echo "💡 TROUBLESHOOTING STEPS:"
+            echo "  1. Check repository secrets configuration:"
+            echo "     - AWS_OIDC_ROLE secret exists and is correct"
+            echo "     - Role ARN format: arn:aws:iam::ACCOUNT:role/ROLE_NAME"
+            echo "  2. Verify OIDC provider configuration in AWS"
+            echo "  3. Check IAM role trust policy allows GitHub Actions"
+            echo "  4. Ensure role has sts:GetCallerIdentity permission"
+            echo "  5. Check AWS service health dashboard"
+            echo ""
+            echo "🔗 USEFUL COMMANDS FOR LOCAL DEBUGGING:"
+            echo "   aws sts get-caller-identity"
+            echo "   aws iam get-role --role-name GitHubDeploymentRole"
+            echo ""
+            exit 1
+          fi
+
+          # Validate account ID format
+          if ! [[ "$CURRENT_ACCOUNT" =~ ^[0-9]{12}$ ]]; then
+            echo "❌ INVALID ACCOUNT ID FORMAT"
+            echo ""
+            echo "🚨 ERROR: Retrieved account ID has invalid format"
+            echo "📋 Retrieved: '$CURRENT_ACCOUNT'"
+            echo "📋 Expected: 12-digit numeric string"
+            echo ""
+            echo "🔧 This usually indicates:"
+            echo "  1. AWS CLI returned an error message instead of account ID"
+            echo "  2. Partial authentication failure"
+            echo "  3. AWS CLI configuration issues"
+            echo ""
+            exit 1
+          fi
+
+          # Set outputs and environment variables
           echo "pipeline_account_id=$CURRENT_ACCOUNT" >> $GITHUB_OUTPUT
           echo "AWS_PIPELINE_ACCOUNT_ID=$CURRENT_ACCOUNT" >> $GITHUB_ENV
-          echo "✅ Pipeline Account ID: $CURRENT_ACCOUNT"
-          echo "✅ Region: ${{ env.AWS_REGION }}"
+
+          # Mask the account ID for security
+          echo "::add-mask::$CURRENT_ACCOUNT"
+
+          echo "✅ Successfully retrieved pipeline account information"
+          echo "📊 Account ID: ***${CURRENT_ACCOUNT: -4} (last 4 digits)"
+          echo "🌍 Region: ${{ env.AWS_REGION }}"
+          echo ""
 
       - name: Get Dev Account VPC Info
         id: dev-info
         run: |
+          echo "🔍 Checking development account VPC configuration..."
+          echo ""
+
           if [ "${{ vars.AWS_ACCOUNT_ID_DEV }}" != "" ]; then
-            # Switch to dev account to get VPC info
-            aws sts assume-role \
-              --role-arn "arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/GitHubDeploymentRole" \
-              --role-session-name "GetVpcInfo" \
+            DEV_ACCOUNT_ID="${{ vars.AWS_ACCOUNT_ID_DEV }}"
+            echo "🎯 Dev account configured: ***${DEV_ACCOUNT_ID: -4}"
+            echo "🔄 Attempting cross-account role assumption..."
+            
+            # Mask the dev account ID
+            echo "::add-mask::$DEV_ACCOUNT_ID"
+            
+            # Validate dev account ID format
+            if ! [[ "$DEV_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]; then
+              echo "❌ INVALID DEV ACCOUNT ID FORMAT"
+              echo ""
+              echo "🚨 ERROR: Dev account ID has invalid format"
+              echo "📋 Configured: '$DEV_ACCOUNT_ID'"
+              echo "📋 Expected: 12-digit numeric string"
+              echo ""
+              echo "🔧 CHECK REPOSITORY VARIABLES:"
+              echo "  - AWS_ACCOUNT_ID_DEV should be a 12-digit AWS account ID"
+              echo "  - Remove any spaces, dashes, or other characters"
+              echo ""
+              echo "vpc_id=NOT_FOUND" >> $GITHUB_OUTPUT
+              exit 0  # Non-fatal error for cross-account setup
+            fi
+            
+            # Attempt role assumption with detailed error handling
+            ROLE_ARN="arn:aws:iam::$DEV_ACCOUNT_ID:role/GitHubDeploymentRole"
+            echo "🔐 Assuming role: $ROLE_ARN"
+            
+            if ASSUME_ROLE_OUTPUT=$(aws sts assume-role \
+              --role-arn "$ROLE_ARN" \
+              --role-session-name "GetVpcInfo-$(date +%s)" \
               --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
-              --output text | {
-                read access_key secret_key session_token
-                export AWS_ACCESS_KEY_ID=$access_key
-                export AWS_SECRET_ACCESS_KEY=$secret_key
-                export AWS_SESSION_TOKEN=$session_token
-                
-                DEV_VPC=$(aws ec2 describe-vpcs \
-                  --filters "Name=tag:Environment,Values=development" \
-                  --query 'Vpcs[0].VpcId' \
-                  --output text 2>/dev/null || echo "NOT_FOUND")
-                
-                echo "vpc_id=$DEV_VPC" >> $GITHUB_OUTPUT
-                echo "Dev VPC ID: $DEV_VPC"
-              } || {
+              --output text 2>&1); then
+              
+              echo "✅ Successfully assumed cross-account role"
+              
+              # Parse credentials
+              read access_key secret_key session_token <<< "$ASSUME_ROLE_OUTPUT"
+              
+              if [ -z "$access_key" ] || [ -z "$secret_key" ] || [ -z "$session_token" ]; then
+                echo "❌ INVALID CREDENTIALS RECEIVED"
+                echo ""
+                echo "🚨 ERROR: Role assumption returned incomplete credentials"
+                echo "📋 This usually indicates a parsing error or AWS API issue"
+                echo ""
                 echo "vpc_id=NOT_FOUND" >> $GITHUB_OUTPUT
-                echo "Failed to get Dev VPC info"
-              }
+                exit 0
+              fi
+              
+              # Use temporary credentials to get VPC info
+              echo "🔍 Querying development VPCs..."
+              if DEV_VPC=$(AWS_ACCESS_KEY_ID="$access_key" \
+                          AWS_SECRET_ACCESS_KEY="$secret_key" \
+                          AWS_SESSION_TOKEN="$session_token" \
+                          aws ec2 describe-vpcs \
+                            --filters "Name=tag:Environment,Values=development" \
+                            --query 'Vpcs[0].VpcId' \
+                            --output text 2>&1); then
+                
+                if [ "$DEV_VPC" != "None" ] && [ "$DEV_VPC" != "null" ] && [ -n "$DEV_VPC" ]; then
+                  echo "✅ Found development VPC: ***${DEV_VPC: -8}"
+                  echo "::add-mask::$DEV_VPC"
+                  echo "vpc_id=$DEV_VPC" >> $GITHUB_OUTPUT
+                else
+                  echo "⚠️  No development VPC found with Environment=development tag"
+                  echo ""
+                  echo "📋 POSSIBLE CAUSES:"
+                  echo "  1. No VPC exists with tag Environment=development"
+                  echo "  2. VPC exists but in different region"
+                  echo "  3. Tag key/value case sensitivity mismatch"
+                  echo "  4. Insufficient EC2 permissions in dev account"
+                  echo ""
+                  echo "💡 TROUBLESHOOTING:"
+                  echo "  1. Check VPC tags in dev account EC2 console"
+                  echo "  2. Verify region consistency (${{ env.AWS_REGION }})"
+                  echo "  3. Ensure GitHubDeploymentRole has ec2:DescribeVpcs permission"
+                  echo ""
+                  echo "vpc_id=NOT_FOUND" >> $GITHUB_OUTPUT
+                fi
+              else
+                echo "❌ FAILED TO QUERY DEV ACCOUNT VPCs"
+                echo ""
+                echo "🚨 ERROR: Cannot describe VPCs in development account"
+                echo "📋 AWS CLI Error: $DEV_VPC"
+                echo ""
+                echo "🔧 POSSIBLE CAUSES:"
+                echo "  1. Insufficient EC2 permissions in dev account role"
+                echo "  2. VPC service unavailable in region ${{ env.AWS_REGION }}"
+                echo "  3. Network connectivity issues"
+                echo "  4. Temporary AWS service disruption"
+                echo ""
+                echo "💡 REQUIRED PERMISSIONS:"
+                echo "  - ec2:DescribeVpcs"
+                echo "  - ec2:DescribeVpcAttribute (optional)"
+                echo ""
+                echo "vpc_id=NOT_FOUND" >> $GITHUB_OUTPUT
+              fi
+              
+            else
+              echo "❌ FAILED TO ASSUME CROSS-ACCOUNT ROLE"
+              echo ""
+              echo "🚨 ERROR: Cannot assume role in development account"
+              echo "📋 AWS STS Error: $ASSUME_ROLE_OUTPUT"
+              echo ""
+              echo "🔧 COMMON CAUSES:"
+              echo "  1. Role does not exist in dev account"
+              echo "  2. Trust policy doesn't allow this GitHub repository"
+              echo "  3. Role name mismatch (expected: GitHubDeploymentRole)"
+              echo "  4. Cross-account permissions not configured"
+              echo "  5. Dev account ID incorrect in repository variables"
+              echo ""
+              echo "💡 VERIFICATION STEPS:"
+              echo "  1. Check role exists: aws iam get-role --role-name GitHubDeploymentRole"
+              echo "  2. Verify trust policy allows GitHub OIDC provider"
+              echo "  3. Confirm repository variables AWS_ACCOUNT_ID_DEV is correct"
+              echo "  4. Test role assumption manually with AWS CLI"
+              echo ""
+              echo "🔗 TRUST POLICY SHOULD INCLUDE:"
+              echo '  "Principal": {'
+              echo '    "Federated": "arn:aws:iam::DEV_ACCOUNT:oidc-provider/token.actions.githubusercontent.com"'
+              echo '  }'
+              echo ""
+              echo "vpc_id=NOT_FOUND" >> $GITHUB_OUTPUT
+            fi
+            
           else
+            echo "ℹ️  No development account configured"
+            echo "📋 This is normal for single-account deployments"
+            echo "🔧 To enable cross-account features:"
+            echo "  1. Set AWS_ACCOUNT_ID_DEV repository variable"
+            echo "  2. Configure GitHubDeploymentRole in dev account"
+            echo "  3. Set up VPC peering between accounts"
+            echo ""
             echo "vpc_id=NOT_FOUND" >> $GITHUB_OUTPUT
-            echo "No dev account configured"
           fi
 
+          echo ""
+          echo "✅ Development account VPC check completed"
+
   # ============================================================================
-  # JOB 2: Deploy Networking Stack
+  # JOB 4: Deploy Networking Stack
   # ============================================================================
   deploy-networking:
     name: Deploy Networking Stack
-    needs: [build, validate-setup]
+    needs: [determine-jobs, build, validate-setup]
     runs-on: ubuntu-latest
     environment: pipeline
     if: |
       always() &&
-      needs.build.result == 'success' &&
-      needs.validate-setup.result == 'success' &&
-      (github.event.inputs.stack == 'networking' || github.event_name == 'push')
+      needs.determine-jobs.outputs.run_deploy_networking == 'true' &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped') &&
+      (needs.validate-setup.result == 'success' || needs.validate-setup.result == 'skipped') &&
+      (github.event.inputs.stack == 'networking' || github.event_name == 'push' || github.event.inputs.jobs_to_run != '')
 
     steps:
       - name: Checkout
@@ -458,17 +937,21 @@ jobs:
   # ============================================================================
   # JOB 3: Deploy Monitoring EFS Stack
   # ============================================================================
+  # ============================================================================
+  # JOB 5: Deploy Monitoring EFS (Parallel with VPC Peering)
+  # ============================================================================
   deploy-monitoring-efs:
     name: Deploy Monitoring EFS
-    needs: [build, validate-setup, deploy-networking]
+    needs: [determine-jobs, build, validate-setup, deploy-networking]
     runs-on: ubuntu-latest
     environment: pipeline
     if: |
       always() &&
-      needs.build.result == 'success' &&
-      needs.validate-setup.result == 'success' &&
-      needs.deploy-networking.result == 'success' &&
-      (github.event.inputs.stack == 'monitoring-efs' || github.event_name == 'push')
+      needs.determine-jobs.outputs.run_deploy_efs == 'true' &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped') &&
+      (needs.validate-setup.result == 'success' || needs.validate-setup.result == 'skipped') &&
+      (needs.deploy-networking.result == 'success' || needs.deploy-networking.result == 'skipped') &&
+      (github.event.inputs.stack == 'monitoring-efs' || github.event_name == 'push' || github.event.inputs.jobs_to_run != '')
 
     outputs:
       efs_id: ${{ steps.get-outputs.outputs.efs_id }}
@@ -576,18 +1059,22 @@ jobs:
   # ============================================================================
   # JOB 4: Deploy VPC Peering
   # ============================================================================
+  # ============================================================================
+  # JOB 6: Deploy VPC Peering (Parallel with EFS)
+  # ============================================================================
   deploy-vpc-peering:
     name: Deploy VPC Peering
-    needs: [build, validate-setup, deploy-networking]
+    needs: [determine-jobs, build, validate-setup, deploy-networking]
     runs-on: ubuntu-latest
     environment: pipeline
     if: |
       always() &&
-      needs.build.result == 'success' &&
-      needs.deploy-networking.result == 'success' &&
+      needs.determine-jobs.outputs.run_deploy_peering == 'true' &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped') &&
+      (needs.deploy-networking.result == 'success' || needs.deploy-networking.result == 'skipped') &&
       needs.validate-setup.outputs.dev_vpc_id != 'NOT_FOUND' &&
       needs.validate-setup.outputs.dev_vpc_id != '' &&
-      (github.event.inputs.stack == 'vpc-peering' || github.event_name == 'push')
+      (github.event.inputs.stack == 'vpc-peering' || github.event_name == 'push' || github.event.inputs.jobs_to_run != '')
 
     steps:
       - name: Checkout
@@ -614,18 +1101,29 @@ jobs:
   # ============================================================================
   # JOB 5: Deploy Monitoring Infrastructure
   # ============================================================================
+  # ============================================================================
+  # JOB 7: Deploy Monitoring Infrastructure (Depends on EFS)
+  # ============================================================================
   deploy-monitoring-infra:
     name: Deploy Monitoring Infrastructure
-    needs: [build, validate-setup, deploy-networking, deploy-monitoring-efs]
+    needs:
+      [
+        determine-jobs,
+        build,
+        validate-setup,
+        deploy-networking,
+        deploy-monitoring-efs,
+      ]
     runs-on: ubuntu-latest
     environment: pipeline
     if: |
       always() &&
-      needs.build.result == 'success' &&
-      needs.validate-setup.result == 'success' &&
-      needs.deploy-networking.result == 'success' &&
-      needs.deploy-monitoring-efs.result == 'success' &&
-      (github.event.inputs.stack == 'monitoring-infra' || github.event_name == 'push')
+      needs.determine-jobs.outputs.run_deploy_infra == 'true' &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped') &&
+      (needs.validate-setup.result == 'success' || needs.validate-setup.result == 'skipped') &&
+      (needs.deploy-networking.result == 'success' || needs.deploy-networking.result == 'skipped') &&
+      (needs.deploy-monitoring-efs.result == 'success' || needs.deploy-monitoring-efs.result == 'skipped') &&
+      (github.event.inputs.stack == 'monitoring-infra' || github.event_name == 'push' || github.event.inputs.jobs_to_run != '')
 
     outputs:
       alb_dns: ${{ steps.get-outputs.outputs.alb_dns }}
@@ -683,17 +1181,21 @@ jobs:
   # ============================================================================
   # JOB 6: Deploy Monitoring Services
   # ============================================================================
+  # ============================================================================
+  # JOB 8: Deploy Monitoring Services (Depends on Infrastructure)
+  # ============================================================================
   deploy-monitoring-services:
     name: Deploy Monitoring Services
-    needs: [build, validate-setup, deploy-monitoring-infra]
+    needs: [determine-jobs, build, validate-setup, deploy-monitoring-infra]
     runs-on: ubuntu-latest
     environment: pipeline
     if: |
       always() &&
-      needs.build.result == 'success' &&
-      needs.validate-setup.result == 'success' &&
-      needs.deploy-monitoring-infra.result == 'success' &&
-      (github.event.inputs.stack == 'monitoring-services' || github.event_name == 'push')
+      needs.determine-jobs.outputs.run_deploy_services == 'true' &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped') &&
+      (needs.validate-setup.result == 'success' || needs.validate-setup.result == 'skipped') &&
+      (needs.deploy-monitoring-infra.result == 'success' || needs.deploy-monitoring-infra.result == 'skipped') &&
+      (github.event.inputs.stack == 'monitoring-services' || github.event_name == 'push' || github.event.inputs.jobs_to_run != '')
 
     steps:
       - name: Checkout
@@ -757,6 +1259,7 @@ jobs:
     name: Health Checks
     needs:
       [
+        determine-jobs,
         build,
         validate-setup,
         deploy-monitoring-infra,
@@ -766,7 +1269,8 @@ jobs:
     environment: pipeline
     if: |
       always() &&
-      needs.deploy-monitoring-services.result == 'success' &&
+      needs.determine-jobs.outputs.run_health_checks == 'true' &&
+      (needs.deploy-monitoring-services.result == 'success' || needs.deploy-monitoring-services.result == 'skipped') &&
       github.event.inputs.stack != 'destroy-all'
 
     steps:
@@ -957,14 +1461,465 @@ jobs:
           echo "*Generated by automated monitoring pipeline validation*" >> $GITHUB_STEP_SUMMARY
 
   # ============================================================================
-  # JOB 8: Destroy (Optional)
+  # JOB 10: Parallel Drift Detection Jobs
+  # ============================================================================
+
+  # Drift Detection - Networking Stack (Independent)
+  drift-detection-networking:
+    name: Drift Detection - Networking
+    needs:
+      [determine-jobs, build, validate-setup, deploy-networking, health-checks]
+    runs-on: ubuntu-latest
+    environment: pipeline
+    if: |
+      always() &&
+      needs.determine-jobs.outputs.run_drift_detection == 'true' &&
+      (needs.health-checks.result == 'success' || needs.health-checks.result == 'skipped') &&
+      github.event.inputs.stack != 'destroy-all'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup CDK Deployment Environment
+        uses: ./.github/actions/setup-cdk-deployment
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          aws-role: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+          build-cache-key: ${{ needs.build.outputs.cache-key }}
+
+      - name: Detect Drift - Networking Stack
+        id: drift-networking
+        uses: ./.github/actions/drift-detection
+        with:
+          stack-name: "NetworkingStack-pipeline"
+          environment: "pipeline"
+          aws-account-id: ${{ needs.validate-setup.outputs.pipeline_account_id }}
+          aws-region: ${{ env.AWS_REGION }}
+          dev-vpc-id: ${{ needs.validate-setup.outputs.dev_vpc_id }}
+          dev-account-id: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+          drift-threshold: "2"
+          check-mode: "full"
+
+  # Drift Detection - EFS Stack (Independent)
+  drift-detection-efs:
+    name: Drift Detection - EFS
+    needs:
+      [
+        determine-jobs,
+        build,
+        validate-setup,
+        deploy-monitoring-efs,
+        health-checks,
+      ]
+    runs-on: ubuntu-latest
+    environment: pipeline
+    if: |
+      always() &&
+      needs.determine-jobs.outputs.run_drift_detection == 'true' &&
+      (needs.health-checks.result == 'success' || needs.health-checks.result == 'skipped') &&
+      github.event.inputs.stack != 'destroy-all'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup CDK Deployment Environment
+        uses: ./.github/actions/setup-cdk-deployment
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          aws-role: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+          build-cache-key: ${{ needs.build.outputs.cache-key }}
+
+      - name: Detect Drift - EFS Stack
+        id: drift-efs
+        uses: ./.github/actions/drift-detection
+        with:
+          stack-name: "MonitoringEfsStack-pipeline"
+          environment: "pipeline"
+          aws-account-id: ${{ needs.validate-setup.outputs.pipeline_account_id }}
+          aws-region: ${{ env.AWS_REGION }}
+          dev-vpc-id: ${{ needs.validate-setup.outputs.dev_vpc_id }}
+          dev-account-id: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+          drift-threshold: "1"
+          check-mode: "full"
+
+  # Drift Detection - VPC Peering Stack (Independent)
+  drift-detection-peering:
+    name: Drift Detection - VPC Peering
+    needs:
+      [determine-jobs, build, validate-setup, deploy-vpc-peering, health-checks]
+    runs-on: ubuntu-latest
+    environment: pipeline
+    if: |
+      always() &&
+      needs.determine-jobs.outputs.run_drift_detection == 'true' &&
+      (needs.health-checks.result == 'success' || needs.health-checks.result == 'skipped') &&
+      vars.AWS_ACCOUNT_ID_DEV != '' &&
+      github.event.inputs.stack != 'destroy-all'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup CDK Deployment Environment
+        uses: ./.github/actions/setup-cdk-deployment
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          aws-role: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+          build-cache-key: ${{ needs.build.outputs.cache-key }}
+
+      - name: Detect Drift - VPC Peering Stack
+        id: drift-peering
+        uses: ./.github/actions/drift-detection
+        with:
+          stack-name: "VpcPeeringStack-pipeline"
+          environment: "pipeline"
+          aws-account-id: ${{ needs.validate-setup.outputs.pipeline_account_id }}
+          aws-region: ${{ env.AWS_REGION }}
+          dev-vpc-id: ${{ needs.validate-setup.outputs.dev_vpc_id }}
+          dev-account-id: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+          drift-threshold: "1"
+          check-mode: "full"
+
+  # Drift Detection - Infrastructure Stack (Independent)
+  drift-detection-infra:
+    name: Drift Detection - Infrastructure
+    needs:
+      [
+        determine-jobs,
+        build,
+        validate-setup,
+        deploy-monitoring-infra,
+        health-checks,
+      ]
+    runs-on: ubuntu-latest
+    environment: pipeline
+    if: |
+      always() &&
+      needs.determine-jobs.outputs.run_drift_detection == 'true' &&
+      (needs.health-checks.result == 'success' || needs.health-checks.result == 'skipped') &&
+      github.event.inputs.stack != 'destroy-all'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup CDK Deployment Environment
+        uses: ./.github/actions/setup-cdk-deployment
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          aws-role: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+          build-cache-key: ${{ needs.build.outputs.cache-key }}
+
+      - name: Detect Drift - Infrastructure Stack
+        id: drift-infra
+        uses: ./.github/actions/drift-detection
+        with:
+          stack-name: "MonitoringInfraStack-pipeline"
+          environment: "pipeline"
+          aws-account-id: ${{ needs.validate-setup.outputs.pipeline_account_id }}
+          aws-region: ${{ env.AWS_REGION }}
+          dev-vpc-id: ${{ needs.validate-setup.outputs.dev_vpc_id }}
+          dev-account-id: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+          drift-threshold: "3"
+          check-mode: "full"
+
+  # Drift Detection - Services Stack (Independent)
+  drift-detection-services:
+    name: Drift Detection - Services
+    needs:
+      [
+        determine-jobs,
+        build,
+        validate-setup,
+        deploy-monitoring-services,
+        health-checks,
+      ]
+    runs-on: ubuntu-latest
+    environment: pipeline
+    if: |
+      always() &&
+      needs.determine-jobs.outputs.run_drift_detection == 'true' &&
+      (needs.health-checks.result == 'success' || needs.health-checks.result == 'skipped') &&
+      github.event.inputs.stack != 'destroy-all'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup CDK Deployment Environment
+        uses: ./.github/actions/setup-cdk-deployment
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          aws-role: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+          build-cache-key: ${{ needs.build.outputs.cache-key }}
+
+      - name: Detect Drift - Services Stack
+        id: drift-services
+        uses: ./.github/actions/drift-detection
+        with:
+          stack-name: "MonitoringServiceStack-pipeline"
+          environment: "pipeline"
+          aws-account-id: ${{ needs.validate-setup.outputs.pipeline_account_id }}
+          aws-region: ${{ env.AWS_REGION }}
+          dev-vpc-id: ${{ needs.validate-setup.outputs.dev_vpc_id }}
+          dev-account-id: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+          drift-threshold: "5"
+          check-mode: "full"
+
+  # Drift Analysis - Aggregates results from parallel drift detection jobs
+  drift-analysis:
+    name: Drift Analysis Summary
+    needs:
+      [
+        determine-jobs,
+        drift-detection-networking,
+        drift-detection-efs,
+        drift-detection-peering,
+        drift-detection-infra,
+        drift-detection-services,
+      ]
+    runs-on: ubuntu-latest
+    if: |
+      always() &&
+      needs.determine-jobs.outputs.run_drift_detection == 'true' &&
+      github.event.inputs.stack != 'destroy-all'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Analyze Overall Drift Status
+        id: overall-analysis
+        run: |
+          echo "🔍 Analyzing overall infrastructure drift status from parallel jobs..."
+          echo ""
+
+          # Collect drift results from parallel drift detection jobs
+          TOTAL_DRIFT_COUNT=0
+          CRITICAL_DRIFT=false
+          STACKS_WITH_DRIFT=0
+          DRIFT_DETAILS=""
+
+          # Get results from parallel drift detection jobs
+          NETWORKING_DRIFT="${{ needs.drift-detection-networking.result == 'success' && 'false' || 'unknown' }}"
+          EFS_DRIFT="${{ needs.drift-detection-efs.result == 'success' && 'false' || 'unknown' }}"
+          INFRA_DRIFT="${{ needs.drift-detection-infra.result == 'success' && 'false' || 'unknown' }}"
+          SERVICES_DRIFT="${{ needs.drift-detection-services.result == 'success' && 'false' || 'unknown' }}"
+          PEERING_DRIFT="${{ needs.drift-detection-peering.result == 'success' && 'false' || 'unknown' }}"
+
+          # Note: Since we're using separate jobs, we can't access step outputs directly
+          # We'll analyze based on job success/failure status
+          echo "📊 Parallel Drift Detection Results:"
+          echo "  Networking Job: ${{ needs.drift-detection-networking.result }}"
+          echo "  EFS Job: ${{ needs.drift-detection-efs.result }}"
+          echo "  Infrastructure Job: ${{ needs.drift-detection-infra.result }}"
+          echo "  Services Job: ${{ needs.drift-detection-services.result }}"
+
+          if [ "${{ vars.AWS_ACCOUNT_ID_DEV }}" != "" ]; then
+            echo "  VPC Peering Job: ${{ needs.drift-detection-peering.result }}"
+          fi
+
+          # Count failed jobs (indicating drift above threshold)
+          FAILED_JOBS=0
+
+          [ "${{ needs.drift-detection-networking.result }}" = "failure" ] && FAILED_JOBS=$((FAILED_JOBS + 1))
+          [ "${{ needs.drift-detection-efs.result }}" = "failure" ] && FAILED_JOBS=$((FAILED_JOBS + 1))
+          [ "${{ needs.drift-detection-infra.result }}" = "failure" ] && FAILED_JOBS=$((FAILED_JOBS + 1))
+          [ "${{ needs.drift-detection-services.result }}" = "failure" ] && FAILED_JOBS=$((FAILED_JOBS + 1))
+
+          if [ "${{ vars.AWS_ACCOUNT_ID_DEV }}" != "" ]; then
+            [ "${{ needs.drift-detection-peering.result }}" = "failure" ] && FAILED_JOBS=$((FAILED_JOBS + 1))
+          fi
+
+          # Determine overall status based on failed jobs
+          if [ $FAILED_JOBS -eq 0 ]; then
+            OVERALL_STATUS="clean"
+            echo "overall_status=clean" >> $GITHUB_OUTPUT
+            echo ""
+            echo "✅ INFRASTRUCTURE STATUS: CLEAN"
+            echo "🎉 All stacks passed drift detection thresholds"
+          elif [ $FAILED_JOBS -eq 1 ]; then
+            OVERALL_STATUS="minor"
+            echo "overall_status=minor" >> $GITHUB_OUTPUT
+            echo ""
+            echo "⚠️  INFRASTRUCTURE STATUS: MINOR DRIFT DETECTED"
+            echo "📋 One stack exceeded drift threshold"
+          elif [ $FAILED_JOBS -le 2 ]; then
+            OVERALL_STATUS="major"
+            echo "overall_status=major" >> $GITHUB_OUTPUT
+            echo ""
+            echo "🚨 INFRASTRUCTURE STATUS: MAJOR DRIFT DETECTED"
+            echo "⚠️  Multiple stacks exceeded drift thresholds"
+          else
+            OVERALL_STATUS="critical"
+            echo "overall_status=critical" >> $GITHUB_OUTPUT
+            echo ""
+            echo "💥 INFRASTRUCTURE STATUS: CRITICAL DRIFT DETECTED"
+            echo "❌ Majority of stacks have excessive drift"
+          fi
+
+          echo "failed_jobs=$FAILED_JOBS" >> $GITHUB_OUTPUT
+          echo "total_jobs_checked=5" >> $GITHUB_OUTPUT
+
+          echo "📊 Per-Stack Drift Analysis:"
+          for stack_info in "${STACKS[@]}"; do
+            IFS=':' read -r stack_name drift_detected drift_count drift_severity <<< "$stack_info"
+            
+            if [ "$drift_detected" = "true" ]; then
+              STACKS_WITH_DRIFT=$((STACKS_WITH_DRIFT + 1))
+              TOTAL_DRIFT_COUNT=$((TOTAL_DRIFT_COUNT + drift_count))
+              
+              echo "  ⚠️  $stack_name: $drift_count drift(s) - $drift_severity severity"
+              DRIFT_DETAILS="$DRIFT_DETAILS\n  - $stack_name: $drift_count drift(s) ($drift_severity)"
+              
+              if [ "$drift_severity" = "critical" ] || [ "$drift_severity" = "high" ]; then
+                CRITICAL_DRIFT=true
+              fi
+            else
+              echo "  ✅ $stack_name: No drift detected"
+            fi
+          done
+
+          echo ""
+          echo "📋 Overall Drift Summary:"
+          echo "  Total Stacks Checked: ${#STACKS[@]}"
+          echo "  Stacks with Drift: $STACKS_WITH_DRIFT"
+          echo "  Total Drift Count: $TOTAL_DRIFT_COUNT"
+          echo "  Critical Drift: $CRITICAL_DRIFT"
+
+          # Set outputs
+          echo "total_drift_count=$TOTAL_DRIFT_COUNT" >> $GITHUB_OUTPUT
+          echo "stacks_with_drift=$STACKS_WITH_DRIFT" >> $GITHUB_OUTPUT
+          echo "critical_drift=$CRITICAL_DRIFT" >> $GITHUB_OUTPUT
+
+          # Determine overall status
+          if [ $STACKS_WITH_DRIFT -eq 0 ]; then
+            echo "overall_status=clean" >> $GITHUB_OUTPUT
+            echo ""
+            echo "✅ INFRASTRUCTURE STATUS: CLEAN"
+            echo "🎉 All stacks match their CDK configuration"
+          elif [ "$CRITICAL_DRIFT" = "true" ]; then
+            echo "overall_status=critical" >> $GITHUB_OUTPUT
+            echo ""
+            echo "🚨 INFRASTRUCTURE STATUS: CRITICAL DRIFT DETECTED"
+            echo "❌ Immediate attention required"
+          elif [ $TOTAL_DRIFT_COUNT -le 5 ]; then
+            echo "overall_status=minor" >> $GITHUB_OUTPUT
+            echo ""
+            echo "⚠️  INFRASTRUCTURE STATUS: MINOR DRIFT DETECTED"
+            echo "📋 Review and address when convenient"
+          else
+            echo "overall_status=major" >> $GITHUB_OUTPUT
+            echo ""
+            echo "🚨 INFRASTRUCTURE STATUS: MAJOR DRIFT DETECTED"
+            echo "⚠️  Significant drift requires attention"
+          fi
+
+      - name: Upload Drift Detection Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-detection-report-${{ github.run_number }}
+          path: |
+            **/drift-report/
+            **/cdk-diff-output.txt
+            **/cf-drift-details.txt
+          retention-days: 30
+
+      - name: Generate Drift Detection Summary
+        if: always()
+        run: |
+          echo "## 🔍 Infrastructure Drift Detection" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Timestamp**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment**: pipeline" >> $GITHUB_STEP_SUMMARY
+          echo "**Region**: ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Overall status
+          OVERALL_STATUS="${{ steps.overall-analysis.outputs.overall_status }}"
+          case "$OVERALL_STATUS" in
+            "clean")
+              echo "### Status: ✅ CLEAN" >> $GITHUB_STEP_SUMMARY
+              echo "All infrastructure matches CDK configuration" >> $GITHUB_STEP_SUMMARY
+              ;;
+            "minor")
+              echo "### Status: ⚠️ MINOR DRIFT" >> $GITHUB_STEP_SUMMARY
+              echo "Small amount of drift detected - review when convenient" >> $GITHUB_STEP_SUMMARY
+              ;;
+            "major")
+              echo "### Status: 🚨 MAJOR DRIFT" >> $GITHUB_STEP_SUMMARY
+              echo "Significant drift detected - attention required" >> $GITHUB_STEP_SUMMARY
+              ;;
+            "critical")
+              echo "### Status: 💥 CRITICAL DRIFT" >> $GITHUB_STEP_SUMMARY
+              echo "Critical drift detected - immediate action required" >> $GITHUB_STEP_SUMMARY
+              ;;
+            *)
+              echo "### Status: ❓ UNKNOWN" >> $GITHUB_STEP_SUMMARY
+              echo "Unable to determine drift status" >> $GITHUB_STEP_SUMMARY
+              ;;
+          esac
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Summary Statistics" >> $GITHUB_STEP_SUMMARY
+          echo "- **Stacks with Drift**: ${{ steps.overall-analysis.outputs.stacks_with_drift }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Total Drift Count**: ${{ steps.overall-analysis.outputs.total_drift_count }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Critical Issues**: ${{ steps.overall-analysis.outputs.critical_drift }}" >> $GITHUB_STEP_SUMMARY
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Per-Stack Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Stack | Drift | Count | Severity |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|-------|----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Networking | ${{ steps.drift-networking.outputs.drift-detected == 'true' && '⚠️' || '✅' }} | ${{ steps.drift-networking.outputs.drift-count }} | ${{ steps.drift-networking.outputs.drift-severity }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| EFS | ${{ steps.drift-efs.outputs.drift-detected == 'true' && '⚠️' || '✅' }} | ${{ steps.drift-efs.outputs.drift-count }} | ${{ steps.drift-efs.outputs.drift-severity }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Infrastructure | ${{ steps.drift-infra.outputs.drift-detected == 'true' && '⚠️' || '✅' }} | ${{ steps.drift-infra.outputs.drift-count }} | ${{ steps.drift-infra.outputs.drift-severity }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Services | ${{ steps.drift-services.outputs.drift-detected == 'true' && '⚠️' || '✅' }} | ${{ steps.drift-services.outputs.drift-count }} | ${{ steps.drift-services.outputs.drift-severity }} |" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ vars.AWS_ACCOUNT_ID_DEV }}" != "" ]; then
+            echo "| VPC Peering | ${{ steps.drift-peering.outputs.drift-detected == 'true' && '⚠️' || '✅' }} | ${{ steps.drift-peering.outputs.drift-count }} | ${{ steps.drift-peering.outputs.drift-severity }} |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ steps.overall-analysis.outputs.total_drift_count }}" -gt 0 ]; then
+            echo "1. **Review Drift Details**: Check uploaded artifacts for specific changes" >> $GITHUB_STEP_SUMMARY
+            echo "2. **Analyze Changes**: Determine if drift is intentional or accidental" >> $GITHUB_STEP_SUMMARY
+            echo "3. **Update CDK Code**: If changes should be preserved, update CDK" >> $GITHUB_STEP_SUMMARY
+            echo "4. **Deploy Updates**: Run deployment to align infrastructure with code" >> $GITHUB_STEP_SUMMARY
+            echo "5. **Monitor**: Set up regular drift detection to catch future changes" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ **No Action Required**: Infrastructure is aligned with CDK configuration" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Continue regular monitoring and maintain current change control processes." >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📄 **Detailed Reports**: Available in job artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "*Drift detection helps maintain infrastructure consistency and catch unauthorized changes*" >> $GITHUB_STEP_SUMMARY
+
+  # ============================================================================
+  # JOB 9: Destroy (Optional)
   # ============================================================================
   destroy-all:
     name: Destroy All Stacks
-    needs: [build, validate-setup]
+    needs: [determine-jobs, build, validate-setup]
     runs-on: ubuntu-latest
     environment: pipeline
-    if: github.event.inputs.stack == 'destroy-all'
+    if: |
+      always() &&
+      needs.determine-jobs.outputs.run_destroy_all == 'true' &&
+      (github.event.inputs.stack == 'destroy-all' || github.event.inputs.jobs_to_run != '')
 
     steps:
       - name: Checkout
@@ -1008,10 +1963,14 @@ jobs:
   # ============================================================================
   # JOB 9: Automatic Rollback (On Failure)
   # ============================================================================
+  # ============================================================================
+  # JOB 11: Rollback on Deployment Failure
+  # ============================================================================
   rollback-on-failure:
     name: Rollback on Deployment Failure
     needs:
       [
+        determine-jobs,
         build,
         validate-setup,
         deploy-networking,
@@ -1025,12 +1984,13 @@ jobs:
     environment: pipeline
     if: |
       always() &&
-      (needs.deploy-networking.result == 'failure' ||
-       needs.deploy-monitoring-efs.result == 'failure' ||
-       needs.deploy-vpc-peering.result == 'failure' ||
-       needs.deploy-monitoring-infra.result == 'failure' ||
-       needs.deploy-monitoring-services.result == 'failure' ||
-       needs.health-checks.result == 'failure') &&
+      (needs.determine-jobs.outputs.run_rollback == 'true' ||
+       (needs.deploy-networking.result == 'failure' ||
+        needs.deploy-monitoring-efs.result == 'failure' ||
+        needs.deploy-vpc-peering.result == 'failure' ||
+        needs.deploy-monitoring-infra.result == 'failure' ||
+        needs.deploy-monitoring-services.result == 'failure' ||
+        needs.health-checks.result == 'failure')) &&
       github.event.inputs.stack != 'destroy-all'
 
     steps:
