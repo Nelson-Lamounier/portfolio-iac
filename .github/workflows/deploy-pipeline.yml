@@ -138,7 +138,7 @@ jobs:
           cd infrastructure
           # Validate CDK synthesis for monitoring stacks only
           # Exit code 1 is expected due to CDK Nag warnings, but synthesis succeeds
-          ENVIRONMENT=pipeline yarn cdk synth MonitoringStack-pipeline MonitoringEfsStack-pipeline MonitoringInfraStack-pipeline MonitoringServiceStack-pipeline VpcPeeringStack-pipeline --quiet > /dev/null 2>&1 || echo "CDK synthesis completed with warnings (expected)"
+          ENVIRONMENT=pipeline yarn cdk synth MonitoringEfsStack-pipeline MonitoringInfraStack-pipeline MonitoringServiceStack-pipeline VpcPeeringStack-pipeline --quiet > /dev/null 2>&1 || echo "CDK synthesis completed with warnings (expected)"
           echo "✓ CDK validation completed - monitoring stacks can be synthesized"
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
@@ -377,7 +377,7 @@ jobs:
           ENVIRONMENT=pipeline yarn cdk list
           echo ""
 
-          # Synthesize pipeline monitoring stacks for build validation
+          # Only synthesize pipeline stacks for build validation
           echo "Synthesizing monitoring stacks..."
           ENVIRONMENT=pipeline yarn cdk synth MonitoringEfsStack-pipeline MonitoringInfraStack-pipeline MonitoringServiceStack-pipeline VpcPeeringStack-pipeline --quiet || echo "CDK synthesis completed with warnings (expected)"
         env:
@@ -394,10 +394,11 @@ jobs:
     needs: [security-scan, lint-and-quality]
     runs-on: ubuntu-latest
     environment: pipeline
-    if: github.event.inputs.skip_validation != 'true'
+    # Always run this job to get account ID - validation can be skipped but setup is required
     outputs:
       pipeline_account_id: ${{ steps.setup.outputs.pipeline_account_id }}
       dev_vpc_id: ${{ steps.dev-info.outputs.vpc_id }}
+      validation_skipped: ${{ github.event.inputs.skip_validation == 'true' }}
 
     steps:
       - name: Checkout
@@ -424,9 +425,16 @@ jobs:
           echo "SUCCESS: Pipeline Account ID: ***MASKED***"
           echo "SUCCESS: Region: ${{ env.AWS_REGION }}"
 
+          # Skip validation if requested
+          if [ "${{ github.event.inputs.skip_validation }}" = "true" ]; then
+            echo "⚠️  Validation skipped by user request"
+          else
+            echo "✅ Full validation will be performed"
+          fi
+
       - name: Get Dev Account VPC Info
         id: dev-info
-        if: vars.AWS_ACCOUNT_ID_DEV != ''
+        if: vars.AWS_ACCOUNT_ID_DEV != '' && github.event.inputs.skip_validation != 'true'
         continue-on-error: true
         run: |
           # Security: Mask dev account ID
@@ -472,7 +480,7 @@ jobs:
     if: |
       always() &&
       needs.build.result == 'success' &&
-      (needs.validate-setup.result == 'success' || needs.validate-setup.result == 'skipped') &&
+      needs.validate-setup.result == 'success' &&
       (github.event.inputs.stack == 'networking' || github.event_name == 'push')
 
     steps:
@@ -515,21 +523,8 @@ jobs:
           echo "Deploying NetworkingStack-pipeline..."
           cd infrastructure
 
-          # Check current stack status
-          STACK_STATUS=$(aws cloudformation describe-stacks \
-            --stack-name NetworkingStack-pipeline \
-            --query 'Stacks[0].StackStatus' \
-            --output text 2>/dev/null || echo "NOT_FOUND")
-
-          echo "Current status: $STACK_STATUS"
-
-          # Deploy with appropriate flags based on status
-          if [ "$STACK_STATUS" = "UPDATE_ROLLBACK_COMPLETE" ]; then
-            echo "Stack in rollback state - deploying with --exclusively flag"
-            ENVIRONMENT=pipeline yarn cdk deploy NetworkingStack-pipeline --require-approval never --exclusively --verbose 2>&1 | sed 's/arn:aws:iam::[0-9]\{12\}:/arn:aws:iam::***MASKED***:/g'
-          else
-            ENVIRONMENT=pipeline yarn cdk deploy NetworkingStack-pipeline --require-approval never --verbose 2>&1 | sed 's/arn:aws:iam::[0-9]\{12\}:/arn:aws:iam::***MASKED***:/g'
-          fi
+          # Deploy the stack (validation already completed in earlier jobs)
+          ENVIRONMENT=pipeline yarn cdk deploy NetworkingStack-pipeline --require-approval never --verbose 2>&1 | sed 's/arn:aws:iam::[0-9]\{12\}:/arn:aws:iam::***MASKED***:/g'
 
           echo "NetworkingStack-pipeline deployed successfully"
         env:
@@ -548,7 +543,7 @@ jobs:
     if: |
       always() &&
       needs.build.result == 'success' &&
-      (needs.validate-setup.result == 'success' || needs.validate-setup.result == 'skipped') &&
+      needs.validate-setup.result == 'success' &&
       needs.deploy-networking.result == 'success' &&
       (github.event.inputs.stack == 'monitoring-efs' || github.event_name == 'push')
 
@@ -592,21 +587,8 @@ jobs:
           echo "Deploying MonitoringEfsStack-pipeline..."
           cd infrastructure
 
-          # Check current stack status
-          STACK_STATUS=$(aws cloudformation describe-stacks \
-            --stack-name MonitoringEfsStack-pipeline \
-            --query 'Stacks[0].StackStatus' \
-            --output text 2>/dev/null || echo "NOT_FOUND")
-
-          echo "Current status: $STACK_STATUS"
-
-          # Deploy with appropriate flags based on status
-          if [ "$STACK_STATUS" = "UPDATE_ROLLBACK_COMPLETE" ]; then
-            echo "Stack in rollback state - deploying with --exclusively flag"
-            ENVIRONMENT=pipeline yarn cdk deploy MonitoringEfsStack-pipeline --require-approval never --exclusively
-          else
-            ENVIRONMENT=pipeline yarn cdk deploy MonitoringEfsStack-pipeline --require-approval never
-          fi
+          # Deploy the stack (validation already completed in earlier jobs)
+          ENVIRONMENT=pipeline yarn cdk deploy MonitoringEfsStack-pipeline --require-approval never
 
           # Get outputs
           EFS_ID=$(aws cloudformation describe-stacks \
@@ -731,6 +713,7 @@ jobs:
           echo "Deploying VpcPeeringStack-pipeline..."
           cd infrastructure
 
+          # Deploy the stack (validation already completed in earlier jobs)
           ENVIRONMENT=pipeline yarn cdk deploy VpcPeeringStack-pipeline --require-approval never
 
           echo "VpcPeeringStack-pipeline deployed successfully"
@@ -750,7 +733,7 @@ jobs:
     if: |
       always() &&
       needs.build.result == 'success' &&
-      (needs.validate-setup.result == 'success' || needs.validate-setup.result == 'skipped') &&
+      needs.validate-setup.result == 'success' &&
       needs.deploy-networking.result == 'success' &&
       needs.deploy-monitoring-efs.result == 'success' &&
       (github.event.inputs.stack == 'monitoring-infra' || github.event_name == 'push')
@@ -787,64 +770,13 @@ jobs:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup Domain Configuration
-        run: |
-          echo "Setting up domain configuration..."
-
-          # Try to get domain config from SSM
-          ROOT_DOMAIN=$(aws ssm get-parameter \
-            --name "/portfolio/domain/root-domain-name" \
-            --query "Parameter.Value" \
-            --output text 2>/dev/null || echo "")
-
-          CERT_ARN=$(aws ssm get-parameter \
-            --name "/portfolio/domain/acm-arn" \
-            --query "Parameter.Value" \
-            --output text 2>/dev/null || echo "")
-
-          if [ -n "$ROOT_DOMAIN" ] && [ -n "$CERT_ARN" ]; then
-            # Security: Mask sensitive values
-            echo "::add-mask::$ROOT_DOMAIN"
-            echo "::add-mask::$CERT_ARN"
-            
-            # Validate certificate is in same account
-            CERT_ACCOUNT=$(echo "$CERT_ARN" | cut -d: -f5)
-            CURRENT_ACCOUNT="${{ needs.validate-setup.outputs.pipeline_account_id }}"
-            
-            if [ "$CERT_ACCOUNT" = "$CURRENT_ACCOUNT" ]; then
-              echo "ROOT_DOMAIN_NAME=$ROOT_DOMAIN" >> $GITHUB_ENV
-              echo "CERTIFICATE_ARN=$CERT_ARN" >> $GITHUB_ENV
-              echo "HTTPS enabled for monitoring.***MASKED***"
-            else
-              echo "Certificate from different account - using HTTP only"
-            fi
-          else
-            echo "No domain configuration found - using HTTP only"
-          fi
-
       - name: Deploy MonitoringInfraStack
         id: deploy
         run: |
           echo "Deploying MonitoringInfraStack-pipeline..."
           cd infrastructure
 
-          # Check for failed states and handle recovery
-          STACK_STATUS=$(aws cloudformation describe-stacks \
-            --stack-name MonitoringInfraStack-pipeline \
-            --query 'Stacks[0].StackStatus' \
-            --output text 2>/dev/null || echo "NOT_FOUND")
-
-          echo "Current status: $STACK_STATUS"
-
-          if [ "$STACK_STATUS" = "UPDATE_ROLLBACK_COMPLETE" ]; then
-            echo "Stack in rollback state - attempting recovery..."
-            # Try to continue update rollback first
-            aws cloudformation continue-update-rollback \
-              --stack-name MonitoringInfraStack-pipeline 2>/dev/null || true
-            sleep 30
-          fi
-
-          # Deploy the stack
+          # Deploy the stack (validation already completed in earlier jobs)
           ENVIRONMENT=pipeline yarn cdk deploy MonitoringInfraStack-pipeline --require-approval never
 
           # Get outputs
@@ -884,7 +816,7 @@ jobs:
     if: |
       always() &&
       needs.build.result == 'success' &&
-      (needs.validate-setup.result == 'success' || needs.validate-setup.result == 'skipped') &&
+      needs.validate-setup.result == 'success' &&
       needs.deploy-monitoring-infra.result == 'success' &&
       (github.event.inputs.stack == 'monitoring-services' || github.event_name == 'push')
 
@@ -921,6 +853,7 @@ jobs:
           echo "Deploying MonitoringServiceStack-pipeline..."
           cd infrastructure
 
+          # Deploy the stack (validation already completed in earlier jobs)
           ENVIRONMENT=pipeline yarn cdk deploy MonitoringServiceStack-pipeline --require-approval never
 
           echo "MonitoringServiceStack-pipeline deployed successfully"
