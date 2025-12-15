@@ -191,6 +191,36 @@ jobs:
                   echo "$SUCCESSFUL_JOBS" | sed 's/^/    /'
                   echo ""
                 fi
+                
+                # Set outputs based on failed jobs
+                echo "$FAILED_JOBS" | grep -q "Security Validation" && echo "run_security_scan=true" >> $GITHUB_OUTPUT || echo "run_security_scan=false" >> $GITHUB_OUTPUT
+                echo "$FAILED_JOBS" | grep -q "Lint & Quality" && echo "run_lint=true" >> $GITHUB_OUTPUT || echo "run_lint=false" >> $GITHUB_OUTPUT
+                echo "$FAILED_JOBS" | grep -q "Build Infrastructure" && echo "run_build=true" >> $GITHUB_OUTPUT || echo "run_build=false" >> $GITHUB_OUTPUT
+                echo "$FAILED_JOBS" | grep -q "Validate & Setup" && echo "run_validate_setup=true" >> $GITHUB_OUTPUT || echo "run_validate_setup=false" >> $GITHUB_OUTPUT
+                echo "$FAILED_JOBS" | grep -q "Deploy Networking" && echo "run_deploy_networking=true" >> $GITHUB_OUTPUT || echo "run_deploy_networking=false" >> $GITHUB_OUTPUT
+                echo "$FAILED_JOBS" | grep -q "Deploy Monitoring EFS" && echo "run_deploy_efs=true" >> $GITHUB_OUTPUT || echo "run_deploy_efs=false" >> $GITHUB_OUTPUT
+                echo "$FAILED_JOBS" | grep -q "Deploy VPC Peering" && echo "run_deploy_peering=true" >> $GITHUB_OUTPUT || echo "run_deploy_peering=false" >> $GITHUB_OUTPUT
+                echo "$FAILED_JOBS" | grep -q "Deploy Monitoring Infrastructure" && echo "run_deploy_infra=true" >> $GITHUB_OUTPUT || echo "run_deploy_infra=false" >> $GITHUB_OUTPUT
+                echo "$FAILED_JOBS" | grep -q "Deploy Monitoring Services" && echo "run_deploy_services=true" >> $GITHUB_OUTPUT || echo "run_deploy_services=false" >> $GITHUB_OUTPUT
+                echo "$FAILED_JOBS" | grep -q "Health Checks" && echo "run_health_checks=true" >> $GITHUB_OUTPUT || echo "run_health_checks=false" >> $GITHUB_OUTPUT
+                echo "$FAILED_JOBS" | grep -q "Destroy All" && echo "run_destroy_all=true" >> $GITHUB_OUTPUT || echo "run_destroy_all=false" >> $GITHUB_OUTPUT
+                echo "$FAILED_JOBS" | grep -q "Rollback" && echo "run_rollback=true" >> $GITHUB_OUTPUT || echo "run_rollback=false" >> $GITHUB_OUTPUT
+                
+                # Always run dependencies of failed jobs
+                if echo "$FAILED_JOBS" | grep -q "Deploy\|Health"; then
+                  echo "📋 Adding dependencies for deployment jobs..."
+                  echo "run_security_scan=true" >> $GITHUB_OUTPUT
+                  echo "run_lint=true" >> $GITHUB_OUTPUT
+                  echo "run_build=true" >> $GITHUB_OUTPUT
+                  echo "run_validate_setup=true" >> $GITHUB_OUTPUT
+                fi
+                
+                # Enable drift detection by default if enabled in inputs
+                if [ "${{ github.event.inputs.enable_drift_detection }}" = "true" ] || [ -z "${{ github.event.inputs.enable_drift_detection }}" ]; then
+                  echo "run_drift_detection=true" >> $GITHUB_OUTPUT
+                else
+                  echo "run_drift_detection=false" >> $GITHUB_OUTPUT
+                fi
               else
                 echo "🤔 NO FAILED JOBS FOUND"
                 echo ""
@@ -200,47 +230,26 @@ jobs:
                 echo "  3. The run was cancelled before jobs could fail"
                 echo ""
                 echo "🔄 FALLBACK: Running all jobs instead"
-                RERUN_FROM=""
-              fi
-            fi
-              
-              # Set outputs based on failed jobs
-              echo "$FAILED_JOBS" | grep -q "Security Validation" && echo "run_security_scan=true" >> $GITHUB_OUTPUT || echo "run_security_scan=false" >> $GITHUB_OUTPUT
-              echo "$FAILED_JOBS" | grep -q "Lint & Quality" && echo "run_lint=true" >> $GITHUB_OUTPUT || echo "run_lint=false" >> $GITHUB_OUTPUT
-              echo "$FAILED_JOBS" | grep -q "Build Infrastructure" && echo "run_build=true" >> $GITHUB_OUTPUT || echo "run_build=false" >> $GITHUB_OUTPUT
-              echo "$FAILED_JOBS" | grep -q "Validate & Setup" && echo "run_validate_setup=true" >> $GITHUB_OUTPUT || echo "run_validate_setup=false" >> $GITHUB_OUTPUT
-              echo "$FAILED_JOBS" | grep -q "Deploy Networking" && echo "run_deploy_networking=true" >> $GITHUB_OUTPUT || echo "run_deploy_networking=false" >> $GITHUB_OUTPUT
-              echo "$FAILED_JOBS" | grep -q "Deploy Monitoring EFS" && echo "run_deploy_efs=true" >> $GITHUB_OUTPUT || echo "run_deploy_efs=false" >> $GITHUB_OUTPUT
-              echo "$FAILED_JOBS" | grep -q "Deploy VPC Peering" && echo "run_deploy_peering=true" >> $GITHUB_OUTPUT || echo "run_deploy_peering=false" >> $GITHUB_OUTPUT
-              echo "$FAILED_JOBS" | grep -q "Deploy Monitoring Infrastructure" && echo "run_deploy_infra=true" >> $GITHUB_OUTPUT || echo "run_deploy_infra=false" >> $GITHUB_OUTPUT
-              echo "$FAILED_JOBS" | grep -q "Deploy Monitoring Services" && echo "run_deploy_services=true" >> $GITHUB_OUTPUT || echo "run_deploy_services=false" >> $GITHUB_OUTPUT
-              echo "$FAILED_JOBS" | grep -q "Health Checks" && echo "run_health_checks=true" >> $GITHUB_OUTPUT || echo "run_health_checks=false" >> $GITHUB_OUTPUT
-              echo "$FAILED_JOBS" | grep -q "Destroy All" && echo "run_destroy_all=true" >> $GITHUB_OUTPUT || echo "run_destroy_all=false" >> $GITHUB_OUTPUT
-              echo "$FAILED_JOBS" | grep -q "Rollback" && echo "run_rollback=true" >> $GITHUB_OUTPUT || echo "run_rollback=false" >> $GITHUB_OUTPUT
-              
-              # Always run dependencies of failed jobs
-              if echo "$FAILED_JOBS" | grep -q "Deploy\|Health"; then
-                echo "📋 Adding dependencies for deployment jobs..."
+                # Default to all jobs if no failures found
                 echo "run_security_scan=true" >> $GITHUB_OUTPUT
                 echo "run_lint=true" >> $GITHUB_OUTPUT
                 echo "run_build=true" >> $GITHUB_OUTPUT
                 echo "run_validate_setup=true" >> $GITHUB_OUTPUT
+                echo "run_deploy_networking=true" >> $GITHUB_OUTPUT
+                echo "run_deploy_efs=true" >> $GITHUB_OUTPUT
+                echo "run_deploy_peering=true" >> $GITHUB_OUTPUT
+                echo "run_deploy_infra=true" >> $GITHUB_OUTPUT
+                echo "run_deploy_services=true" >> $GITHUB_OUTPUT
+                echo "run_health_checks=true" >> $GITHUB_OUTPUT
+                echo "run_destroy_all=false" >> $GITHUB_OUTPUT
+                echo "run_rollback=false" >> $GITHUB_OUTPUT
+                # Enable drift detection by default if enabled in inputs
+                if [ "${{ github.event.inputs.enable_drift_detection }}" = "true" ] || [ -z "${{ github.event.inputs.enable_drift_detection }}" ]; then
+                  echo "run_drift_detection=true" >> $GITHUB_OUTPUT
+                else
+                  echo "run_drift_detection=false" >> $GITHUB_OUTPUT
+                fi
               fi
-            else
-              echo "✅ No failed jobs found in run $RERUN_FROM"
-              # Default to all jobs if no failures found
-              echo "run_security_scan=true" >> $GITHUB_OUTPUT
-              echo "run_lint=true" >> $GITHUB_OUTPUT
-              echo "run_build=true" >> $GITHUB_OUTPUT
-              echo "run_validate_setup=true" >> $GITHUB_OUTPUT
-              echo "run_deploy_networking=true" >> $GITHUB_OUTPUT
-              echo "run_deploy_efs=true" >> $GITHUB_OUTPUT
-              echo "run_deploy_peering=true" >> $GITHUB_OUTPUT
-              echo "run_deploy_infra=true" >> $GITHUB_OUTPUT
-              echo "run_deploy_services=true" >> $GITHUB_OUTPUT
-              echo "run_health_checks=true" >> $GITHUB_OUTPUT
-              echo "run_destroy_all=false" >> $GITHUB_OUTPUT
-              echo "run_rollback=false" >> $GITHUB_OUTPUT
             fi
             
           elif [ "$JOBS_INPUT" = "all" ] || [ -z "$JOBS_INPUT" ]; then
