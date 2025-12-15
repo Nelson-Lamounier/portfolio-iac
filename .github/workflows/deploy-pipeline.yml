@@ -356,7 +356,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            infrastructure/lib
+            infrastructure/dist
             infrastructure/cdk.out
             node_modules
           key: ${{ steps.cache-key.outputs.key }}
@@ -491,7 +491,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            infrastructure/lib
+            infrastructure/dist
             infrastructure/cdk.out
             node_modules
           key: ${{ needs.build.outputs.cache-key }}
@@ -574,7 +574,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            infrastructure/lib
+            infrastructure/dist
             infrastructure/cdk.out
             node_modules
           key: ${{ needs.build.outputs.cache-key }}
@@ -714,7 +714,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            infrastructure/lib
+            infrastructure/dist
             infrastructure/cdk.out
             node_modules
           key: ${{ needs.build.outputs.cache-key }}
@@ -775,7 +775,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            infrastructure/lib
+            infrastructure/dist
             infrastructure/cdk.out
             node_modules
           key: ${{ needs.build.outputs.cache-key }}
@@ -904,7 +904,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            infrastructure/lib
+            infrastructure/dist
             infrastructure/cdk.out
             node_modules
           key: ${{ needs.build.outputs.cache-key }}
@@ -1194,7 +1194,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            infrastructure/lib
+            infrastructure/dist
             infrastructure/cdk.out
             node_modules
           key: ${{ needs.build.outputs.cache-key }}
