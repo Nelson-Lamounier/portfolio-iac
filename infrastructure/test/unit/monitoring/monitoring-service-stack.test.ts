@@ -232,22 +232,11 @@ describe("MonitoringServiceStack", () => {
   // ========================================================================
 
   describe("Security Configuration", () => {
-    test("should allow ALB to reach Prometheus on port 9090", () => {
-      template.hasResourceProperties("AWS::EC2::SecurityGroupIngress", {
-        FromPort: 9090,
-        ToPort: 9090,
-        IpProtocol: "tcp",
-        Description: "Allow ALB to reach Prometheus",
-      });
-    });
-
-    test("should allow ALB to reach Grafana on port 3000", () => {
-      template.hasResourceProperties("AWS::EC2::SecurityGroupIngress", {
-        FromPort: 3000,
-        ToPort: 3000,
-        IpProtocol: "tcp",
-        Description: "Allow ALB to reach Grafana",
-      });
+    test("should create ECS services without security groups", () => {
+      // MonitoringServiceStack only creates ECS services
+      // Security groups are created in MonitoringInfraStack
+      template.resourceCountIs("AWS::EC2::SecurityGroup", 0);
+      template.resourceCountIs("AWS::ECS::Service", 3); // Prometheus, Grafana, NodeExporter
     });
 
     test("should not allow public access to monitoring ports", () => {

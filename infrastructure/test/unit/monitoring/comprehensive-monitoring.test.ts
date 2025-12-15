@@ -287,21 +287,10 @@ describe("Comprehensive Monitoring Infrastructure Tests", () => {
       );
     });
 
-    test("configures proper security groups", () => {
-      // Should allow ALB to reach services
-      template.hasResourceProperties("AWS::EC2::SecurityGroupIngress", {
-        FromPort: 9090,
-        ToPort: 9090,
-        IpProtocol: "tcp",
-        Description: "Allow ALB to reach Prometheus",
-      });
-
-      template.hasResourceProperties("AWS::EC2::SecurityGroupIngress", {
-        FromPort: 3000,
-        ToPort: 3000,
-        IpProtocol: "tcp",
-        Description: "Allow ALB to reach Grafana",
-      });
+    test("creates monitoring services", () => {
+      // MonitoringServiceStack creates ECS services, not security groups
+      template.resourceCountIs("AWS::ECS::Service", 3); // Prometheus, Grafana, NodeExporter
+      template.resourceCountIs("AWS::ECS::TaskDefinition", 3);
     });
 
     test("integrates with infrastructure stack", () => {

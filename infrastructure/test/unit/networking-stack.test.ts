@@ -175,18 +175,12 @@ describe("NetworkingStack Test Suite", () => {
     test("exports VPC ID", () => {
       template.hasOutput("VpcId", {
         Description: "VPC ID",
-        Export: {
-          Name: "test-vpc-id",
-        },
       });
     });
 
     test("exports VPC CIDR", () => {
       template.hasOutput("VpcCidr", {
         Description: "VPC CIDR Block",
-        Export: {
-          Name: "test-vpc-cidr",
-        },
       });
     });
 

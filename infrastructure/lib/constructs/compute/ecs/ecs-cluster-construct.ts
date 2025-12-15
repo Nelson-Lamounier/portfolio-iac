@@ -79,6 +79,13 @@ export interface EcsClusterConstructProps {
    * @default []
    */
   additionalSecurityGroups?: ec2.ISecurityGroup[];
+
+  /**
+   * Custom launch template to use instead of creating a default one
+   * If provided, instanceType and other launch template related props are ignored
+   * @default undefined (creates default launch template)
+   */
+  customLaunchTemplate?: ec2.ILaunchTemplate;
 }
 
 /**
@@ -89,6 +96,7 @@ export class EcsClusterConstruct extends Construct {
   public readonly logGroup: logs.LogGroup;
   public readonly asg: autoscaling.AutoScalingGroup;
   public readonly securityGroup: ec2.SecurityGroup;
+  public readonly launchTemplate: ec2.ILaunchTemplate;
 
   constructor(scope: Construct, id: string, props: EcsClusterConstructProps) {
     super(scope, id);
@@ -106,6 +114,7 @@ export class EcsClusterConstruct extends Construct {
       desiredCapacity = 1,
       usePublicSubnets = false,
       additionalSecurityGroups = [],
+      customLaunchTemplate,
     } = props;
 
     // Create CloudWatch log group for cluster
@@ -133,81 +142,88 @@ export class EcsClusterConstruct extends Construct {
         : undefined,
     });
 
-    // Create security group for ECS instances
+    // Create security group for ECS instances (only if not using custom launch template)
     this.securityGroup = new ec2.SecurityGroup(this, "InstanceSecurityGroup", {
       vpc,
       description: `Security group for ${envName} ECS instances`,
       allowAllOutbound: true,
     });
 
-    // Create IAM role for EC2 instances
-    const instanceRole = new iam.Role(this, "InstanceRole", {
-      assumedBy: new iam.ServicePrincipal("ec2.amazonaws.com"),
-      managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName(
-          "AmazonSSMManagedInstanceCore"
-        ),
-        iam.ManagedPolicy.fromAwsManagedPolicyName(
-          "CloudWatchAgentServerPolicy"
-        ),
-        iam.ManagedPolicy.fromAwsManagedPolicyName(
-          "service-role/AmazonEC2ContainerServiceforEC2Role"
-        ),
-      ],
-    });
-
-    // Suppress CDK Nag warnings for AWS managed policies
-    // These are standard AWS managed policies required for ECS instances
-    NagSuppressions.addResourceSuppressions(instanceRole, [
-      {
-        id: "AwsSolutions-IAM4",
-        reason:
-          "AWS managed policies are required for ECS instances to function properly",
-        appliesTo: [
-          "Policy::arn:<AWS::Partition>:iam::aws:policy/AmazonSSMManagedInstanceCore",
-          "Policy::arn:<AWS::Partition>:iam::aws:policy/CloudWatchAgentServerPolicy",
-          "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role",
+    // Use custom launch template if provided, otherwise create default one
+    if (customLaunchTemplate) {
+      this.launchTemplate = customLaunchTemplate;
+    } else {
+      // Create IAM role for EC2 instances
+      const instanceRole = new iam.Role(this, "InstanceRole", {
+        assumedBy: new iam.ServicePrincipal("ec2.amazonaws.com"),
+        managedPolicies: [
+          iam.ManagedPolicy.fromAwsManagedPolicyName(
+            "AmazonSSMManagedInstanceCore"
+          ),
+          iam.ManagedPolicy.fromAwsManagedPolicyName(
+            "CloudWatchAgentServerPolicy"
+          ),
+          iam.ManagedPolicy.fromAwsManagedPolicyName(
+            "service-role/AmazonEC2ContainerServiceforEC2Role"
+          ),
         ],
-      },
-    ]);
+      });
 
-    // Create user data for ECS instances
-    const userData = ec2.UserData.forLinux();
-    userData.addCommands(
-      `echo ECS_CLUSTER=${clusterName} >> /etc/ecs/ecs.config`,
-      "echo ECS_ENABLE_CONTAINER_METADATA=true >> /etc/ecs/ecs.config",
-      "echo ECS_ENABLE_TASK_IAM_ROLE=true >> /etc/ecs/ecs.config",
-      "yum update -y",
-      "yum install -y amazon-cloudwatch-agent",
-      "systemctl enable ecs",
-      "systemctl start ecs"
-    );
-
-    // Create launch template
-    const launchTemplate = new ec2.LaunchTemplate(this, "LaunchTemplate", {
-      instanceType,
-      machineImage: ecs.EcsOptimizedImage.amazonLinux2(),
-      userData,
-      role: instanceRole,
-      // Use securityGroup (singular) if no additional groups, securityGroups (plural) if additional groups
-      ...(additionalSecurityGroups.length > 0
-        ? { securityGroups: [this.securityGroup, ...additionalSecurityGroups] }
-        : { securityGroup: this.securityGroup }),
-      blockDevices: [
+      // Suppress CDK Nag warnings for AWS managed policies
+      // These are standard AWS managed policies required for ECS instances
+      NagSuppressions.addResourceSuppressions(instanceRole, [
         {
-          deviceName: "/dev/xvda",
-          volume: autoscaling.BlockDeviceVolume.ebs(30, {
-            volumeType: autoscaling.EbsDeviceVolumeType.GP3,
-            encrypted: true,
-          }),
+          id: "AwsSolutions-IAM4",
+          reason:
+            "AWS managed policies are required for ECS instances to function properly",
+          appliesTo: [
+            "Policy::arn:<AWS::Partition>:iam::aws:policy/AmazonSSMManagedInstanceCore",
+            "Policy::arn:<AWS::Partition>:iam::aws:policy/CloudWatchAgentServerPolicy",
+            "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role",
+          ],
         },
-      ],
-    });
+      ]);
+
+      // Create user data for ECS instances
+      const userData = ec2.UserData.forLinux();
+      userData.addCommands(
+        `echo ECS_CLUSTER=${clusterName} >> /etc/ecs/ecs.config`,
+        "echo ECS_ENABLE_CONTAINER_METADATA=true >> /etc/ecs/ecs.config",
+        "echo ECS_ENABLE_TASK_IAM_ROLE=true >> /etc/ecs/ecs.config",
+        "yum update -y",
+        "yum install -y amazon-cloudwatch-agent",
+        "systemctl enable ecs",
+        "systemctl start ecs"
+      );
+
+      // Create default launch template
+      this.launchTemplate = new ec2.LaunchTemplate(this, "LaunchTemplate", {
+        instanceType,
+        machineImage: ecs.EcsOptimizedImage.amazonLinux2(),
+        userData,
+        role: instanceRole,
+        // Use securityGroup (singular) if no additional groups, securityGroups (plural) if additional groups
+        ...(additionalSecurityGroups.length > 0
+          ? {
+              securityGroups: [this.securityGroup, ...additionalSecurityGroups],
+            }
+          : { securityGroup: this.securityGroup }),
+        blockDevices: [
+          {
+            deviceName: "/dev/xvda",
+            volume: autoscaling.BlockDeviceVolume.ebs(30, {
+              volumeType: autoscaling.EbsDeviceVolumeType.GP3,
+              encrypted: true,
+            }),
+          },
+        ],
+      });
+    }
 
     // Create Auto Scaling Group
     this.asg = new autoscaling.AutoScalingGroup(this, "AutoScalingGroup", {
       vpc,
-      launchTemplate,
+      launchTemplate: this.launchTemplate,
       minCapacity,
       maxCapacity,
       desiredCapacity,
@@ -243,26 +259,22 @@ export class EcsClusterConstruct extends Construct {
     cdk.Tags.of(this.asg).add("Environment", envName);
     cdk.Tags.of(this.asg).add("ManagedBy", "CDK");
 
-    // Output cluster information
-    new cdk.CfnOutput(this, "ClusterName", {
-      value: this.cluster.clusterName,
-      description: `ECS Cluster name for ${envName}`,
-      exportName: `${cdk.Stack.of(this).stackName}-cluster-name`,
-    });
-
-    new cdk.CfnOutput(this, "ClusterArn", {
-      value: this.cluster.clusterArn,
-      description: `ECS Cluster ARN for ${envName}`,
-      exportName: `${cdk.Stack.of(this).stackName}-cluster-arn`,
-    });
+    // Note: Outputs are handled at the stack level to avoid cyclic dependencies
+    // The stack that uses this construct should create the necessary outputs
   }
 
   /**
    * Allow internal traffic on a specific port
    */
-  public allowInternalPort(port: number, description: string): void {
+  public allowInternalPort(
+    port: number,
+    description: string,
+    cidr?: string
+  ): void {
+    // Use provided CIDR or a default to avoid cyclic dependencies
+    const vpcCidr = cidr || "10.0.0.0/16";
     this.securityGroup.addIngressRule(
-      ec2.Peer.ipv4(this.cluster.vpc.vpcCidrBlock),
+      ec2.Peer.ipv4(vpcCidr),
       ec2.Port.tcp(port),
       description
     );

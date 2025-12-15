@@ -20,6 +20,7 @@ import {
   LoadBalancerStack,
   VpcPeeringStack,
 } from "../lib/stacks";
+import { LaunchTemplateStack } from "../lib/stacks/compute/launch-template-stack";
 import { CrossAccountTarget } from "../lib/types";
 import { VpcPeeringAcceptorRole } from "../lib/constructs/iam/vpc-peering-acceptor-role";
 import { CertificateStack } from "../lib/stacks/networking/security/acm-stack";
@@ -290,6 +291,38 @@ loadBalancerStack.addListenerRule({
 });
 
 // ========================================
+// 7.5. Create Launch Template Stack (Optional)
+// ========================================
+// Create custom launch template for ECS instances
+// This provides more control over instance configuration
+let launchTemplateStack: LaunchTemplateStack | undefined;
+
+// Only create launch template if explicitly enabled
+if (process.env.USE_CUSTOM_LAUNCH_TEMPLATE === "true") {
+  console.log("✓ Creating custom launch template for ECS instances");
+
+  launchTemplateStack = new LaunchTemplateStack(
+    app,
+    `LaunchTemplateStack-${config.envName}`,
+    {
+      ...stackProps,
+      vpc: networkingStack.vpc,
+      envName: config.envName,
+      keyPairName: process.env.EC2_KEY_PAIR_NAME, // Optional SSH key
+    }
+  );
+
+  launchTemplateStack.addDependency(networkingStack);
+  console.log(
+    "  Custom launch template includes Node Exporter and enhanced monitoring"
+  );
+} else {
+  console.log(
+    "⚠ Using default launch template (set USE_CUSTOM_LAUNCH_TEMPLATE=true for custom)"
+  );
+}
+
+// ========================================
 // 8. Create Compute Stack
 // ========================================
 // Now create the ECS service (after target group is ready)
@@ -298,11 +331,15 @@ const computeStack = new ComputeStack(app, `ComputeStack-${config.envName}`, {
   envName: config.envName,
   vpc: networkingStack.vpc,
   targetGroup: ecsTargetGroup, // Attach ECS service to ALB target group
+  customLaunchTemplate: launchTemplateStack?.launchTemplate, // Use custom launch template if available
 });
 
 // Explicit dependencies
 computeStack.addDependency(networkingStack);
 computeStack.addDependency(loadBalancerStack);
+if (launchTemplateStack) {
+  computeStack.addDependency(launchTemplateStack);
+}
 
 // ========================================
 // 9. Configure Security Groups
