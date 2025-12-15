@@ -176,28 +176,31 @@ export class MonitoringEfsStack extends cdk.Stack {
     // ========================================================================
     // STACK OUTPUTS
     // ========================================================================
-    new cdk.CfnOutput(this, "EfsFileSystemId", {
+    // Stack outputs - only export for non-pipeline environments to avoid conflicts
+    const shouldExport = !envName.includes("pipeline");
+
+    new cdk.CfnOutput(this, "FileSystemId", {
       value: this.fileSystem.fileSystemId,
       description: "EFS File System ID for monitoring storage",
-      exportName: `${this.stackName}-efs-id`,
+      ...(shouldExport && { exportName: `${this.stackName}-efs-id` }),
     });
 
-    new cdk.CfnOutput(this, "EfsAccessPointId", {
+    new cdk.CfnOutput(this, "AccessPointId", {
       value: this.accessPoint.accessPointId,
       description: "EFS Access Point ID for monitoring",
-      exportName: `${this.stackName}-access-point-id`,
+      ...(shouldExport && { exportName: `${this.stackName}-access-point-id` }),
     });
 
-    new cdk.CfnOutput(this, "EfsSecurityGroupId", {
+    new cdk.CfnOutput(this, "MountTargetSecurityGroupId", {
       value: this.mountTargetSecurityGroup.securityGroupId,
       description: "EFS Security Group ID",
-      exportName: `${this.stackName}-efs-sg-id`,
+      ...(shouldExport && { exportName: `${this.stackName}-efs-sg-id` }),
     });
 
     new cdk.CfnOutput(this, "EfsAvailabilityZone", {
       value: this.efsAvailabilityZone,
       description: "EFS Availability Zone",
-      exportName: `${this.stackName}-efs-az`,
+      ...(shouldExport && { exportName: `${this.stackName}-efs-az` }),
     });
   }
 
