@@ -473,7 +473,7 @@ jobs:
       always() &&
       needs.build.result == 'success' &&
       (needs.validate-setup.result == 'success' || needs.validate-setup.result == 'skipped') &&
-      github.event.inputs.stack == 'networking'
+      (github.event.inputs.stack == 'networking' || github.event_name == 'push')
 
     steps:
       - name: Checkout
@@ -550,7 +550,7 @@ jobs:
       needs.build.result == 'success' &&
       (needs.validate-setup.result == 'success' || needs.validate-setup.result == 'skipped') &&
       needs.deploy-networking.result == 'success' &&
-      github.event.inputs.stack == 'monitoring-efs'
+      (github.event.inputs.stack == 'monitoring-efs' || github.event_name == 'push')
 
     outputs:
       efs_id: ${{ steps.deploy.outputs.efs_id }}
@@ -696,7 +696,7 @@ jobs:
       needs.deploy-networking.result == 'success' &&
       needs.validate-setup.outputs.dev_vpc_id != 'NOT_FOUND' &&
       needs.validate-setup.outputs.dev_vpc_id != '' &&
-      github.event.inputs.stack == 'vpc-peering'
+      (github.event.inputs.stack == 'vpc-peering' || github.event_name == 'push')
 
     steps:
       - name: Checkout
@@ -753,7 +753,7 @@ jobs:
       (needs.validate-setup.result == 'success' || needs.validate-setup.result == 'skipped') &&
       needs.deploy-networking.result == 'success' &&
       needs.deploy-monitoring-efs.result == 'success' &&
-      github.event.inputs.stack == 'monitoring-infra'
+      (github.event.inputs.stack == 'monitoring-infra' || github.event_name == 'push')
 
     outputs:
       alb_dns: ${{ steps.deploy.outputs.alb_dns }}
@@ -886,7 +886,7 @@ jobs:
       needs.build.result == 'success' &&
       (needs.validate-setup.result == 'success' || needs.validate-setup.result == 'skipped') &&
       needs.deploy-monitoring-infra.result == 'success' &&
-      github.event.inputs.stack == 'monitoring-services'
+      (github.event.inputs.stack == 'monitoring-services' || github.event_name == 'push')
 
     steps:
       - name: Checkout
