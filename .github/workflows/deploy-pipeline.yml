@@ -1202,3 +1202,302 @@ jobs:
           AWS_PIPELINE_ACCOUNT_ID: ${{ needs.validate-setup.outputs.pipeline_account_id }}
           DEV_VPC_ID: ${{ needs.validate-setup.outputs.dev_vpc_id }}
           AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+
+  # ============================================================================
+  # JOB 9: Automatic Rollback (On Failure)
+  # ============================================================================
+  rollback-on-failure:
+    name: Rollback on Deployment Failure
+    needs:
+      [
+        build,
+        validate-setup,
+        deploy-networking,
+        deploy-monitoring-efs,
+        deploy-vpc-peering,
+        deploy-monitoring-infra,
+        deploy-monitoring-services,
+        health-checks,
+      ]
+    runs-on: ubuntu-latest
+    environment: pipeline
+    if: |
+      always() &&
+      (needs.deploy-networking.result == 'failure' ||
+       needs.deploy-monitoring-efs.result == 'failure' ||
+       needs.deploy-vpc-peering.result == 'failure' ||
+       needs.deploy-monitoring-infra.result == 'failure' ||
+       needs.deploy-monitoring-services.result == 'failure' ||
+       needs.health-checks.result == 'failure') &&
+      github.event.inputs.stack != 'destroy-all'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Restore Build Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            infrastructure/dist
+            infrastructure/cdk.out
+            node_modules
+          key: ${{ needs.build.outputs.cache-key }}
+          fail-on-cache-miss: true
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Analyze Deployment Failure
+        id: analyze
+        run: |
+          echo "Analyzing deployment failure to determine rollback strategy..."
+
+          # Check which jobs failed
+          NETWORKING_FAILED="${{ needs.deploy-networking.result == 'failure' }}"
+          EFS_FAILED="${{ needs.deploy-monitoring-efs.result == 'failure' }}"
+          VPC_PEERING_FAILED="${{ needs.deploy-vpc-peering.result == 'failure' }}"
+          INFRA_FAILED="${{ needs.deploy-monitoring-infra.result == 'failure' }}"
+          SERVICES_FAILED="${{ needs.deploy-monitoring-services.result == 'failure' }}"
+          HEALTH_FAILED="${{ needs.health-checks.result == 'failure' }}"
+
+          echo "Deployment Results:"
+          echo "  Networking: ${{ needs.deploy-networking.result }}"
+          echo "  EFS: ${{ needs.deploy-monitoring-efs.result }}"
+          echo "  VPC Peering: ${{ needs.deploy-vpc-peering.result }}"
+          echo "  Infrastructure: ${{ needs.deploy-monitoring-infra.result }}"
+          echo "  Services: ${{ needs.deploy-monitoring-services.result }}"
+          echo "  Health Checks: ${{ needs.health-checks.result }}"
+
+          # Determine rollback strategy based on failure point
+          if [ "$NETWORKING_FAILED" = "true" ]; then
+            echo "rollback_level=networking" >> $GITHUB_OUTPUT
+            echo "Rollback strategy: Networking failed - minimal rollback needed"
+          elif [ "$EFS_FAILED" = "true" ]; then
+            echo "rollback_level=efs" >> $GITHUB_OUTPUT
+            echo "Rollback strategy: EFS failed - rollback networking if it was deployed"
+          elif [ "$VPC_PEERING_FAILED" = "true" ]; then
+            echo "rollback_level=vpc-peering" >> $GITHUB_OUTPUT
+            echo "Rollback strategy: VPC Peering failed - rollback EFS and networking"
+          elif [ "$INFRA_FAILED" = "true" ]; then
+            echo "rollback_level=infrastructure" >> $GITHUB_OUTPUT
+            echo "Rollback strategy: Infrastructure failed - rollback VPC, EFS, networking"
+          elif [ "$SERVICES_FAILED" = "true" ]; then
+            echo "rollback_level=services" >> $GITHUB_OUTPUT
+            echo "Rollback strategy: Services failed - rollback all infrastructure"
+          elif [ "$HEALTH_FAILED" = "true" ]; then
+            echo "rollback_level=health" >> $GITHUB_OUTPUT
+            echo "Rollback strategy: Health checks failed - keep infrastructure, investigate"
+          else
+            echo "rollback_level=unknown" >> $GITHUB_OUTPUT
+            echo "Rollback strategy: Unknown failure - conservative full rollback"
+          fi
+
+      - name: Check Stack States
+        id: check-stacks
+        run: |
+          echo "Checking current state of deployed stacks..."
+          cd infrastructure
+
+          # Function to check stack status
+          check_stack_status() {
+            local stack_name=$1
+            local status=$(aws cloudformation describe-stacks \
+              --stack-name "$stack_name" \
+              --query 'Stacks[0].StackStatus' \
+              --output text 2>/dev/null || echo "NOT_FOUND")
+            echo "$stack_name: $status"
+            echo "${stack_name}_status=$status" >> $GITHUB_OUTPUT
+          }
+
+          # Check all stacks
+          check_stack_status "NetworkingStack-pipeline"
+          check_stack_status "MonitoringEfsStack-pipeline"
+          check_stack_status "VpcPeeringStack-pipeline"
+          check_stack_status "MonitoringInfraStack-pipeline"
+          check_stack_status "MonitoringServiceStack-pipeline"
+
+      - name: Selective Rollback
+        run: |
+          echo "Executing selective rollback based on failure analysis..."
+          cd infrastructure
+
+          ROLLBACK_LEVEL="${{ steps.analyze.outputs.rollback_level }}"
+          echo "Rollback level: $ROLLBACK_LEVEL"
+
+          # Function to safely destroy a stack
+          safe_destroy() {
+            local stack_name=$1
+            local stack_status_var="${stack_name//-/_}_status"
+            local stack_status="${!stack_status_var:-NOT_FOUND}"
+            
+            if [ "$stack_status" != "NOT_FOUND" ] && [ "$stack_status" != "DELETE_COMPLETE" ]; then
+              echo "Destroying $stack_name (current status: $stack_status)..."
+              ENVIRONMENT=pipeline yarn cdk destroy "$stack_name" --force || {
+                echo "WARNING: Failed to destroy $stack_name, may need manual cleanup"
+                return 1
+              }
+            else
+              echo "Skipping $stack_name (not deployed or already deleted)"
+            fi
+          }
+
+          # Execute rollback based on failure level
+          case "$ROLLBACK_LEVEL" in
+            "networking")
+              echo "Minimal rollback - networking failed early"
+              safe_destroy "NetworkingStack-pipeline"
+              ;;
+            "efs")
+              echo "EFS-level rollback"
+              safe_destroy "MonitoringEfsStack-pipeline"
+              safe_destroy "NetworkingStack-pipeline"
+              ;;
+            "vpc-peering")
+              echo "VPC Peering-level rollback"
+              safe_destroy "VpcPeeringStack-pipeline"
+              safe_destroy "MonitoringEfsStack-pipeline"
+              safe_destroy "NetworkingStack-pipeline"
+              ;;
+            "infrastructure")
+              echo "Infrastructure-level rollback"
+              safe_destroy "MonitoringInfraStack-pipeline"
+              safe_destroy "VpcPeeringStack-pipeline"
+              safe_destroy "MonitoringEfsStack-pipeline"
+              safe_destroy "NetworkingStack-pipeline"
+              ;;
+            "services")
+              echo "Services-level rollback (full rollback)"
+              safe_destroy "MonitoringServiceStack-pipeline"
+              safe_destroy "MonitoringInfraStack-pipeline"
+              safe_destroy "VpcPeeringStack-pipeline"
+              safe_destroy "MonitoringEfsStack-pipeline"
+              safe_destroy "NetworkingStack-pipeline"
+              ;;
+            "health")
+              echo "Health check failed - keeping infrastructure for investigation"
+              echo "Infrastructure remains deployed for debugging"
+              echo "Manual intervention may be required"
+              ;;
+            *)
+              echo "Unknown failure - executing conservative full rollback"
+              safe_destroy "MonitoringServiceStack-pipeline"
+              safe_destroy "MonitoringInfraStack-pipeline"
+              safe_destroy "VpcPeeringStack-pipeline"
+              safe_destroy "MonitoringEfsStack-pipeline"
+              safe_destroy "NetworkingStack-pipeline"
+              ;;
+          esac
+        env:
+          AWS_PIPELINE_ACCOUNT_ID: ${{ needs.validate-setup.outputs.pipeline_account_id }}
+          DEV_VPC_ID: ${{ needs.validate-setup.outputs.dev_vpc_id }}
+          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+          NetworkingStack_pipeline_status: ${{ steps.check-stacks.outputs.NetworkingStack-pipeline_status }}
+          MonitoringEfsStack_pipeline_status: ${{ steps.check-stacks.outputs.MonitoringEfsStack-pipeline_status }}
+          VpcPeeringStack_pipeline_status: ${{ steps.check-stacks.outputs.VpcPeeringStack-pipeline_status }}
+          MonitoringInfraStack_pipeline_status: ${{ steps.check-stacks.outputs.MonitoringInfraStack-pipeline_status }}
+          MonitoringServiceStack_pipeline_status: ${{ steps.check-stacks.outputs.MonitoringServiceStack-pipeline_status }}
+
+      - name: Generate Rollback Report
+        if: always()
+        run: |
+          echo "Generating rollback report..."
+
+          cat > rollback-report.md << 'EOF'
+          # Deployment Rollback Report
+
+          **Timestamp**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          **Branch**: ${{ github.ref_name }}
+          **Commit**: ${{ github.sha }}
+          **Rollback Level**: ${{ steps.analyze.outputs.rollback_level }}
+
+          ## Failure Analysis
+
+          ### Job Results
+          - **Networking**: ${{ needs.deploy-networking.result }}
+          - **EFS**: ${{ needs.deploy-monitoring-efs.result }}
+          - **VPC Peering**: ${{ needs.deploy-vpc-peering.result }}
+          - **Infrastructure**: ${{ needs.deploy-monitoring-infra.result }}
+          - **Services**: ${{ needs.deploy-monitoring-services.result }}
+          - **Health Checks**: ${{ needs.health-checks.result }}
+
+          ### Stack States Before Rollback
+          - **NetworkingStack-pipeline**: ${{ steps.check-stacks.outputs.NetworkingStack-pipeline_status }}
+          - **MonitoringEfsStack-pipeline**: ${{ steps.check-stacks.outputs.MonitoringEfsStack-pipeline_status }}
+          - **VpcPeeringStack-pipeline**: ${{ steps.check-stacks.outputs.VpcPeeringStack-pipeline_status }}
+          - **MonitoringInfraStack-pipeline**: ${{ steps.check-stacks.outputs.MonitoringInfraStack-pipeline_status }}
+          - **MonitoringServiceStack-pipeline**: ${{ steps.check-stacks.outputs.MonitoringServiceStack-pipeline_status }}
+
+          ## Rollback Actions Taken
+
+          Based on the failure level "${{ steps.analyze.outputs.rollback_level }}", the following rollback actions were executed:
+
+          - Selective stack destruction in reverse dependency order
+          - Preservation of infrastructure for debugging (if health check failure)
+          - Conservative full rollback for unknown failures
+
+          ## Next Steps
+
+          1. **Review Logs**: Check the deployment logs to identify the root cause
+          2. **Fix Issues**: Address the underlying problems in the code or configuration
+          3. **Redeploy**: Run the pipeline again after fixes
+          4. **Manual Cleanup**: If rollback failed, manual AWS console cleanup may be needed
+
+          ## Manual Cleanup Commands (if needed)
+
+          ```bash
+          # If automatic rollback failed, use these commands:
+          cd infrastructure
+          ENVIRONMENT=pipeline yarn cdk destroy MonitoringServiceStack-pipeline --force
+          ENVIRONMENT=pipeline yarn cdk destroy MonitoringInfraStack-pipeline --force
+          ENVIRONMENT=pipeline yarn cdk destroy VpcPeeringStack-pipeline --force
+          ENVIRONMENT=pipeline yarn cdk destroy MonitoringEfsStack-pipeline --force
+          ENVIRONMENT=pipeline yarn cdk destroy NetworkingStack-pipeline --force
+          ```
+
+          ---
+          *Generated by automated rollback system*
+          EOF
+
+          echo "Rollback report generated successfully"
+
+      - name: Upload Rollback Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rollback-report-${{ github.run_number }}
+          path: rollback-report.md
+          retention-days: 30
+
+      - name: Update Job Summary
+        if: always()
+        run: |
+          echo "## 🔄 Automatic Rollback Executed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Rollback Level**: ${{ steps.analyze.outputs.rollback_level }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger**: Deployment failure detected" >> $GITHUB_STEP_SUMMARY
+          echo "**Timestamp**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Failed Jobs" >> $GITHUB_STEP_SUMMARY
+          echo "- Networking: ${{ needs.deploy-networking.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- EFS: ${{ needs.deploy-monitoring-efs.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- VPC Peering: ${{ needs.deploy-vpc-peering.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Infrastructure: ${{ needs.deploy-monitoring-infra.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Services: ${{ needs.deploy-monitoring-services.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Health Checks: ${{ needs.health-checks.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Rollback Actions" >> $GITHUB_STEP_SUMMARY
+          echo "Selective rollback executed based on failure point to minimize impact and preserve debugging information where appropriate." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📋 **Detailed rollback report available in job artifacts**" >> $GITHUB_STEP_SUMMARY
