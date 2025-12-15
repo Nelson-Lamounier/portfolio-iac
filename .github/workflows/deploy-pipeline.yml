@@ -394,11 +394,9 @@ jobs:
     needs: [security-scan, lint-and-quality]
     runs-on: ubuntu-latest
     environment: pipeline
-    # Always run this job to get account ID - validation can be skipped but setup is required
     outputs:
       pipeline_account_id: ${{ steps.setup.outputs.pipeline_account_id }}
-      dev_vpc_id: ${{ steps.dev-info.outputs.vpc_id }}
-      validation_skipped: ${{ github.event.inputs.skip_validation == 'true' }}
+      dev_vpc_id: ${{ steps.dev-info.outputs.vpc_id || 'NOT_FOUND' }}
 
     steps:
       - name: Checkout
@@ -415,57 +413,22 @@ jobs:
         run: |
           # Get current account ID
           CURRENT_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
-
-          # Verify we got a valid account ID
-          if [ -z "$CURRENT_ACCOUNT" ] || [ "$CURRENT_ACCOUNT" = "None" ]; then
-            echo "ERROR: Failed to get AWS account ID from STS"
-            aws sts get-caller-identity || true
-            exit 1
-          fi
-
           echo "pipeline_account_id=$CURRENT_ACCOUNT" >> $GITHUB_OUTPUT
           echo "AWS_PIPELINE_ACCOUNT_ID=$CURRENT_ACCOUNT" >> $GITHUB_ENV
-
-          # Security: Mask sensitive values in logs
-          echo "::add-mask::$CURRENT_ACCOUNT"
-
-          # Log non-sensitive information only (with length for debugging)
-          echo "SUCCESS: Pipeline Account ID: ***MASKED*** (${#CURRENT_ACCOUNT} characters)"
-          echo "SUCCESS: Region: ${{ env.AWS_REGION }}"
-
-          # Debug: Show that output was set (without revealing the value)
-          echo "DEBUG: Set pipeline_account_id output with ${#CURRENT_ACCOUNT} character value"
-
-          # Skip validation if requested
-          if [ "${{ github.event.inputs.skip_validation }}" = "true" ]; then
-            echo "⚠️  Validation skipped by user request"
-          else
-            echo "✅ Full validation will be performed"
-          fi
+          echo "✅ Pipeline Account ID: $CURRENT_ACCOUNT"
+          echo "✅ Region: ${{ env.AWS_REGION }}"
 
       - name: Get Dev Account VPC Info
         id: dev-info
         run: |
-          if [ "${{ vars.AWS_ACCOUNT_ID_DEV }}" = "" ] || [ "${{ github.event.inputs.skip_validation }}" = "true" ]; then
-            echo "vpc_id=NOT_FOUND" >> $GITHUB_OUTPUT
-            echo "Dev VPC lookup skipped - using default"
-          else
-            # Security: Mask dev account ID
-            echo "::add-mask::${{ vars.AWS_ACCOUNT_ID_DEV }}"
-
+          if [ "${{ vars.AWS_ACCOUNT_ID_DEV }}" != "" ]; then
             # Switch to dev account to get VPC info
             aws sts assume-role \
               --role-arn "arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/GitHubDeploymentRole" \
-              --role-session-name "GetVpcInfo-$(date +%s)" \
+              --role-session-name "GetVpcInfo" \
               --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
               --output text | {
                 read access_key secret_key session_token
-                
-                # Security: Mask temporary credentials
-                echo "::add-mask::$access_key"
-                echo "::add-mask::$secret_key" 
-                echo "::add-mask::$session_token"
-                
                 export AWS_ACCESS_KEY_ID=$access_key
                 export AWS_SECRET_ACCESS_KEY=$secret_key
                 export AWS_SESSION_TOKEN=$session_token
@@ -475,32 +438,16 @@ jobs:
                   --query 'Vpcs[0].VpcId' \
                   --output text 2>/dev/null || echo "NOT_FOUND")
                 
-                # Security: Mask VPC ID
-                echo "::add-mask::$DEV_VPC"
-                
                 echo "vpc_id=$DEV_VPC" >> $GITHUB_OUTPUT
-                echo "Dev VPC ID: ***MASKED***"
+                echo "Dev VPC ID: $DEV_VPC"
               } || {
                 echo "vpc_id=NOT_FOUND" >> $GITHUB_OUTPUT
-                echo "Failed to get Dev VPC info - using default"
+                echo "Failed to get Dev VPC info"
               }
-          fi
-
-      - name: Set Default Outputs
-        if: always()
-        run: |
-          # Ensure outputs are always set, even if previous steps were skipped
-          if [ -z "${{ steps.dev-info.outputs.vpc_id }}" ]; then
+          else
             echo "vpc_id=NOT_FOUND" >> $GITHUB_OUTPUT
+            echo "No dev account configured"
           fi
-
-          # Verify pipeline account ID was set
-          if [ -z "${{ steps.setup.outputs.pipeline_account_id }}" ]; then
-            echo "ERROR: Pipeline account ID was not set by setup step"
-            exit 1
-          fi
-
-          echo "✅ All required outputs verified"
 
   # ============================================================================
   # JOB 2: Deploy Networking Stack
