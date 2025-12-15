@@ -98,25 +98,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Infrastructure Environment
+        uses: ./.github/actions/setup-infrastructure
         with:
           node-version: ${{ env.NODE_VERSION }}
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Setup Turbo Cache
-        uses: actions/cache@v4
-        with:
-          path: .turbo
-          key: ${{ runner.os }}-turbo-lint-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-turbo-lint-
-            ${{ runner.os }}-turbo-
-
-      - name: Install Dependencies
-        run: yarn install --immutable
 
       - name: TypeScript Linting
         run: |
@@ -329,28 +314,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Enable Corepack
-        run: corepack enable
-
       - name: Generate Cache Key
         id: cache-key
         run: |
           HASH=$(find infrastructure -name "*.ts" -o -name "*.js" -o -name "*.json" | xargs cat | sha256sum | cut -d' ' -f1)
           echo "key=build-${{ runner.os }}-$HASH" >> $GITHUB_OUTPUT
 
-      - name: Setup Turbo Cache
-        uses: actions/cache@v4
+      - name: Setup Infrastructure Environment
+        uses: ./.github/actions/setup-infrastructure
         with:
-          path: .turbo
-          key: ${{ runner.os }}-turbo-build-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-turbo-build-
-            ${{ runner.os }}-turbo-
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Cache Build Artifacts
         uses: actions/cache@v4
@@ -362,9 +335,6 @@ jobs:
           key: ${{ steps.cache-key.outputs.key }}
           restore-keys: |
             build-${{ runner.os }}-
-
-      - name: Install Dependencies
-        run: yarn install --immutable
 
       - name: Build with Turbo
         run: yarn turbo build --filter=infrastructure
@@ -467,71 +437,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup CDK Deployment Environment
+        uses: ./.github/actions/setup-cdk-deployment
         with:
           node-version: ${{ env.NODE_VERSION }}
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Restore Build Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            infrastructure/dist
-            infrastructure/cdk.out
-            node_modules
-          key: ${{ needs.build.outputs.cache-key }}
-          fail-on-cache-miss: true
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-role: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
-
-      - name: Mask Sensitive Environment Variables
-        run: |
-          # Security: Mask all sensitive environment variables
-          echo "::add-mask::${{ needs.validate-setup.outputs.pipeline_account_id }}"
-          echo "::add-mask::${{ needs.validate-setup.outputs.dev_vpc_id }}"
-          echo "::add-mask::${{ vars.AWS_ACCOUNT_ID_DEV }}"
-
-      - name: Debug Environment Variables
-        run: |
-          echo "DEBUG: Checking environment variables from validate-setup job"
-          echo "AWS_PIPELINE_ACCOUNT_ID length: ${#AWS_PIPELINE_ACCOUNT_ID}"
-          echo "DEV_VPC_ID length: ${#DEV_VPC_ID}"
-          echo "validate-setup outputs:"
-          echo "  pipeline_account_id: ${{ needs.validate-setup.outputs.pipeline_account_id }}"
-          echo "  dev_vpc_id: ${{ needs.validate-setup.outputs.dev_vpc_id }}"
+          build-cache-key: ${{ needs.build.outputs.cache-key }}
 
       - name: Deploy NetworkingStack
-        run: |
-          echo "Deploying NetworkingStack-pipeline..."
-          cd infrastructure
-
-          # Verify environment variables are set
-          if [ -z "$AWS_PIPELINE_ACCOUNT_ID" ]; then
-            echo "ERROR: AWS_PIPELINE_ACCOUNT_ID is not set"
-            echo "This indicates the validate-setup job failed or didn't run properly"
-            echo "Available outputs from validate-setup:"
-            echo "  pipeline_account_id: ${{ needs.validate-setup.outputs.pipeline_account_id }}"
-            echo "  dev_vpc_id: ${{ needs.validate-setup.outputs.dev_vpc_id }}"
-            exit 1
-          fi
-
-          echo "Using Account ID: ***MASKED*** (${#AWS_PIPELINE_ACCOUNT_ID} characters)"
-
-          # Deploy the stack (validation already completed in earlier jobs)
-          ENVIRONMENT=pipeline yarn cdk deploy NetworkingStack-pipeline --require-approval never --verbose
-
-          echo "NetworkingStack-pipeline deployed successfully"
-        env:
-          AWS_PIPELINE_ACCOUNT_ID: ${{ needs.validate-setup.outputs.pipeline_account_id }}
-          DEV_VPC_ID: ${{ needs.validate-setup.outputs.dev_vpc_id }}
-          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+        uses: ./.github/actions/deploy-cdk-stack
+        with:
+          stack-name: "NetworkingStack-pipeline"
+          environment: "pipeline"
+          aws-account-id: ${{ needs.validate-setup.outputs.pipeline_account_id }}
+          aws-region: ${{ env.AWS_REGION }}
+          dev-vpc-id: ${{ needs.validate-setup.outputs.dev_vpc_id }}
+          dev-account-id: ${{ vars.AWS_ACCOUNT_ID_DEV }}
 
   # ============================================================================
   # JOB 3: Deploy Monitoring EFS Stack
@@ -549,56 +471,37 @@ jobs:
       (github.event.inputs.stack == 'monitoring-efs' || github.event_name == 'push')
 
     outputs:
-      efs_id: ${{ steps.deploy.outputs.efs_id }}
-      efs_access_point_id: ${{ steps.deploy.outputs.efs_access_point_id }}
-      efs_availability_zone: ${{ steps.deploy.outputs.efs_availability_zone }}
-      efs_security_group_id: ${{ steps.deploy.outputs.efs_security_group_id }}
+      efs_id: ${{ steps.get-outputs.outputs.efs_id }}
+      efs_access_point_id: ${{ steps.get-outputs.outputs.efs_access_point_id }}
+      efs_availability_zone: ${{ steps.get-outputs.outputs.efs_availability_zone }}
+      efs_security_group_id: ${{ steps.get-outputs.outputs.efs_security_group_id }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup CDK Deployment Environment
+        uses: ./.github/actions/setup-cdk-deployment
         with:
           node-version: ${{ env.NODE_VERSION }}
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Restore Build Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            infrastructure/dist
-            infrastructure/cdk.out
-            node_modules
-          key: ${{ needs.build.outputs.cache-key }}
-          fail-on-cache-miss: true
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-role: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
+          build-cache-key: ${{ needs.build.outputs.cache-key }}
 
       - name: Deploy MonitoringEfsStack
-        id: deploy
+        uses: ./.github/actions/deploy-cdk-stack
+        with:
+          stack-name: "MonitoringEfsStack-pipeline"
+          environment: "pipeline"
+          aws-account-id: ${{ needs.validate-setup.outputs.pipeline_account_id }}
+          aws-region: ${{ env.AWS_REGION }}
+          dev-vpc-id: ${{ needs.validate-setup.outputs.dev_vpc_id }}
+          dev-account-id: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+
+      - name: Get Stack Outputs
+        id: get-outputs
         run: |
-          echo "Deploying MonitoringEfsStack-pipeline..."
-          cd infrastructure
-
-          # Verify environment variables are set
-          if [ -z "$AWS_PIPELINE_ACCOUNT_ID" ]; then
-            echo "ERROR: AWS_PIPELINE_ACCOUNT_ID is not set"
-            echo "This indicates the validate-setup job failed or didn't run properly"
-            exit 1
-          fi
-
-          echo "Using Account ID: ***MASKED*** (${#AWS_PIPELINE_ACCOUNT_ID} characters)"
-
-          # Deploy the stack (validation already completed in earlier jobs)
-          ENVIRONMENT=pipeline yarn cdk deploy MonitoringEfsStack-pipeline --require-approval never
+          echo "Retrieving MonitoringEfsStack outputs..."
 
           # Get outputs
           EFS_ID=$(aws cloudformation describe-stacks \
@@ -631,15 +534,11 @@ jobs:
           echo "::add-mask::$EFS_ACCESS_POINT_ID"
           echo "::add-mask::$EFS_SG_ID"
 
-          echo "MonitoringEfsStack-pipeline deployed successfully"
+          echo "MonitoringEfsStack-pipeline outputs retrieved successfully"
           echo "   EFS ID: ***MASKED***"
           echo "   Access Point ID: ***MASKED***"
           echo "   Availability Zone: $EFS_AZ"
           echo "   Security Group ID: ***MASKED***"
-        env:
-          AWS_PIPELINE_ACCOUNT_ID: ${{ needs.validate-setup.outputs.pipeline_account_id }}
-          DEV_VPC_ID: ${{ needs.validate-setup.outputs.dev_vpc_id }}
-          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
 
       - name: Validate EFS Configuration
         run: |
@@ -694,52 +593,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup CDK Deployment Environment
+        uses: ./.github/actions/setup-cdk-deployment
         with:
           node-version: ${{ env.NODE_VERSION }}
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Restore Build Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            infrastructure/dist
-            infrastructure/cdk.out
-            node_modules
-          key: ${{ needs.build.outputs.cache-key }}
-          fail-on-cache-miss: true
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-role: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
+          build-cache-key: ${{ needs.build.outputs.cache-key }}
 
       - name: Deploy VPC Peering
-        run: |
-          echo "Deploying VpcPeeringStack-pipeline..."
-          cd infrastructure
-
-          # Verify environment variables are set
-          if [ -z "$AWS_PIPELINE_ACCOUNT_ID" ]; then
-            echo "ERROR: AWS_PIPELINE_ACCOUNT_ID is not set"
-            echo "This indicates the validate-setup job failed or didn't run properly"
-            exit 1
-          fi
-
-          echo "Using Account ID: ***MASKED*** (${#AWS_PIPELINE_ACCOUNT_ID} characters)"
-
-          # Deploy the stack (validation already completed in earlier jobs)
-          ENVIRONMENT=pipeline yarn cdk deploy VpcPeeringStack-pipeline --require-approval never
-
-          echo "VpcPeeringStack-pipeline deployed successfully"
-        env:
-          AWS_PIPELINE_ACCOUNT_ID: ${{ needs.validate-setup.outputs.pipeline_account_id }}
-          DEV_VPC_ID: ${{ needs.validate-setup.outputs.dev_vpc_id }}
-          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+        uses: ./.github/actions/deploy-cdk-stack
+        with:
+          stack-name: "VpcPeeringStack-pipeline"
+          environment: "pipeline"
+          aws-account-id: ${{ needs.validate-setup.outputs.pipeline_account_id }}
+          aws-region: ${{ env.AWS_REGION }}
+          dev-vpc-id: ${{ needs.validate-setup.outputs.dev_vpc_id }}
+          dev-account-id: ${{ vars.AWS_ACCOUNT_ID_DEV }}
 
   # ============================================================================
   # JOB 5: Deploy Monitoring Infrastructure
@@ -758,54 +628,35 @@ jobs:
       (github.event.inputs.stack == 'monitoring-infra' || github.event_name == 'push')
 
     outputs:
-      alb_dns: ${{ steps.deploy.outputs.alb_dns }}
-      efs_id: ${{ steps.deploy.outputs.efs_id }}
+      alb_dns: ${{ steps.get-outputs.outputs.alb_dns }}
+      efs_id: ${{ steps.get-outputs.outputs.efs_id }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup CDK Deployment Environment
+        uses: ./.github/actions/setup-cdk-deployment
         with:
           node-version: ${{ env.NODE_VERSION }}
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Restore Build Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            infrastructure/dist
-            infrastructure/cdk.out
-            node_modules
-          key: ${{ needs.build.outputs.cache-key }}
-          fail-on-cache-miss: true
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-role: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
+          build-cache-key: ${{ needs.build.outputs.cache-key }}
 
       - name: Deploy MonitoringInfraStack
-        id: deploy
+        uses: ./.github/actions/deploy-cdk-stack
+        with:
+          stack-name: "MonitoringInfraStack-pipeline"
+          environment: "pipeline"
+          aws-account-id: ${{ needs.validate-setup.outputs.pipeline_account_id }}
+          aws-region: ${{ env.AWS_REGION }}
+          dev-vpc-id: ${{ needs.validate-setup.outputs.dev_vpc_id }}
+          dev-account-id: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+
+      - name: Get Stack Outputs
+        id: get-outputs
         run: |
-          echo "Deploying MonitoringInfraStack-pipeline..."
-          cd infrastructure
-
-          # Verify environment variables are set
-          if [ -z "$AWS_PIPELINE_ACCOUNT_ID" ]; then
-            echo "ERROR: AWS_PIPELINE_ACCOUNT_ID is not set"
-            echo "This indicates the validate-setup job failed or didn't run properly"
-            exit 1
-          fi
-
-          echo "Using Account ID: ***MASKED*** (${#AWS_PIPELINE_ACCOUNT_ID} characters)"
-
-          # Deploy the stack (validation already completed in earlier jobs)
-          ENVIRONMENT=pipeline yarn cdk deploy MonitoringInfraStack-pipeline --require-approval never
+          echo "Retrieving MonitoringInfraStack outputs..."
 
           # Get outputs
           ALB_DNS=$(aws cloudformation describe-stacks \
@@ -825,13 +676,9 @@ jobs:
           echo "::add-mask::$ALB_DNS"
           echo "::add-mask::$EFS_ID"
 
-          echo "MonitoringInfraStack-pipeline deployed successfully"
+          echo "MonitoringInfraStack-pipeline outputs retrieved successfully"
           echo "   ALB DNS: ***MASKED***"
           echo "   EFS ID: ***MASKED***"
-        env:
-          AWS_PIPELINE_ACCOUNT_ID: ${{ needs.validate-setup.outputs.pipeline_account_id }}
-          DEV_VPC_ID: ${{ needs.validate-setup.outputs.dev_vpc_id }}
-          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
 
   # ============================================================================
   # JOB 6: Deploy Monitoring Services
@@ -852,52 +699,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup CDK Deployment Environment
+        uses: ./.github/actions/setup-cdk-deployment
         with:
           node-version: ${{ env.NODE_VERSION }}
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Restore Build Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            infrastructure/dist
-            infrastructure/cdk.out
-            node_modules
-          key: ${{ needs.build.outputs.cache-key }}
-          fail-on-cache-miss: true
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-role: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
+          build-cache-key: ${{ needs.build.outputs.cache-key }}
 
       - name: Deploy MonitoringServiceStack
-        run: |
-          echo "Deploying MonitoringServiceStack-pipeline..."
-          cd infrastructure
-
-          # Verify environment variables are set
-          if [ -z "$AWS_PIPELINE_ACCOUNT_ID" ]; then
-            echo "ERROR: AWS_PIPELINE_ACCOUNT_ID is not set"
-            echo "This indicates the validate-setup job failed or didn't run properly"
-            exit 1
-          fi
-
-          echo "Using Account ID: ***MASKED*** (${#AWS_PIPELINE_ACCOUNT_ID} characters)"
-
-          # Deploy the stack (validation already completed in earlier jobs)
-          ENVIRONMENT=pipeline yarn cdk deploy MonitoringServiceStack-pipeline --require-approval never
-
-          echo "MonitoringServiceStack-pipeline deployed successfully"
-        env:
-          AWS_PIPELINE_ACCOUNT_ID: ${{ needs.validate-setup.outputs.pipeline_account_id }}
-          DEV_VPC_ID: ${{ needs.validate-setup.outputs.dev_vpc_id }}
-          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV }}
+        uses: ./.github/actions/deploy-cdk-stack
+        with:
+          stack-name: "MonitoringServiceStack-pipeline"
+          environment: "pipeline"
+          aws-account-id: ${{ needs.validate-setup.outputs.pipeline_account_id }}
+          aws-region: ${{ env.AWS_REGION }}
+          dev-vpc-id: ${{ needs.validate-setup.outputs.dev_vpc_id }}
+          dev-account-id: ${{ vars.AWS_ACCOUNT_ID_DEV }}
 
       - name: Initialize Configuration
         run: |
@@ -1143,7 +961,7 @@ jobs:
   # ============================================================================
   destroy-all:
     name: Destroy All Stacks
-    needs: [build]
+    needs: [build, validate-setup]
     runs-on: ubuntu-latest
     environment: pipeline
     if: github.event.inputs.stack == 'destroy-all'
@@ -1152,29 +970,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup CDK Deployment Environment
+        uses: ./.github/actions/setup-cdk-deployment
         with:
           node-version: ${{ env.NODE_VERSION }}
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Restore Build Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            infrastructure/dist
-            infrastructure/cdk.out
-            node_modules
-          key: ${{ needs.build.outputs.cache-key }}
-          fail-on-cache-miss: true
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-role: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
+          build-cache-key: ${{ needs.build.outputs.cache-key }}
 
       - name: Destroy Stacks in Order
         run: |
@@ -1235,29 +1037,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup CDK Deployment Environment
+        uses: ./.github/actions/setup-cdk-deployment
         with:
           node-version: ${{ env.NODE_VERSION }}
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Restore Build Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            infrastructure/dist
-            infrastructure/cdk.out
-            node_modules
-          key: ${{ needs.build.outputs.cache-key }}
-          fail-on-cache-miss: true
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+          aws-role: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
+          build-cache-key: ${{ needs.build.outputs.cache-key }}
 
       - name: Analyze Deployment Failure
         id: analyze

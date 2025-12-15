@@ -1,0 +1,91 @@
+# @format
+
+name: "Deploy CDK Stack"
+description: "Deploys a CDK stack with environment validation and error handling"
+
+inputs:
+  stack-name:
+    description: "Name of the CDK stack to deploy"
+    required: true
+  environment:
+    description: "Environment name (e.g., pipeline, development, production)"
+    required: true
+  aws-account-id:
+    description: "AWS Account ID for deployment"
+    required: true
+  aws-region:
+    description: "AWS Region for deployment"
+    required: true
+  dev-vpc-id:
+    description: "Development VPC ID (optional)"
+    required: false
+    default: ""
+  dev-account-id:
+    description: "Development Account ID (optional)"
+    required: false
+    default: ""
+  additional-args:
+    description: "Additional CDK deploy arguments"
+    required: false
+    default: "--require-approval never"
+
+outputs:
+  deployment-status:
+    description: "Status of the deployment (success/failure)"
+    value: ${{ steps.deploy.outputs.status }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Validate Environment Variables
+      shell: bash
+      run: |
+        echo "Validating deployment environment..."
+
+        # Verify required environment variables
+        if [ -z "${{ inputs.aws-account-id }}" ]; then
+          echo "ERROR: AWS Account ID is not set"
+          echo "This indicates the validate-setup job failed or didn't run properly"
+          exit 1
+        fi
+
+        if [ -z "${{ inputs.environment }}" ]; then
+          echo "ERROR: Environment is not set"
+          exit 1
+        fi
+
+        echo "✅ Environment validation passed"
+        echo "Account ID: ***MASKED*** (${{ inputs.aws-account-id != '' && 'SET' || 'NOT_SET' }})"
+        echo "Environment: ${{ inputs.environment }}"
+        echo "Stack: ${{ inputs.stack-name }}"
+
+    - name: Deploy Stack
+      id: deploy
+      shell: bash
+      working-directory: infrastructure
+      run: |
+        echo "Deploying ${{ inputs.stack-name }}..."
+
+        # Set environment variables for CDK
+        export ENVIRONMENT="${{ inputs.environment }}"
+        export AWS_PIPELINE_ACCOUNT_ID="${{ inputs.aws-account-id }}"
+        export AWS_REGION="${{ inputs.aws-region }}"
+
+        # Set optional environment variables
+        if [ -n "${{ inputs.dev-vpc-id }}" ]; then
+          export DEV_VPC_ID="${{ inputs.dev-vpc-id }}"
+        fi
+
+        if [ -n "${{ inputs.dev-account-id }}" ]; then
+          export AWS_ACCOUNT_ID_DEV="${{ inputs.dev-account-id }}"
+        fi
+
+        # Deploy the stack
+        if yarn cdk deploy "${{ inputs.stack-name }}" ${{ inputs.additional-args }}; then
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "✅ ${{ inputs.stack-name }} deployed successfully"
+        else
+          echo "status=failure" >> $GITHUB_OUTPUT
+          echo "❌ ${{ inputs.stack-name }} deployment failed"
+          exit 1
+        fi
