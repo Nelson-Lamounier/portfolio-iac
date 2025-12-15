@@ -3,6 +3,7 @@
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as iam from "aws-cdk-lib/aws-iam";
 import { Tags } from "aws-cdk-lib";
+import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 
 import { EcsTaskExecutionRole } from "../../iam";
@@ -86,6 +87,25 @@ export class EcsTaskDefinitionConstruct extends Construct {
     // Tag task definition
     Tags.of(this.taskDefinition).add("Environment", props.envName);
     Tags.of(this.taskDefinition).add("ManagedBy", "CDK");
+
+    // CDK Nag suppressions for task definition
+    if (this.taskDefinition.taskRole) {
+      NagSuppressions.addResourceSuppressions(
+        this.taskDefinition.taskRole,
+        [
+          {
+            id: "AwsSolutions-IAM5",
+            reason:
+              "CloudWatch Logs permissions use wildcard for log streams within log groups. This allows ECS to create log streams dynamically for containers.",
+            appliesTo: [
+              "Resource::arn:aws:logs:*:*:log-group:*:*",
+              "Resource::arn:aws:logs:*:*:log-group:<*>:*",
+            ],
+          },
+        ],
+        true
+      );
+    }
   }
 
   /**

@@ -28,6 +28,7 @@ export interface ComputeStackProps extends cdk.StackProps {
   memoryReservationMiB?: number;
   memoryLimitMiB?: number;
   cpu?: number;
+  customLaunchTemplate?: ec2.ILaunchTemplate;
 }
 
 /**
@@ -115,6 +116,7 @@ export class ComputeStackRefactored extends cdk.Stack {
       maxCapacity: props.maxCapacity ?? 1,
       desiredCapacity: props.desiredCapacity ?? 1,
       usePublicSubnets: true, // No NAT gateway needed
+      customLaunchTemplate: props.customLaunchTemplate, // Use custom launch template if provided
     });
 
     this.cluster = this.clusterConstruct.cluster;

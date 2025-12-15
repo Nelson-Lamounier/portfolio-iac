@@ -139,17 +139,11 @@ jobs:
           ENVIRONMENT: pipeline
           AWS_PIPELINE_ACCOUNT_ID: "123456789012" # Dummy account ID for validation
 
-      - name: Unit Tests
+      - name: Monitoring Pipeline Tests
         run: |
-          echo "Running unit tests..."
+          echo "Running monitoring pipeline tests..."
           cd infrastructure
-          yarn test:ci
-
-      - name: Monitoring Infrastructure Tests
-        run: |
-          echo "Running monitoring-specific tests..."
-          cd infrastructure
-          yarn test:monitoring
+          yarn test:monitoring-pipeline
 
       - name: Security Compliance Tests
         run: |
@@ -157,11 +151,11 @@ jobs:
           cd infrastructure
           yarn test:security
 
-      - name: Integration Tests
+      - name: Comprehensive Monitoring Tests
         run: |
-          echo "Running integration tests..."
+          echo "Running comprehensive monitoring tests..."
           cd infrastructure
-          yarn test:integration
+          yarn test:comprehensive
 
       - name: Generate Test Coverage Report
         if: always()

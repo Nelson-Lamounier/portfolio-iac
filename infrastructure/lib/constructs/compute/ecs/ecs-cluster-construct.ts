@@ -237,6 +237,27 @@ export class EcsClusterConstruct extends Construct {
       }),
     });
 
+    // CDK Nag suppressions for Auto Scaling Group and its resources
+    NagSuppressions.addResourceSuppressions(
+      this.asg,
+      [
+        {
+          id: "AwsSolutions-IAM5",
+          reason:
+            "Auto Scaling Group lifecycle hooks require wildcard permissions for Auto Scaling Group ARNs. This is required by CDK for ECS cluster lifecycle management and cannot be scoped further.",
+          appliesTo: [
+            "Resource::arn:aws:autoscaling:*:*:autoScalingGroup:*:autoScalingGroupName/*",
+          ],
+        },
+        {
+          id: "AwsSolutions-SNS3",
+          reason:
+            "SNS topic SSL/TLS enforcement is not configured for CDK-managed topics used by Auto Scaling lifecycle hooks. These topics are internal to AWS services and use AWS's internal secure communication. For custom SNS topics, SSL/TLS should be enforced.",
+        },
+      ],
+      true
+    );
+
     // Add capacity provider to cluster
     const capacityProvider = new ecs.AsgCapacityProvider(
       this,
