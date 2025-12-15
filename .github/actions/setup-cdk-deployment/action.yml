@@ -38,7 +38,9 @@ runs:
           infrastructure/cdk.out
           node_modules
         key: ${{ inputs.build-cache-key }}
-        fail-on-cache-miss: true
+        restore-keys: |
+          build-${{ runner.os }}-
+        fail-on-cache-miss: false
 
     - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v4
@@ -113,13 +115,30 @@ runs:
           DIST_FILES=$(find infrastructure/dist -name "*.js" | wc -l)
           echo "✅ Build Artifacts: $DIST_FILES JavaScript files found"
         else
-          echo "❌ Build Artifacts: dist directory not found"
+          echo "⚠️  Build Artifacts: dist directory not found"
           echo ""
-          echo "🔧 Possible Issues:"
-          echo "  - Build job failed or was skipped"
-          echo "  - Build cache restoration failed"
-          echo "  - Incorrect cache key used"
-          SETUP_ERRORS=$((SETUP_ERRORS + 1))
+          echo "🔧 Attempting to build infrastructure..."
+          
+          # Fallback: build infrastructure if cache miss
+          cd infrastructure
+          if yarn turbo build --filter=infrastructure; then
+            if [ -d "dist" ]; then
+              DIST_FILES=$(find dist -name "*.js" | wc -l)
+              echo "✅ Fallback Build Successful: $DIST_FILES JavaScript files created"
+            else
+              echo "❌ Fallback Build Failed: No dist directory created"
+              SETUP_ERRORS=$((SETUP_ERRORS + 1))
+            fi
+          else
+            echo "❌ Fallback Build Failed: Build command failed"
+            echo ""
+            echo "🔧 Possible Issues:"
+            echo "  - TypeScript compilation errors"
+            echo "  - Missing dependencies"
+            echo "  - Build configuration issues"
+            SETUP_ERRORS=$((SETUP_ERRORS + 1))
+          fi
+          cd ..
         fi
 
         echo ""

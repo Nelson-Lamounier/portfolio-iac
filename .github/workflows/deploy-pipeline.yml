@@ -651,7 +651,22 @@ jobs:
             build-${{ runner.os }}-
 
       - name: Build with Turbo
-        run: yarn turbo build --filter=infrastructure
+        run: |
+          echo "🚀 Building infrastructure with Turbo..."
+          yarn turbo build --filter=infrastructure
+
+          echo "📊 Build Results:"
+          if [ -d "infrastructure/dist" ]; then
+            DIST_FILES=$(find infrastructure/dist -name "*.js" | wc -l)
+            echo "✅ Build successful: $DIST_FILES JavaScript files created"
+            echo "📁 Dist directory contents:"
+            ls -la infrastructure/dist/
+          else
+            echo "❌ Build failed: No dist directory created"
+            echo "📁 Infrastructure directory contents:"
+            ls -la infrastructure/
+            exit 1
+          fi
 
       - name: CDK Synth for Validation
         run: |
@@ -924,6 +939,26 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Verify Build Job Status
+        run: |
+          echo "🔍 Verifying build job status and outputs..."
+          echo "Build Job Result: ${{ needs.build.result }}"
+          echo "Build Cache Key: ${{ needs.build.outputs.cache-key }}"
+
+          if [ "${{ needs.build.result }}" != "success" ]; then
+            echo "❌ Build job did not succeed: ${{ needs.build.result }}"
+            echo "🚨 Cannot proceed with deployment without successful build"
+            exit 1
+          fi
+
+          if [ -z "${{ needs.build.outputs.cache-key }}" ]; then
+            echo "❌ Build cache key is empty"
+            echo "🚨 This indicates the build job may not have completed properly"
+            exit 1
+          fi
+
+          echo "✅ Build job verification passed"
 
       - name: Setup CDK Deployment Environment
         uses: ./.github/actions/setup-cdk-deployment
