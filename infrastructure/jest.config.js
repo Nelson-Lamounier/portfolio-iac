@@ -11,28 +11,17 @@ module.exports = {
   maxWorkers: 1,
   forceExit: true,
   setupFilesAfterEnv: ["<rootDir>/test/jest-setup.ts"],
-  preset: "ts-jest",
   transform: {
-    "^.+\\.(ts|tsx)$": "ts-jest",
+    "^.+\\.(ts|tsx)$": "babel-jest",
   },
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/lib/$1",
   },
   moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json", "node"],
-  // Configure ts-jest for better CI compatibility
+  // Ensure Jest globals are available
   globals: {
     "ts-jest": {
       useESM: false,
-      tsconfig: {
-        compilerOptions: {
-          module: "commonjs",
-          target: "es2020",
-          strict: false,
-          esModuleInterop: true,
-          allowSyntheticDefaultImports: true,
-          skipLibCheck: true,
-        },
-      },
     },
   },
   // Add Jest environment for better TypeScript support
