@@ -415,15 +415,26 @@ jobs:
         run: |
           # Get current account ID
           CURRENT_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+
+          # Verify we got a valid account ID
+          if [ -z "$CURRENT_ACCOUNT" ] || [ "$CURRENT_ACCOUNT" = "None" ]; then
+            echo "ERROR: Failed to get AWS account ID from STS"
+            aws sts get-caller-identity || true
+            exit 1
+          fi
+
           echo "pipeline_account_id=$CURRENT_ACCOUNT" >> $GITHUB_OUTPUT
           echo "AWS_PIPELINE_ACCOUNT_ID=$CURRENT_ACCOUNT" >> $GITHUB_ENV
 
           # Security: Mask sensitive values in logs
           echo "::add-mask::$CURRENT_ACCOUNT"
 
-          # Log non-sensitive information only
-          echo "SUCCESS: Pipeline Account ID: ***MASKED***"
+          # Log non-sensitive information only (with length for debugging)
+          echo "SUCCESS: Pipeline Account ID: ***MASKED*** (${#CURRENT_ACCOUNT} characters)"
           echo "SUCCESS: Region: ${{ env.AWS_REGION }}"
+
+          # Debug: Show that output was set (without revealing the value)
+          echo "DEBUG: Set pipeline_account_id output with ${#CURRENT_ACCOUNT} character value"
 
           # Skip validation if requested
           if [ "${{ github.event.inputs.skip_validation }}" = "true" ]; then
@@ -434,40 +445,62 @@ jobs:
 
       - name: Get Dev Account VPC Info
         id: dev-info
-        if: vars.AWS_ACCOUNT_ID_DEV != '' && github.event.inputs.skip_validation != 'true'
-        continue-on-error: true
         run: |
-          # Security: Mask dev account ID
-          echo "::add-mask::${{ vars.AWS_ACCOUNT_ID_DEV }}"
+          if [ "${{ vars.AWS_ACCOUNT_ID_DEV }}" = "" ] || [ "${{ github.event.inputs.skip_validation }}" = "true" ]; then
+            echo "vpc_id=NOT_FOUND" >> $GITHUB_OUTPUT
+            echo "Dev VPC lookup skipped - using default"
+          else
+            # Security: Mask dev account ID
+            echo "::add-mask::${{ vars.AWS_ACCOUNT_ID_DEV }}"
 
-          # Switch to dev account to get VPC info
-          aws sts assume-role \
-            --role-arn "arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/GitHubDeploymentRole" \
-            --role-session-name "GetVpcInfo-$(date +%s)" \
-            --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
-            --output text | {
-              read access_key secret_key session_token
-              
-              # Security: Mask temporary credentials
-              echo "::add-mask::$access_key"
-              echo "::add-mask::$secret_key" 
-              echo "::add-mask::$session_token"
-              
-              export AWS_ACCESS_KEY_ID=$access_key
-              export AWS_SECRET_ACCESS_KEY=$secret_key
-              export AWS_SESSION_TOKEN=$session_token
-              
-              DEV_VPC=$(aws ec2 describe-vpcs \
-                --filters "Name=tag:Environment,Values=development" \
-                --query 'Vpcs[0].VpcId' \
-                --output text 2>/dev/null || echo "NOT_FOUND")
-              
-              # Security: Mask VPC ID
-              echo "::add-mask::$DEV_VPC"
-              
-              echo "vpc_id=$DEV_VPC" >> $GITHUB_OUTPUT
-              echo "Dev VPC ID: ***MASKED***"
-            }
+            # Switch to dev account to get VPC info
+            aws sts assume-role \
+              --role-arn "arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/GitHubDeploymentRole" \
+              --role-session-name "GetVpcInfo-$(date +%s)" \
+              --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+              --output text | {
+                read access_key secret_key session_token
+                
+                # Security: Mask temporary credentials
+                echo "::add-mask::$access_key"
+                echo "::add-mask::$secret_key" 
+                echo "::add-mask::$session_token"
+                
+                export AWS_ACCESS_KEY_ID=$access_key
+                export AWS_SECRET_ACCESS_KEY=$secret_key
+                export AWS_SESSION_TOKEN=$session_token
+                
+                DEV_VPC=$(aws ec2 describe-vpcs \
+                  --filters "Name=tag:Environment,Values=development" \
+                  --query 'Vpcs[0].VpcId' \
+                  --output text 2>/dev/null || echo "NOT_FOUND")
+                
+                # Security: Mask VPC ID
+                echo "::add-mask::$DEV_VPC"
+                
+                echo "vpc_id=$DEV_VPC" >> $GITHUB_OUTPUT
+                echo "Dev VPC ID: ***MASKED***"
+              } || {
+                echo "vpc_id=NOT_FOUND" >> $GITHUB_OUTPUT
+                echo "Failed to get Dev VPC info - using default"
+              }
+          fi
+
+      - name: Set Default Outputs
+        if: always()
+        run: |
+          # Ensure outputs are always set, even if previous steps were skipped
+          if [ -z "${{ steps.dev-info.outputs.vpc_id }}" ]; then
+            echo "vpc_id=NOT_FOUND" >> $GITHUB_OUTPUT
+          fi
+
+          # Verify pipeline account ID was set
+          if [ -z "${{ steps.setup.outputs.pipeline_account_id }}" ]; then
+            echo "ERROR: Pipeline account ID was not set by setup step"
+            exit 1
+          fi
+
+          echo "✅ All required outputs verified"
 
   # ============================================================================
   # JOB 2: Deploy Networking Stack
@@ -518,13 +551,34 @@ jobs:
           echo "::add-mask::${{ needs.validate-setup.outputs.dev_vpc_id }}"
           echo "::add-mask::${{ vars.AWS_ACCOUNT_ID_DEV }}"
 
+      - name: Debug Environment Variables
+        run: |
+          echo "DEBUG: Checking environment variables from validate-setup job"
+          echo "AWS_PIPELINE_ACCOUNT_ID length: ${#AWS_PIPELINE_ACCOUNT_ID}"
+          echo "DEV_VPC_ID length: ${#DEV_VPC_ID}"
+          echo "validate-setup outputs:"
+          echo "  pipeline_account_id: ${{ needs.validate-setup.outputs.pipeline_account_id }}"
+          echo "  dev_vpc_id: ${{ needs.validate-setup.outputs.dev_vpc_id }}"
+
       - name: Deploy NetworkingStack
         run: |
           echo "Deploying NetworkingStack-pipeline..."
           cd infrastructure
 
+          # Verify environment variables are set
+          if [ -z "$AWS_PIPELINE_ACCOUNT_ID" ]; then
+            echo "ERROR: AWS_PIPELINE_ACCOUNT_ID is not set"
+            echo "This indicates the validate-setup job failed or didn't run properly"
+            echo "Available outputs from validate-setup:"
+            echo "  pipeline_account_id: ${{ needs.validate-setup.outputs.pipeline_account_id }}"
+            echo "  dev_vpc_id: ${{ needs.validate-setup.outputs.dev_vpc_id }}"
+            exit 1
+          fi
+
+          echo "Using Account ID: ***MASKED*** (${#AWS_PIPELINE_ACCOUNT_ID} characters)"
+
           # Deploy the stack (validation already completed in earlier jobs)
-          ENVIRONMENT=pipeline yarn cdk deploy NetworkingStack-pipeline --require-approval never --verbose 2>&1 | sed 's/arn:aws:iam::[0-9]\{12\}:/arn:aws:iam::***MASKED***:/g'
+          ENVIRONMENT=pipeline yarn cdk deploy NetworkingStack-pipeline --require-approval never --verbose
 
           echo "NetworkingStack-pipeline deployed successfully"
         env:
@@ -586,6 +640,15 @@ jobs:
         run: |
           echo "Deploying MonitoringEfsStack-pipeline..."
           cd infrastructure
+
+          # Verify environment variables are set
+          if [ -z "$AWS_PIPELINE_ACCOUNT_ID" ]; then
+            echo "ERROR: AWS_PIPELINE_ACCOUNT_ID is not set"
+            echo "This indicates the validate-setup job failed or didn't run properly"
+            exit 1
+          fi
+
+          echo "Using Account ID: ***MASKED*** (${#AWS_PIPELINE_ACCOUNT_ID} characters)"
 
           # Deploy the stack (validation already completed in earlier jobs)
           ENVIRONMENT=pipeline yarn cdk deploy MonitoringEfsStack-pipeline --require-approval never
@@ -713,6 +776,15 @@ jobs:
           echo "Deploying VpcPeeringStack-pipeline..."
           cd infrastructure
 
+          # Verify environment variables are set
+          if [ -z "$AWS_PIPELINE_ACCOUNT_ID" ]; then
+            echo "ERROR: AWS_PIPELINE_ACCOUNT_ID is not set"
+            echo "This indicates the validate-setup job failed or didn't run properly"
+            exit 1
+          fi
+
+          echo "Using Account ID: ***MASKED*** (${#AWS_PIPELINE_ACCOUNT_ID} characters)"
+
           # Deploy the stack (validation already completed in earlier jobs)
           ENVIRONMENT=pipeline yarn cdk deploy VpcPeeringStack-pipeline --require-approval never
 
@@ -775,6 +847,15 @@ jobs:
         run: |
           echo "Deploying MonitoringInfraStack-pipeline..."
           cd infrastructure
+
+          # Verify environment variables are set
+          if [ -z "$AWS_PIPELINE_ACCOUNT_ID" ]; then
+            echo "ERROR: AWS_PIPELINE_ACCOUNT_ID is not set"
+            echo "This indicates the validate-setup job failed or didn't run properly"
+            exit 1
+          fi
+
+          echo "Using Account ID: ***MASKED*** (${#AWS_PIPELINE_ACCOUNT_ID} characters)"
 
           # Deploy the stack (validation already completed in earlier jobs)
           ENVIRONMENT=pipeline yarn cdk deploy MonitoringInfraStack-pipeline --require-approval never
@@ -852,6 +933,15 @@ jobs:
         run: |
           echo "Deploying MonitoringServiceStack-pipeline..."
           cd infrastructure
+
+          # Verify environment variables are set
+          if [ -z "$AWS_PIPELINE_ACCOUNT_ID" ]; then
+            echo "ERROR: AWS_PIPELINE_ACCOUNT_ID is not set"
+            echo "This indicates the validate-setup job failed or didn't run properly"
+            exit 1
+          fi
+
+          echo "Using Account ID: ***MASKED*** (${#AWS_PIPELINE_ACCOUNT_ID} characters)"
 
           # Deploy the stack (validation already completed in earlier jobs)
           ENVIRONMENT=pipeline yarn cdk deploy MonitoringServiceStack-pipeline --require-approval never
