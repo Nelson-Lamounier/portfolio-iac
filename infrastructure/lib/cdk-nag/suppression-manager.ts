@@ -285,6 +285,14 @@ export class SuppressionManager {
       {
         id: "AwsSolutions-IAM5",
         reason:
+          "ECS task roles require CloudWatch Logs permissions to write to their specific log groups. The wildcard allows log stream creation within the task's designated log group, which is necessary for ECS container logging.",
+        appliesTo: [
+          { regex: "/^Resource::arn:aws:logs:.*:.*:log-group:<.*>:\\*$/" },
+        ],
+      },
+      {
+        id: "AwsSolutions-IAM5",
+        reason:
           "EC2 instances in monitoring infrastructure require read access to SSM parameters under the monitoring stack path for EFS setup scripts and configuration. The wildcard is scoped to the specific stack's parameter namespace (/monitoring/{stackName}/*) and provides read-only access to configuration data.",
         appliesTo: [
           {
@@ -296,6 +304,16 @@ export class SuppressionManager {
         id: "AwsSolutions-SNS3",
         reason:
           "SNS topic is used for internal ECS lifecycle hooks managed by CDK for the monitoring cluster. SSL enforcement is handled by AWS internal services. The lifecycle hook topic is used for draining ECS tasks during instance termination.",
+      },
+      {
+        id: "AwsSolutions-EC23",
+        reason:
+          "EFS security group allows NFS access from VPC CIDR block only. The CIDR block is dynamically resolved from VPC configuration using CloudFormation intrinsic functions, which CDK Nag cannot validate at synthesis time. This is secure as it restricts access to the VPC's private network only.",
+      },
+      {
+        id: "CdkNagValidationFailure",
+        reason:
+          "CDK Nag validation failure occurs when CloudFormation intrinsic functions (like Fn::GetAtt for VPC CIDR) are used in security group rules. This is expected behavior and the actual values will be resolved at deployment time with proper CIDR restrictions.",
       },
     ];
   }
