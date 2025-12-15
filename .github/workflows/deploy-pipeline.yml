@@ -122,8 +122,8 @@ jobs:
         run: |
           echo "Running TypeScript/ESLint checks for monitoring components..."
           cd infrastructure
-          # Only lint monitoring-related files
-          yarn lint lib/stacks/monitoring/ lib/constructs/monitoring/ test/unit/monitoring/ || echo "Linting completed with warnings"
+          # Only lint monitoring-related files using ESLint directly
+          npx eslint lib/stacks/monitoring/ lib/constructs/monitoring/ test/unit/monitoring/ --max-warnings 50 || echo "Linting completed with warnings"
 
       - name: Type Checking
         run: |
