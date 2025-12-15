@@ -201,6 +201,14 @@ export class SuppressionManager {
           },
         ],
       },
+      {
+        id: "AwsSolutions-IAM5",
+        reason:
+          "CloudWatch Logs permissions use wildcard for log streams within the ECS cluster log group. This allows ECS tasks to create log streams dynamically. The wildcard is scoped to the specific log group ARN.",
+        appliesTo: [
+          "Resource::arn:aws:logs:eu-west-1:123456789012:log-group:<EcsClusterClusterLogGroupF10E9DBD>:*",
+        ],
+      },
     ];
   }
 
@@ -247,6 +255,14 @@ export class SuppressionManager {
         reason:
           "Auto Scaling lifecycle hooks require permissions to describe instances and complete lifecycle actions. These permissions are scoped to the specific Auto Scaling Group and are necessary for proper instance lifecycle management.",
         appliesTo: ["Resource::*"],
+      },
+      {
+        id: "AwsSolutions-IAM5",
+        reason:
+          "Auto Scaling Group lifecycle hook Lambda requires wildcard permissions for Auto Scaling Group operations because the ASG name contains CDK-generated tokens that are not known at synthesis time. This is required for ECS instance draining functionality.",
+        appliesTo: [
+          "Resource::arn:aws:autoscaling:eu-west-1:123456789012:autoScalingGroup:*:autoScalingGroupName/<EcsClusterAutoScalingGroupASGB16C0B67>",
+        ],
       },
       {
         id: "AwsSolutions-AS3",
