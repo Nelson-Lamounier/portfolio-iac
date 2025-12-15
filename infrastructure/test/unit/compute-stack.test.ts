@@ -7,6 +7,7 @@ import { Template, Match, Capture } from "aws-cdk-lib/assertions";
 
 import { ComputeStack } from "../../lib/stacks/compute/compute-stack";
 import { LaunchTemplateStack } from "../../lib/stacks/compute/launch-template-stack";
+import { template } from "@babel/core";
 
 describe("ComputeStack Test Suite", () => {
   let template: Template;
