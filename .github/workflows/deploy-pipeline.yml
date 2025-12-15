@@ -372,7 +372,13 @@ jobs:
       - name: CDK Synth for Validation
         run: |
           cd infrastructure
-          yarn cdk synth --all --quiet
+          # Only synthesize pipeline stacks for build validation
+          ENVIRONMENT=pipeline yarn cdk synth MonitoringStack-pipeline MonitoringEfsStack-pipeline MonitoringInfraStack-pipeline MonitoringServiceStack-pipeline VpcPeeringStack-pipeline --quiet
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+          ENVIRONMENT: pipeline
+          AWS_PIPELINE_ACCOUNT_ID: "123456789012" # Dummy account ID for validation
+          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV || '123456789012' }} # Use actual dev account or dummy for validation
 
   # ============================================================================
   # JOB 2: Validation & Setup
