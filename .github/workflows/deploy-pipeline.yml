@@ -960,6 +960,30 @@ jobs:
 
           echo "✅ Build job verification passed"
 
+      - name: Verify Validate-Setup Job Outputs
+        run: |
+          echo "🔍 Verifying validate-setup job outputs..."
+          echo "Validate-Setup Job Result: ${{ needs.validate-setup.result }}"
+          echo "Pipeline Account ID: '${{ needs.validate-setup.outputs.pipeline_account_id }}'"
+          echo "Dev VPC ID: '${{ needs.validate-setup.outputs.dev_vpc_id }}'"
+          echo "Dev Account ID (from vars): '${{ vars.AWS_ACCOUNT_ID_DEV }}'"
+          echo ""
+
+          if [ -z "${{ needs.validate-setup.outputs.pipeline_account_id }}" ]; then
+            echo "❌ CRITICAL: Pipeline Account ID is empty"
+            echo ""
+            echo "🔧 Troubleshooting Steps:"
+            echo "  1. Check validate-setup job logs for errors"
+            echo "  2. Verify the 'Setup Environment Variables' step completed successfully"
+            echo "  3. Check if pipeline_account_id output was set correctly"
+            echo "  4. Verify AWS OIDC role has sts:GetCallerIdentity permission"
+            echo ""
+            echo "🚨 This will cause the deployment to fail"
+            exit 1
+          fi
+
+          echo "✅ Validate-setup job verification passed"
+
       - name: Setup CDK Deployment Environment
         uses: ./.github/actions/setup-cdk-deployment
         with:
