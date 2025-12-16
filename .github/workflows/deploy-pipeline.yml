@@ -782,9 +782,6 @@ jobs:
           echo "🔧 DEBUG: Verifying GITHUB_OUTPUT contents:"
           cat $GITHUB_OUTPUT | grep pipeline_account_id || echo "❌ pipeline_account_id not found in GITHUB_OUTPUT"
 
-          # Mask the account ID for security
-          echo "::add-mask::$CURRENT_ACCOUNT"
-
           echo "✅ Successfully retrieved pipeline account information"
           echo "📊 Account ID: ***${CURRENT_ACCOUNT: -4} (last 4 digits)"
           echo "🌍 Region: ${{ env.AWS_REGION }}"
@@ -801,8 +798,7 @@ jobs:
             echo "🎯 Dev account configured: ***${DEV_ACCOUNT_ID: -4}"
             echo "🔄 Attempting cross-account role assumption..."
             
-            # Mask the dev account ID
-            echo "::add-mask::$DEV_ACCOUNT_ID"
+
             
             # Validate dev account ID format
             if ! [[ "$DEV_ACCOUNT_ID" =~ ^[0-9]{12}$ ]]; then
@@ -857,7 +853,6 @@ jobs:
                 
                 if [ "$DEV_VPC" != "None" ] && [ "$DEV_VPC" != "null" ] && [ -n "$DEV_VPC" ]; then
                   echo "✅ Found development VPC: ***${DEV_VPC: -8}"
-                  echo "::add-mask::$DEV_VPC"
                   echo "vpc_id=$DEV_VPC" >> $GITHUB_OUTPUT
                 else
                   echo "⚠️  No development VPC found with Environment=development tag"
