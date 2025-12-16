@@ -36,7 +36,7 @@ export interface EfsFileSystemConstructProps {
 
   /**
    * Throughput mode for the file system
-   * @default PROVISIONED with 10 MiB/s
+   * @default ELASTIC (cheapest for spiky/low-average workloads)
    */
   throughputMode?: efs.ThroughputMode;
 
@@ -78,7 +78,7 @@ export class EfsFileSystemConstruct extends Construct {
       enableEncryption = true,
       lifecyclePolicy = efs.LifecyclePolicy.AFTER_30_DAYS,
       performanceMode = efs.PerformanceMode.GENERAL_PURPOSE,
-      throughputMode = efs.ThroughputMode.PROVISIONED,
+      throughputMode = efs.ThroughputMode.ELASTIC,
       provisionedThroughputPerSecond = cdk.Size.mebibytes(10),
       removalPolicy = cdk.RemovalPolicy.RETAIN,
       securityGroup,
