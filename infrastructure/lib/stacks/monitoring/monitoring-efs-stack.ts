@@ -143,10 +143,13 @@ export class MonitoringEfsStack extends cdk.Stack {
           "elasticfilesystem:ClientMount",
           "elasticfilesystem:ClientWrite",
           "elasticfilesystem:AccessedViaMountTarget",
+          "ssm:GetParameter",
+          "ssm:PutParameter",
         ],
         resources: [
           this.fileSystem.fileSystemArn,
           this.accessPoint.accessPointArn,
+          `arn:aws:ssm:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:parameter/monitoring/${envName}/*`,
         ],
       })
     );
