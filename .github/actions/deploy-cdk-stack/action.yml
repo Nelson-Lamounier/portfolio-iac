@@ -151,9 +151,9 @@ runs:
         # Pre-deployment checks
         echo "Pre-deployment validation..."
 
-        # Check if CDK is available
-        if ! command -v cdk &> /dev/null; then
-          echo "CDK CLI not found"
+        # Check if CDK is available via yarn
+        if ! yarn cdk --version &> /dev/null; then
+          echo "CDK CLI not found via yarn"
           echo ""
           echo "DEPLOYMENT FAILED: CDK CLI Missing"
           echo ""
@@ -161,6 +161,7 @@ runs:
           echo "  1. Check if 'setup-cdk-deployment' composite action ran successfully"
           echo "  2. Verify Node.js and dependencies are properly installed"
           echo "  3. Check build cache restoration"
+          echo "  4. Ensure CDK is installed in infrastructure workspace"
           echo ""
           echo "status=failure" >> $GITHUB_OUTPUT
           exit 1
