@@ -96,7 +96,8 @@ runs:
         fi
 
         # Check CDK
-        if cd infrastructure && command -v yarn &> /dev/null; then
+        if [ -d "infrastructure" ] && command -v yarn &> /dev/null; then
+          cd infrastructure
           if CDK_VERSION=$(yarn cdk --version 2>/dev/null); then
             echo "✅ CDK: $CDK_VERSION"
           else
@@ -108,6 +109,7 @@ runs:
             echo "  - CDK not included in package.json"
             SETUP_ERRORS=$((SETUP_ERRORS + 1))
           fi
+          cd ..
         else
           echo "❌ CDK: Cannot verify (infrastructure directory or yarn not available)"
           SETUP_ERRORS=$((SETUP_ERRORS + 1))
@@ -123,25 +125,30 @@ runs:
           echo "🔧 Attempting to build infrastructure..."
           
           # Fallback: build infrastructure if cache miss
-          cd infrastructure
-          if yarn turbo build --filter=infrastructure; then
-            if [ -d "dist" ]; then
-              DIST_FILES=$(find dist -name "*.js" | wc -l)
-              echo "✅ Fallback Build Successful: $DIST_FILES JavaScript files created"
+          if [ -d "infrastructure" ]; then
+            cd infrastructure
+            if yarn turbo build --filter=infrastructure; then
+              if [ -d "dist" ]; then
+                DIST_FILES=$(find dist -name "*.js" | wc -l)
+                echo "✅ Fallback Build Successful: $DIST_FILES JavaScript files created"
+              else
+                echo "❌ Fallback Build Failed: No dist directory created"
+                SETUP_ERRORS=$((SETUP_ERRORS + 1))
+              fi
             else
-              echo "❌ Fallback Build Failed: No dist directory created"
+              echo "❌ Fallback Build Failed: Build command failed"
+              echo ""
+              echo "🔧 Possible Issues:"
+              echo "  - TypeScript compilation errors"
+              echo "  - Missing dependencies"
+              echo "  - Build configuration issues"
               SETUP_ERRORS=$((SETUP_ERRORS + 1))
             fi
+            cd ..
           else
-            echo "❌ Fallback Build Failed: Build command failed"
-            echo ""
-            echo "🔧 Possible Issues:"
-            echo "  - TypeScript compilation errors"
-            echo "  - Missing dependencies"
-            echo "  - Build configuration issues"
+            echo "❌ Fallback Build Failed: Infrastructure directory not found"
             SETUP_ERRORS=$((SETUP_ERRORS + 1))
           fi
-          cd ..
         fi
 
         echo ""
