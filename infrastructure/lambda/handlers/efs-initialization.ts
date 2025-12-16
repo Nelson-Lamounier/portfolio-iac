@@ -18,6 +18,8 @@ import {
   CloudFormationCustomResourceResponse,
   Context,
 } from "aws-lambda";
+import * as https from "https";
+import * as url from "url";
 import {
   SSMClient,
   GetParameterCommand,
@@ -39,16 +41,21 @@ export const handler = async (
     const requestType = event.RequestType;
     console.log(`Request type: ${requestType}`);
 
+    let response: CloudFormationCustomResourceResponse;
+
     if (requestType === "Create" || requestType === "Update") {
-      return await initializeEfs(event, context);
+      response = await initializeEfs(event, context);
     } else if (requestType === "Delete") {
-      return await cleanupEfs(event, context);
+      response = await cleanupEfs(event, context);
     } else {
       throw new Error(`Unknown request type: ${requestType}`);
     }
+
+    await sendResponse(event, context, response);
+    return response;
   } catch (error) {
     console.error("Error in handler:", error);
-    return {
+    const failureResponse: CloudFormationCustomResourceResponse = {
       Status: "FAILED",
       Reason: error instanceof Error ? error.message : String(error),
       PhysicalResourceId:
@@ -58,6 +65,8 @@ export const handler = async (
       LogicalResourceId: event.LogicalResourceId,
       Data: {},
     };
+    await sendResponse(event, context, failureResponse);
+    return failureResponse;
   }
 };
 
@@ -65,29 +74,34 @@ async function initializeEfs(
   event: CloudFormationCustomResourceEvent,
   _context: Context
 ): Promise<CloudFormationCustomResourceResponse> {
-  const { EfsId, AccessPointId, StackName } = event.ResourceProperties;
+  // Align with properties sent by the stack (FileSystemId, AccessPointId, Environment)
+  const {
+    FileSystemId,
+    AccessPointId,
+    Environment: envName,
+  } = event.ResourceProperties as any;
   const region = process.env.AWS_REGION!;
 
   console.log(
-    `Initializing EFS configuration for ${EfsId} with access point ${AccessPointId}`
+    `Initializing EFS configuration for ${FileSystemId} with access point ${AccessPointId} in env ${envName}`
   );
 
   // Create enhanced configuration files in SSM
-  await createEnhancedConfigurationFiles(StackName, region);
+  await createEnhancedConfigurationFiles(envName, region);
 
   // Store directory structure and permissions in SSM for EC2 instances to use
-  await storeDirectoryStructureInSSM(StackName, region);
+  await storeDirectoryStructureInSSM(envName, region);
 
   console.log("EFS configuration initialization completed successfully");
 
   return {
     Status: "SUCCESS",
-    PhysicalResourceId: `efs-init-${EfsId}`,
+    PhysicalResourceId: `efs-init-${FileSystemId}`,
     StackId: event.StackId,
     RequestId: event.RequestId,
     LogicalResourceId: event.LogicalResourceId,
     Data: {
-      EfsId,
+      FileSystemId,
       AccessPointId,
       InitializationStatus: "Complete",
     },
@@ -111,39 +125,39 @@ async function cleanupEfs(
 }
 
 async function createEnhancedConfigurationFiles(
-  stackName: string,
+  envName: string,
   region: string
 ): Promise<void> {
   try {
     // Get existing configurations and enhance them
     const prometheusConfig = await getSSMParameter(
-      `/monitoring/${stackName}/prometheus-config`,
+      `/monitoring/${envName}/prometheus-config`,
       region
     );
     const grafanaDsConfig = await getSSMParameter(
-      `/monitoring/${stackName}/grafana-datasource-config`,
+      `/monitoring/${envName}/grafana-datasource-config`,
       region
     );
     const grafanaDbConfig = await getSSMParameter(
-      `/monitoring/${stackName}/grafana-dashboard-config`,
+      `/monitoring/${envName}/grafana-dashboard-config`,
       region
     );
 
     // Store enhanced YAML configurations for EC2 instances to use
     await putSSMParameter(
-      `/monitoring/${stackName}/prometheus-config-yaml`,
+      `/monitoring/${envName}/prometheus-config-yaml`,
       dictToYaml(JSON.parse(prometheusConfig)),
       region
     );
 
     await putSSMParameter(
-      `/monitoring/${stackName}/grafana-datasource-config-yaml`,
+      `/monitoring/${envName}/grafana-datasource-config-yaml`,
       dictToYaml(JSON.parse(grafanaDsConfig)),
       region
     );
 
     await putSSMParameter(
-      `/monitoring/${stackName}/grafana-dashboard-config-yaml`,
+      `/monitoring/${envName}/grafana-dashboard-config-yaml`,
       dictToYaml(JSON.parse(grafanaDbConfig)),
       region
     );
@@ -156,7 +170,7 @@ async function createEnhancedConfigurationFiles(
 }
 
 async function storeDirectoryStructureInSSM(
-  stackName: string,
+  envName: string,
   region: string
 ): Promise<void> {
   const setupScript = `#!/bin/bash
@@ -192,9 +206,9 @@ chmod -R 777 /mnt/efs/grafana-data/png
 
 # Create configuration files from SSM
 echo "Creating configuration files from SSM parameters..."
-aws ssm get-parameter --region ${region} --name "/monitoring/${stackName}/prometheus-config-yaml" --query "Parameter.Value" --output text > /mnt/efs/config/prometheus/prometheus.yml
-aws ssm get-parameter --region ${region} --name "/monitoring/${stackName}/grafana-datasource-config-yaml" --query "Parameter.Value" --output text > /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml
-aws ssm get-parameter --region ${region} --name "/monitoring/${stackName}/grafana-dashboard-config-yaml" --query "Parameter.Value" --output text > /mnt/efs/config/grafana/provisioning/dashboards/dashboards.yml
+aws ssm get-parameter --region ${region} --name "/monitoring/${envName}/prometheus-config-yaml" --query "Parameter.Value" --output text > /mnt/efs/config/prometheus/prometheus.yml
+aws ssm get-parameter --region ${region} --name "/monitoring/${envName}/grafana-datasource-config-yaml" --query "Parameter.Value" --output text > /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml
+aws ssm get-parameter --region ${region} --name "/monitoring/${envName}/grafana-dashboard-config-yaml" --query "Parameter.Value" --output text > /mnt/efs/config/grafana/provisioning/dashboards/dashboards.yml
 
 # Set proper ownership for config files
 chown 65534:65534 /mnt/efs/config/prometheus/prometheus.yml
@@ -211,7 +225,7 @@ echo "EFS setup completed successfully"
 `;
 
   await putSSMParameter(
-    `/monitoring/${stackName}/efs-setup-script`,
+    `/monitoring/${envName}/efs-setup-script`,
     setupScript,
     region
   );
@@ -290,4 +304,49 @@ function dictToYaml(data: any, indent: number = 0): string {
   }
 
   return yamlLines.join("\n");
+}
+
+async function sendResponse(
+  event: CloudFormationCustomResourceEvent,
+  context: Context,
+  response: CloudFormationCustomResourceResponse
+): Promise<void> {
+  const responseBody = JSON.stringify({
+    Status: response.Status,
+    Reason:
+      response.Reason ||
+      `See CloudWatch Logs for requestId: ${context.awsRequestId}`,
+    PhysicalResourceId: response.PhysicalResourceId || context.logStreamName,
+    StackId: event.StackId,
+    RequestId: event.RequestId,
+    LogicalResourceId: event.LogicalResourceId,
+    Data: response.Data || {},
+  });
+
+  const parsedUrl = url.parse(event.ResponseURL);
+  const options = {
+    hostname: parsedUrl.hostname,
+    port: 443,
+    path: parsedUrl.path,
+    method: "PUT",
+    headers: {
+      "content-type": "",
+      "content-length": Buffer.byteLength(responseBody),
+    },
+  };
+
+  await new Promise<void>((resolve, reject) => {
+    const req = https.request(options, (res) => {
+      res.on("data", () => undefined);
+      res.on("end", resolve);
+    });
+
+    req.on("error", (err) => {
+      console.error("sendResponse error:", err);
+      reject(err);
+    });
+
+    req.write(responseBody);
+    req.end();
+  });
 }
