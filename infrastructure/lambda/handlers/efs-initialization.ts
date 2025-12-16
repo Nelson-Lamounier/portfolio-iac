@@ -330,7 +330,7 @@ async function sendResponse(
     path: parsedUrl.path,
     method: "PUT",
     headers: {
-      "content-type": "",
+      "content-type": "application/json",
       "content-length": Buffer.byteLength(responseBody),
     },
   };

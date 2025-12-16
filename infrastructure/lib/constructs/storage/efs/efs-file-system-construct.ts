@@ -124,16 +124,6 @@ export class EfsFileSystemConstruct extends Construct {
     };
     // Setting availabilityZoneName makes this a One Zone file system
     cfnFileSystem.availabilityZoneName = this.availabilityZone;
-    // Enable One Zone-IA transition after 1 access to reduce cost
-    cfnFileSystem.addPropertyOverride(
-      "FileSystemPolicy",
-      cfnFileSystem.fileSystemPolicy
-    );
-    cfnFileSystem.addPropertyOverride("LifecyclePolicies", [
-      {
-        TransitionToIA: "AFTER_1_ACCESS",
-      },
-    ]);
 
     // Add tags
     cdk.Tags.of(this.fileSystem).add("Name", `${envName}-monitoring-efs`);

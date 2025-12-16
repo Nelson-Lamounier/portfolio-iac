@@ -78,7 +78,7 @@ export class EfsFileSystemConstruct extends Construct {
       enableEncryption = true,
       lifecyclePolicy = efs.LifecyclePolicy.AFTER_30_DAYS,
       performanceMode = efs.PerformanceMode.GENERAL_PURPOSE,
-      throughputMode = efs.ThroughputMode.PROVISIONED,
+      throughputMode = efs.ThroughputMode.BURSTING,
       provisionedThroughputPerSecond = cdk.Size.mebibytes(10),
       removalPolicy = cdk.RemovalPolicy.RETAIN,
       securityGroup,
