@@ -2073,13 +2073,8 @@ jobs:
     environment: pipeline
     if: |
       always() &&
-      (needs.determine-jobs.outputs.run_rollback == 'true' ||
-       (needs.deploy-networking.result == 'failure' ||
-        needs.deploy-monitoring-efs.result == 'failure' ||
-        needs.deploy-vpc-peering.result == 'failure' ||
-        needs.deploy-monitoring-infra.result == 'failure' ||
-        needs.deploy-monitoring-services.result == 'failure' ||
-        needs.health-checks.result == 'failure')) &&
+      needs.determine-jobs.outputs.run_rollback == 'true' &&
+      (github.event.inputs.jobs_to_run != '' && contains(github.event.inputs.jobs_to_run, 'rollback')) &&
       github.event.inputs.stack != 'destroy-all'
 
     steps:
@@ -2097,7 +2092,8 @@ jobs:
       - name: Analyze Deployment Failure
         id: analyze
         run: |
-          echo "Analyzing deployment failure to determine rollback strategy..."
+          echo "🔍 Analyzing deployment failure to determine rollback strategy..."
+          echo ""
 
           # Check which jobs failed
           NETWORKING_FAILED="${{ needs.deploy-networking.result == 'failure' }}"
@@ -2107,18 +2103,20 @@ jobs:
           SERVICES_FAILED="${{ needs.deploy-monitoring-services.result == 'failure' }}"
           HEALTH_FAILED="${{ needs.health-checks.result == 'failure' }}"
 
-          echo "Deployment Results:"
+          echo "📊 Deployment Results:"
           echo "  Networking: ${{ needs.deploy-networking.result }}"
           echo "  EFS: ${{ needs.deploy-monitoring-efs.result }}"
           echo "  VPC Peering: ${{ needs.deploy-vpc-peering.result }}"
           echo "  Infrastructure: ${{ needs.deploy-monitoring-infra.result }}"
           echo "  Services: ${{ needs.deploy-monitoring-services.result }}"
           echo "  Health Checks: ${{ needs.health-checks.result }}"
+          echo ""
 
           # Determine rollback strategy based on failure point
           if [ "$NETWORKING_FAILED" = "true" ]; then
             echo "rollback_level=networking" >> $GITHUB_OUTPUT
-            echo "Rollback strategy: Networking failed - minimal rollback needed"
+            echo "🎯 Rollback strategy: Networking failed - minimal rollback needed"
+            echo "   Only NetworkingStack-pipeline will be destroyed"
           elif [ "$EFS_FAILED" = "true" ]; then
             echo "rollback_level=efs" >> $GITHUB_OUTPUT
             echo "Rollback strategy: EFS failed - rollback networking if it was deployed"
@@ -2163,19 +2161,37 @@ jobs:
           check_stack_status "MonitoringInfraStack-pipeline"
           check_stack_status "MonitoringServiceStack-pipeline"
 
+      - name: Confirm Rollback Strategy
+        run: |
+          echo "🚨 ROLLBACK CONFIRMATION"
+          echo ""
+          echo "Rollback Level: ${{ steps.analyze.outputs.rollback_level }}"
+          echo "Trigger: ${{ needs.determine-jobs.outputs.run_rollback }}"
+          echo ""
+          echo "⚠️  This will destroy AWS resources!"
+          echo "   Make sure this is intended behavior"
+          echo ""
+
       - name: Selective Rollback
         run: |
-          echo "Executing selective rollback based on failure analysis..."
+          echo "🔄 Executing selective rollback based on failure analysis..."
           cd infrastructure
 
           ROLLBACK_LEVEL="${{ steps.analyze.outputs.rollback_level }}"
-          echo "Rollback level: $ROLLBACK_LEVEL"
+          echo "📋 Rollback level: $ROLLBACK_LEVEL"
+          echo ""
 
           # Function to safely destroy a stack
           safe_destroy() {
             local stack_name=$1
-            local stack_status_var="${stack_name//-/_}_status"
-            local stack_status="${!stack_status_var:-NOT_FOUND}"
+            
+            # Check current stack status
+            local stack_status=$(aws cloudformation describe-stacks \
+              --stack-name "$stack_name" \
+              --query 'Stacks[0].StackStatus' \
+              --output text 2>/dev/null || echo "NOT_FOUND")
+            
+            echo "Checking $stack_name: $stack_status"
             
             if [ "$stack_status" != "NOT_FOUND" ] && [ "$stack_status" != "DELETE_COMPLETE" ]; then
               echo "Destroying $stack_name (current status: $stack_status)..."
@@ -2183,6 +2199,7 @@ jobs:
                 echo "WARNING: Failed to destroy $stack_name, may need manual cleanup"
                 return 1
               }
+              echo "Successfully destroyed $stack_name"
             else
               echo "Skipping $stack_name (not deployed or already deleted)"
             fi
