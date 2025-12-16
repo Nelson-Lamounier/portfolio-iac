@@ -235,6 +235,13 @@ export class MonitoringEcsStack extends cdk.Stack {
     crossAccountTargets?: CrossAccountTarget[],
     fileSystem?: efs.FileSystem
   ): { cluster: ecs.Cluster; autoScalingGroup: autoscaling.AutoScalingGroup } {
+    // Constrain ECS capacity to the first public AZ to align with EFS mount target
+    const publicAz0Subnets = vpc.selectSubnets({
+      subnetType: ec2.SubnetType.PUBLIC,
+      availabilityZones: [vpc.availabilityZones[0]],
+      onePerAz: true,
+    });
+
     const cluster = new ecs.Cluster(this, "MonitoringCluster", {
       vpc,
       clusterName: `${envName}-monitoring-cluster`,
@@ -259,9 +266,7 @@ export class MonitoringEcsStack extends cdk.Stack {
       maxCapacity: 1,
       desiredCapacity: 1,
       machineImage: ecs.EcsOptimizedImage.amazonLinux2(),
-      vpcSubnets: {
-        subnetType: ec2.SubnetType.PUBLIC,
-      },
+      vpcSubnets: { subnets: publicAz0Subnets.subnets },
       associatePublicIpAddress: true,
       blockDevices: [
         {

@@ -56,6 +56,12 @@ export interface EfsFileSystemConstructProps {
    * Security group for the file system
    */
   securityGroup?: ec2.ISecurityGroup;
+
+  /**
+   * Optional subnet selection to control where mount targets are placed
+   * (e.g., single public subnet/AZ to align with ECS EC2 instances).
+   */
+  mountTargetSubnetSelection?: ec2.SubnetSelection;
 }
 
 /**
@@ -82,7 +88,12 @@ export class EfsFileSystemConstruct extends Construct {
       provisionedThroughputPerSecond = cdk.Size.mebibytes(10),
       removalPolicy = cdk.RemovalPolicy.RETAIN,
       securityGroup,
+      mountTargetSubnetSelection,
     } = props;
+
+    const selectedSubnets = mountTargetSubnetSelection
+      ? vpc.selectSubnets(mountTargetSubnetSelection)
+      : undefined;
 
     // Create EFS file system
     this.fileSystem = new efs.FileSystem(this, `MonitoringEfs-${envName}`, {
@@ -97,18 +108,32 @@ export class EfsFileSystemConstruct extends Construct {
       encrypted: enableEncryption,
       removalPolicy,
       securityGroup,
+      vpcSubnets: selectedSubnets,
       fileSystemName: `${envName}-monitoring-efs`,
     });
 
-    // Get the first availability zone for single-AZ mount targets
-    this.availabilityZone = vpc.availabilityZones[0];
+    // Get the selected availability zone (or fallback to first VPC AZ)
+    this.availabilityZone =
+      selectedSubnets?.availabilityZones?.[0] ?? vpc.availabilityZones[0];
 
-    // Configure backup policy
+    // Configure backup policy and pin to a single AZ (One Zone EFS)
     const cfnFileSystem = this.fileSystem.node
       .defaultChild as efs.CfnFileSystem;
     cfnFileSystem.backupPolicy = {
       status: "ENABLED",
     };
+    // Setting availabilityZoneName makes this a One Zone file system
+    cfnFileSystem.availabilityZoneName = this.availabilityZone;
+    // Enable One Zone-IA transition after 1 access to reduce cost
+    cfnFileSystem.addPropertyOverride(
+      "FileSystemPolicy",
+      cfnFileSystem.fileSystemPolicy
+    );
+    cfnFileSystem.addPropertyOverride("LifecyclePolicies", [
+      {
+        TransitionToIA: "AFTER_1_ACCESS",
+      },
+    ]);
 
     // Add tags
     cdk.Tags.of(this.fileSystem).add("Name", `${envName}-monitoring-efs`);

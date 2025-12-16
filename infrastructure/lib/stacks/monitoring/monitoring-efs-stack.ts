@@ -55,6 +55,13 @@ export class MonitoringEfsStack extends cdk.Stack {
       lifecyclePolicy = efs.LifecyclePolicy.AFTER_30_DAYS,
     } = props;
 
+    // Use a single public subnet in the first AZ to align mount targets
+    const publicAz0Subnets = vpc.selectSubnets({
+      subnetType: ec2.SubnetType.PUBLIC,
+      availabilityZones: [vpc.availabilityZones[0]],
+      onePerAz: true,
+    });
+
     // ========================================================================
     // EFS SECURITY GROUP
     // ========================================================================
@@ -84,6 +91,7 @@ export class MonitoringEfsStack extends cdk.Stack {
         lifecyclePolicy,
         securityGroup: this.mountTargetSecurityGroup,
         removalPolicy: cdk.RemovalPolicy.RETAIN,
+        mountTargetSubnetSelection: { subnets: publicAz0Subnets.subnets },
       }
     );
 
