@@ -244,9 +244,12 @@ export class EcsClusterConstruct extends Construct {
         {
           id: "AwsSolutions-IAM5",
           reason:
-            "Auto Scaling Group lifecycle hooks require wildcard permissions for Auto Scaling Group ARNs. This is required by CDK for ECS cluster lifecycle management and cannot be scoped further.",
+            "Auto Scaling Group lifecycle hook Lambda (DrainECSHook) requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining. This is a CDK-managed resource.",
           appliesTo: [
-            "Resource::arn:aws:autoscaling:*:*:autoScalingGroup:*:autoScalingGroupName/*",
+            {
+              regex:
+                "/^Resource::arn:aws:autoscaling:.*:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+            },
           ],
         },
         {

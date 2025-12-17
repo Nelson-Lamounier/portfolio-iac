@@ -1114,7 +1114,7 @@ jobs:
 
       - name: Validate EFS Configuration
         run: |
-          EFS_ID="${{ steps.deploy.outputs.efs_id }}"
+          EFS_ID="${{ steps.get-outputs.outputs.efs_id }}"
 
           if [ -n "$EFS_ID" ]; then
             echo "Validating EFS configuration..."

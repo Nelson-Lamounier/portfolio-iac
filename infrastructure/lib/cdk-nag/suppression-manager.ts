@@ -58,7 +58,7 @@ export class SuppressionManager {
         appliesTo: [
           {
             regex:
-              "/^Resource::arn:<AWS::Partition>:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+              "/^Resource::arn:aws:autoscaling:.*:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
           },
         ],
       },
@@ -237,7 +237,7 @@ export class SuppressionManager {
         appliesTo: [
           {
             regex:
-              "/^Resource::arn:<AWS::Partition>:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+              "/^Resource::arn:aws:autoscaling:.*:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
           },
         ],
       },
@@ -261,7 +261,10 @@ export class SuppressionManager {
         reason:
           "Auto Scaling Group lifecycle hook Lambda requires wildcard permissions for Auto Scaling Group operations because the ASG name contains CDK-generated tokens that are not known at synthesis time. This is required for ECS instance draining functionality.",
         appliesTo: [
-          "Resource::arn:aws:autoscaling:eu-west-1:123456789012:autoScalingGroup:*:autoScalingGroupName/<EcsClusterAutoScalingGroupASGB16C0B67>",
+          {
+            regex:
+              "/^Resource::arn:aws:autoscaling:.*:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+          },
         ],
       },
       {
