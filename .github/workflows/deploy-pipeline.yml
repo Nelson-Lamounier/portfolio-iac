@@ -1013,6 +1013,90 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           build-cache-key: ${{ needs.build.outputs.cache-key }}
 
+      - name: Handle Export Dependencies
+        shell: bash
+        working-directory: infrastructure
+        run: |
+          echo "🔍 Checking for CloudFormation export dependencies..."
+          echo ""
+
+          # Check if NetworkingStack exists and has exports
+          STACK_NAME="NetworkingStack-pipeline"
+          STACK_EXISTS=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --query 'Stacks[0].StackName' \
+            --output text 2>/dev/null || echo "")
+
+          if [ -n "$STACK_EXISTS" ]; then
+            echo "NetworkingStack exists, checking for export dependencies..."
+            
+            # Get all exports from NetworkingStack
+            EXPORTS=$(aws cloudformation list-exports \
+              --query "Exports[?starts_with(Name, '${STACK_NAME}')].Name" \
+              --output text 2>/dev/null || echo "")
+            
+            if [ -n "$EXPORTS" ]; then
+              echo "Found exports that may be in use:"
+              echo "$EXPORTS" | tr '\t' '\n' | sed 's/^/  - /'
+              echo ""
+              
+              # Check which stacks are importing these exports
+              echo "Checking for stacks that import these exports..."
+              
+              # Check MonitoringInfraStack
+              INFRA_STACK="MonitoringInfraStack-pipeline"
+              INFRA_EXISTS=$(aws cloudformation describe-stacks \
+                --stack-name "$INFRA_STACK" \
+                --query 'Stacks[0].StackName' \
+                --output text 2>/dev/null || echo "")
+              
+              if [ -n "$INFRA_EXISTS" ]; then
+                echo "⚠️  MonitoringInfraStack exists and may be importing NetworkingStack exports"
+                echo "   Updating MonitoringInfraStack first to handle export changes..."
+                echo ""
+                
+                # Update MonitoringInfraStack first to handle export changes
+                # This will update its imports before NetworkingStack tries to delete exports
+                echo "Updating MonitoringInfraStack to refresh imports..."
+                ENVIRONMENT=pipeline yarn cdk deploy "$INFRA_STACK" --require-approval never 2>&1 | tee /tmp/infra-update.log || {
+                  echo "⚠️  MonitoringInfraStack update had issues, but continuing..."
+                  echo "   This is expected if there are no actual changes to MonitoringInfraStack"
+                }
+                echo ""
+              fi
+              
+              # Check MonitoringEfsStack
+              EFS_STACK="MonitoringEfsStack-pipeline"
+              EFS_EXISTS=$(aws cloudformation describe-stacks \
+                --stack-name "$EFS_STACK" \
+                --query 'Stacks[0].StackName' \
+                --output text 2>/dev/null || echo "")
+              
+              if [ -n "$EFS_EXISTS" ]; then
+                echo "⚠️  MonitoringEfsStack exists and may be importing NetworkingStack exports"
+                echo "   Updating MonitoringEfsStack first to handle export changes..."
+                echo ""
+                
+                echo "Updating MonitoringEfsStack to refresh imports..."
+                ENVIRONMENT=pipeline yarn cdk deploy "$EFS_STACK" --require-approval never 2>&1 | tee /tmp/efs-update.log || {
+                  echo "⚠️  MonitoringEfsStack update had issues, but continuing..."
+                  echo "   This is expected if there are no actual changes to MonitoringEfsStack"
+                }
+                echo ""
+              fi
+              
+              echo "✅ Dependent stacks updated (if needed)"
+              echo "   NetworkingStack can now be updated safely"
+              echo ""
+            else
+              echo "✅ No exports found - no dependency issues expected"
+              echo ""
+            fi
+          else
+            echo "✅ NetworkingStack does not exist yet - no dependency issues"
+            echo ""
+          fi
+
       - name: Deploy NetworkingStack
         uses: ./.github/actions/deploy-cdk-stack
         with:

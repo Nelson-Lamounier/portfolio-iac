@@ -264,6 +264,26 @@ runs:
           echo "🔢 Exit Code: $DEPLOY_EXIT_CODE"
           echo ""
           
+          # Check for export deletion error
+          if echo "$DEPLOY_OUTPUT" | grep -qi "Cannot delete export.*as it is in use"; then
+            echo "🚨 CLOUDFORMATION EXPORT DEPENDENCY ERROR DETECTED"
+            echo ""
+            echo "This error occurs when a stack tries to delete an export that is still"
+            echo "being imported by another stack."
+            echo ""
+            echo "SOLUTION: Update dependent stacks first, then update this stack."
+            echo ""
+            echo "For NetworkingStack, update in this order:"
+            echo "  1. MonitoringInfraStack-pipeline"
+            echo "  2. MonitoringEfsStack-pipeline (if applicable)"
+            echo "  3. NetworkingStack-pipeline"
+            echo ""
+            echo "See: infrastructure/CLOUDFORMATION_EXPORT_DEPENDENCY_FIX.md"
+            echo ""
+            echo "status=failure" >> $GITHUB_OUTPUT
+            exit $DEPLOY_EXIT_CODE
+          fi
+          
           # Check for specific change set error
           if echo "$DEPLOY_OUTPUT" | grep -qi "AlreadyExistsException.*ChangeSet.*ClientToken" || \
              echo "$DEPLOY_OUTPUT" | grep -qi "cdk-deploy-change-set"; then
