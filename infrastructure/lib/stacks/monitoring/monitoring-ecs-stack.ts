@@ -310,6 +310,23 @@ export class MonitoringEcsStack extends cdk.Stack {
       }
     );
 
+    // Explicitly enforce IMDSv2 requirement via CloudFormation property override
+    // This ensures the setting is applied correctly even if CDK property doesn't work
+    const cfnLaunchTemplate = launchTemplateConstruct.launchTemplate.node
+      .defaultChild as ec2.CfnLaunchTemplate;
+    cfnLaunchTemplate.addPropertyOverride(
+      "LaunchTemplateData.MetadataOptions.HttpTokens",
+      "required"
+    );
+    cfnLaunchTemplate.addPropertyOverride(
+      "LaunchTemplateData.MetadataOptions.HttpEndpoint",
+      "enabled"
+    );
+    cfnLaunchTemplate.addPropertyOverride(
+      "LaunchTemplateData.MetadataOptions.HttpPutResponseHopLimit",
+      2
+    );
+
     // Add ECS managed policy to the launch template's IAM role
     launchTemplateConstruct.role.addManagedPolicy(
       iam.ManagedPolicy.fromAwsManagedPolicyName(

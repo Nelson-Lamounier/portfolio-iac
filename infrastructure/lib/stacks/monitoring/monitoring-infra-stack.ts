@@ -123,6 +123,12 @@ export class MonitoringInfraStack extends cdk.Stack {
       clusterName,
       additionalSecurityGroups: [efsSecurityGroup],
       customUserData: userDataConstruct.userData, // Pass user data directly to avoid conflicts
+      // Explicitly set capacity to ensure at least one instance launches
+      // This is critical - without this, managed scaling might not launch instances
+      minCapacity: 1,
+      maxCapacity: 1,
+      desiredCapacity: 1,
+      usePublicSubnets: true, // Use public subnets to match EFS mount target location
     });
 
     this.cluster = ecsClusterConstruct.cluster;
@@ -226,8 +232,14 @@ export class MonitoringInfraStack extends cdk.Stack {
     // DEPENDENCIES
     // ========================================================================
     // Ensure EFS initialization completes before creating infrastructure
+    // Note: This dependency ensures EFS is ready, but the ASG will still launch instances
+    // based on desiredCapacity. The dependency only affects CloudFormation deployment order.
     this.cluster.node.addDependency(efsInitializationComplete);
-    this.autoScalingGroup.node.addDependency(efsInitializationComplete);
+    // Only add dependency to ASG if EFS is actually being used
+    // This prevents blocking instance launch if EFS initialization fails
+    if (efsInitializationComplete) {
+      this.autoScalingGroup.node.addDependency(efsInitializationComplete);
+    }
 
     // ========================================================================
     // CDK NAG SUPPRESSIONS & TAGS
@@ -287,6 +299,19 @@ export class MonitoringInfraStack extends cdk.Stack {
       value: `http${enableHttps ? "s" : ""}://${this.loadBalancer.loadBalancerDnsName}/grafana`,
       description: "Grafana URL",
       exportName: `${this.stackName}-grafana-url`,
+    });
+
+    // Diagnostic outputs for troubleshooting container instance registration
+    new cdk.CfnOutput(this, "AutoScalingGroupName", {
+      value: this.autoScalingGroup.autoScalingGroupName,
+      description:
+        "Auto Scaling Group name - check this in EC2 Auto Scaling console to verify instances are launching",
+      exportName: `${this.stackName}-asg-name`,
+    });
+
+    new cdk.CfnOutput(this, "AutoScalingGroupArn", {
+      value: this.autoScalingGroup.autoScalingGroupArn,
+      description: "Auto Scaling Group ARN for troubleshooting",
     });
   }
 }

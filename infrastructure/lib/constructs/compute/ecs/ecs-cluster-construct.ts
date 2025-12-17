@@ -233,6 +233,23 @@ export class EcsClusterConstruct extends Construct {
         // This prevents SSRF attacks and is an AWS security best practice
         requireImdsv2: true,
       });
+
+      // Explicitly set IMDSv2 to required via CloudFormation property override
+      // This ensures the setting is applied correctly in the generated template
+      const cfnLaunchTemplate = this.launchTemplate.node
+        .defaultChild as ec2.CfnLaunchTemplate;
+      cfnLaunchTemplate.addPropertyOverride(
+        "LaunchTemplateData.MetadataOptions.HttpTokens",
+        "required"
+      );
+      cfnLaunchTemplate.addPropertyOverride(
+        "LaunchTemplateData.MetadataOptions.HttpEndpoint",
+        "enabled"
+      );
+      cfnLaunchTemplate.addPropertyOverride(
+        "LaunchTemplateData.MetadataOptions.HttpPutResponseHopLimit",
+        2
+      );
     }
 
     // Create Auto Scaling Group
@@ -278,11 +295,26 @@ export class EcsClusterConstruct extends Construct {
     );
 
     // Add capacity provider to cluster
+    // IMPORTANT: With managed scaling enabled, ECS controls ASG scaling based on task demand.
+    // However, the ASG will still launch instances based on desiredCapacity initially.
+    //
+    // If container instances aren't appearing in ECS:
+    // 1. Check ASG in EC2 console - verify instances are launching (desiredCapacity > 0)
+    // 2. Check instance status - instances must pass health checks
+    // 3. Verify ECS agent is running on instances (check /var/log/ecs/ecs-agent.log)
+    // 4. Verify ECS_CLUSTER environment variable matches cluster name
+    // 5. Check security groups allow outbound traffic (for ECS agent communication)
+    // 6. For public subnets: verify instances have public IPs
+    // 7. For private subnets: verify NAT gateway is configured
     const capacityProvider = new ecs.AsgCapacityProvider(
       this,
       "CapacityProvider",
       {
         autoScalingGroup: this.asg,
+        // Enable managed scaling - ECS will scale based on task demand
+        // The ASG will still launch instances based on desiredCapacity initially
+        // If you need instances to launch immediately regardless of tasks, consider
+        // setting enableManagedScaling: false temporarily for troubleshooting
         enableManagedScaling: true,
         enableManagedTerminationProtection: false,
       }

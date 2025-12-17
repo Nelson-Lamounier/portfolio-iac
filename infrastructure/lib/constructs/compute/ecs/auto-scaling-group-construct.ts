@@ -183,6 +183,23 @@ export class AutoScalingGroupConstruct extends Construct {
       requireImdsv2: true,
     });
 
+    // Explicitly set IMDSv2 to required via CloudFormation property override
+    // This ensures the setting is applied correctly in the generated template
+    const cfnLaunchTemplate = this.launchTemplate.node
+      .defaultChild as ec2.CfnLaunchTemplate;
+    cfnLaunchTemplate.addPropertyOverride(
+      "LaunchTemplateData.MetadataOptions.HttpTokens",
+      "required"
+    );
+    cfnLaunchTemplate.addPropertyOverride(
+      "LaunchTemplateData.MetadataOptions.HttpEndpoint",
+      "enabled"
+    );
+    cfnLaunchTemplate.addPropertyOverride(
+      "LaunchTemplateData.MetadataOptions.HttpPutResponseHopLimit",
+      2
+    );
+
     // Create Auto Scaling Group
     this.autoScalingGroup = new autoscaling.AutoScalingGroup(
       this,

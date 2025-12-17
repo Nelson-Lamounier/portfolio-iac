@@ -152,6 +152,24 @@ export class LaunchTemplateConstruct extends Construct {
       httpTokens: ec2.LaunchTemplateHttpTokens.REQUIRED, // IMDSv2 required
     });
 
+    // Explicitly enforce IMDSv2 requirement via CloudFormation property override
+    // This ensures the setting is applied correctly in the generated template
+    // Even though we set requireImdsv2 and httpTokens, the override guarantees it works
+    const cfnLaunchTemplate = this.launchTemplate.node
+      .defaultChild as ec2.CfnLaunchTemplate;
+    cfnLaunchTemplate.addPropertyOverride(
+      "LaunchTemplateData.MetadataOptions.HttpTokens",
+      "required"
+    );
+    cfnLaunchTemplate.addPropertyOverride(
+      "LaunchTemplateData.MetadataOptions.HttpEndpoint",
+      "enabled"
+    );
+    cfnLaunchTemplate.addPropertyOverride(
+      "LaunchTemplateData.MetadataOptions.HttpPutResponseHopLimit",
+      2
+    );
+
     // Tag service
     Tags.of(this.launchTemplate).add("Environment", props.envName);
     Tags.of(this.launchTemplate).add("ManagedBy", "CDK");
