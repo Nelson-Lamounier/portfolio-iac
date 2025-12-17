@@ -166,23 +166,24 @@ export class ApplicationLoadBalancerConstruct extends Construct {
       cdk.Tags.of(this.securityGroup).add("ManagedBy", "CDK");
     }
 
-    // Output load balancer information
+    // Output load balancer information (without export names to avoid conflicts)
+    // Export names are managed at the stack level to prevent duplicate exports
     new cdk.CfnOutput(this, "LoadBalancerArn", {
       value: this.loadBalancer.loadBalancerArn,
       description: `ALB ARN for ${envName} monitoring`,
-      exportName: `${cdk.Stack.of(this).stackName}-alb-arn`,
+      // exportName removed - managed at stack level to avoid duplicate exports
     });
 
     new cdk.CfnOutput(this, "LoadBalancerDnsName", {
       value: this.loadBalancer.loadBalancerDnsName,
       description: `ALB DNS name for ${envName} monitoring`,
-      exportName: `${cdk.Stack.of(this).stackName}-alb-dns`,
+      // exportName removed - managed at stack level to avoid duplicate exports
     });
 
     new cdk.CfnOutput(this, "LoadBalancerHostedZoneId", {
       value: this.loadBalancer.loadBalancerCanonicalHostedZoneId,
       description: `ALB hosted zone ID for ${envName} monitoring`,
-      exportName: `${cdk.Stack.of(this).stackName}-alb-zone-id`,
+      // exportName removed - managed at stack level to avoid duplicate exports
     });
   }
 }
