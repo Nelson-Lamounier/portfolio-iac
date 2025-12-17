@@ -177,6 +177,9 @@ export class AutoScalingGroupConstruct extends Construct {
           }),
         },
       ],
+      // Security: Require IMDSv2 (Instance Metadata Service Version 2)
+      // This prevents SSRF attacks and is an AWS security best practice
+      requireImdsv2: true,
     });
 
     // Create Auto Scaling Group

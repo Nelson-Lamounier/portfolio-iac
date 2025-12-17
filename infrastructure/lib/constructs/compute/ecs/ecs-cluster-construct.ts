@@ -86,6 +86,13 @@ export interface EcsClusterConstructProps {
    * @default undefined (creates default launch template)
    */
   customLaunchTemplate?: ec2.ILaunchTemplate;
+
+  /**
+   * Custom user data to use instead of creating default ECS user data
+   * If provided, the construct will not create default ECS configuration user data
+   * @default undefined (creates default ECS user data)
+   */
+  customUserData?: ec2.UserData;
 }
 
 /**
@@ -115,6 +122,7 @@ export class EcsClusterConstruct extends Construct {
       usePublicSubnets = false,
       additionalSecurityGroups = [],
       customLaunchTemplate,
+      customUserData,
     } = props;
 
     // Create CloudWatch log group for cluster
@@ -184,17 +192,20 @@ export class EcsClusterConstruct extends Construct {
         },
       ]);
 
-      // Create user data for ECS instances
-      const userData = ec2.UserData.forLinux();
-      userData.addCommands(
-        `echo ECS_CLUSTER=${clusterName} >> /etc/ecs/ecs.config`,
-        "echo ECS_ENABLE_CONTAINER_METADATA=true >> /etc/ecs/ecs.config",
-        "echo ECS_ENABLE_TASK_IAM_ROLE=true >> /etc/ecs/ecs.config",
-        "yum update -y",
-        "yum install -y amazon-cloudwatch-agent",
-        "systemctl enable ecs",
-        "systemctl start ecs"
-      );
+      // Use custom user data if provided, otherwise create default ECS user data
+      const userData = customUserData || ec2.UserData.forLinux();
+      if (!customUserData) {
+        // Only add default ECS configuration if custom user data is not provided
+        userData.addCommands(
+          `echo ECS_CLUSTER=${clusterName} >> /etc/ecs/ecs.config`,
+          "echo ECS_ENABLE_CONTAINER_METADATA=true >> /etc/ecs/ecs.config",
+          "echo ECS_ENABLE_TASK_IAM_ROLE=true >> /etc/ecs/ecs.config",
+          "yum update -y",
+          "yum install -y amazon-cloudwatch-agent",
+          "systemctl enable ecs",
+          "systemctl start ecs"
+        );
+      }
 
       // Create default launch template
       this.launchTemplate = new ec2.LaunchTemplate(this, "LaunchTemplate", {
@@ -217,6 +228,9 @@ export class EcsClusterConstruct extends Construct {
             }),
           },
         ],
+        // Security: Require IMDSv2 (Instance Metadata Service Version 2)
+        // This prevents SSRF attacks and is an AWS security best practice
+        requireImdsv2: true,
       });
     }
 

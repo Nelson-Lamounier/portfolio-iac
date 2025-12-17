@@ -280,6 +280,30 @@ export class MonitoringEcsStack extends cdk.Stack {
       ],
     });
 
+    // Security: Require IMDSv2 (Instance Metadata Service Version 2)
+    // Access the launch template created by addCapacity and set IMDSv2 requirement
+    // The launch template is a child resource of the Auto Scaling Group
+    const launchTemplateNode =
+      autoScalingGroup.node.tryFindChild("LaunchTemplate");
+    if (launchTemplateNode) {
+      const cfnLaunchTemplate = launchTemplateNode.node
+        .defaultChild as ec2.CfnLaunchTemplate;
+      if (cfnLaunchTemplate) {
+        cfnLaunchTemplate.addPropertyOverride(
+          "LaunchTemplateData.MetadataOptions.HttpTokens",
+          "required"
+        );
+        cfnLaunchTemplate.addPropertyOverride(
+          "LaunchTemplateData.MetadataOptions.HttpEndpoint",
+          "enabled"
+        );
+        cfnLaunchTemplate.addPropertyOverride(
+          "LaunchTemplateData.MetadataOptions.HttpPutResponseHopLimit",
+          2
+        );
+      }
+    }
+
     // ========================================================================
     // S3 ASSETS FOR CONFIG FILES
     // CDK automatically uploads these to S3 and manages versioning

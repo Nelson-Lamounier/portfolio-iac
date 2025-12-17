@@ -94,28 +94,14 @@ export class MonitoringInfraStack extends cdk.Stack {
     });
 
     // ========================================================================
-    // ECS CLUSTER
+    // USER DATA FOR EC2 INSTANCES (created first to pass to cluster construct)
     // ========================================================================
-    const ecsClusterConstruct = new EcsClusterConstruct(this, "EcsCluster", {
-      vpc,
-      envName,
-      enableContainerInsights: true,
-      enableExecuteCommand: true,
-      logRetention: logs.RetentionDays.TWO_WEEKS,
-      clusterName: `${envName}-monitoring-cluster`,
-      additionalSecurityGroups: [efsSecurityGroup],
-    });
-
-    this.cluster = ecsClusterConstruct.cluster;
-
-    // ========================================================================
-    // USER DATA FOR EC2 INSTANCES
-    // ========================================================================
+    const clusterName = `${envName}-monitoring-cluster`;
     const userDataConstruct = new MonitoringUserDataConstruct(
       this,
       "UserData",
       {
-        clusterName: this.cluster.clusterName,
+        clusterName,
         fileSystemId: fileSystem.fileSystemId,
         efsStackName,
         envName,
@@ -124,6 +110,22 @@ export class MonitoringInfraStack extends cdk.Stack {
         enableEcsAgent: true,
       }
     );
+
+    // ========================================================================
+    // ECS CLUSTER
+    // ========================================================================
+    const ecsClusterConstruct = new EcsClusterConstruct(this, "EcsCluster", {
+      vpc,
+      envName,
+      enableContainerInsights: true,
+      enableExecuteCommand: true,
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+      clusterName,
+      additionalSecurityGroups: [efsSecurityGroup],
+      customUserData: userDataConstruct.userData, // Pass user data directly to avoid conflicts
+    });
+
+    this.cluster = ecsClusterConstruct.cluster;
 
     // ========================================================================
     // AUTO SCALING GROUP
@@ -156,9 +158,6 @@ export class MonitoringInfraStack extends cdk.Stack {
         resources: ["*"],
       })
     );
-
-    // Apply user data to the Auto Scaling Group
-    userDataConstruct.applyToAutoScalingGroup(this.autoScalingGroup);
 
     // ========================================================================
     // APPLICATION LOAD BALANCER

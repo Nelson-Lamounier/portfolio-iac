@@ -1,6 +1,7 @@
 /** @format */
 
 import * as autoscaling from "aws-cdk-lib/aws-autoscaling";
+import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as s3_assets from "aws-cdk-lib/aws-s3-assets";
 import { Construct } from "constructs";
 
@@ -47,9 +48,13 @@ export interface MonitoringUserDataProps {
  */
 export class MonitoringUserDataConstruct extends Construct {
   private readonly userDataCommands: string[] = [];
+  public readonly userData: ec2.UserData;
 
   constructor(scope: Construct, id: string, props: MonitoringUserDataProps) {
     super(scope, id);
+
+    // Create UserData object
+    this.userData = ec2.UserData.forLinux();
 
     // Build UserData script in logical sections
     this.addScriptHeader(props.envName);
@@ -67,10 +72,14 @@ export class MonitoringUserDataConstruct extends Construct {
     }
 
     this.addScriptFooter();
+
+    // Add all commands to the UserData object
+    this.userData.addCommands(...this.userDataCommands);
   }
 
   /**
    * Apply UserData to an Auto Scaling Group
+   * @deprecated Use the userData property directly instead
    */
   public applyToAutoScalingGroup(asg: autoscaling.AutoScalingGroup): void {
     asg.addUserData(...this.userDataCommands);
