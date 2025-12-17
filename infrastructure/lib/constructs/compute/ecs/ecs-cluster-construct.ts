@@ -238,6 +238,7 @@ export class EcsClusterConstruct extends Construct {
     });
 
     // CDK Nag suppressions for Auto Scaling Group and its resources
+    // Apply recursively to child resources (including Lambda function and its role policy)
     NagSuppressions.addResourceSuppressions(
       this.asg,
       [
@@ -248,7 +249,7 @@ export class EcsClusterConstruct extends Construct {
           appliesTo: [
             {
               regex:
-                "/^Resource::arn:aws:autoscaling:.*:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+                "/^Resource::arn:(aws|<AWS::Partition>):autoscaling:.*:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
             },
           ],
         },
@@ -258,7 +259,7 @@ export class EcsClusterConstruct extends Construct {
             "SNS topic SSL/TLS enforcement is not configured for CDK-managed topics used by Auto Scaling lifecycle hooks. These topics are internal to AWS services and use AWS's internal secure communication. For custom SNS topics, SSL/TLS should be enforced.",
         },
       ],
-      true
+      true // Apply recursively to child resources
     );
 
     // Add capacity provider to cluster
