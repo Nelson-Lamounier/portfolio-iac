@@ -1222,6 +1222,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Debug Job Conditions
+        run: |
+          echo "🔍 Debugging Deploy Monitoring Infrastructure job conditions..."
+          echo ""
+          echo "Job Condition Evaluation:"
+          echo "  - run_deploy_infra: ${{ needs.determine-jobs.outputs.run_deploy_infra }}"
+          echo "  - build.result: ${{ needs.build.result }}"
+          echo "  - validate-setup.result: ${{ needs.validate-setup.result }}"
+          echo "  - deploy-networking.result: ${{ needs.deploy-networking.result }}"
+          echo "  - deploy-monitoring-efs.result: ${{ needs.deploy-monitoring-efs.result }}"
+          echo "  - stack input: ${{ github.event.inputs.stack }}"
+          echo "  - event name: ${{ github.event_name }}"
+          echo "  - jobs_to_run: ${{ github.event.inputs.jobs_to_run }}"
+          echo ""
+          echo "Condition Check:"
+          echo "  - run_deploy_infra == 'true': $([ '${{ needs.determine-jobs.outputs.run_deploy_infra }}' == 'true' ] && echo '✅' || echo '❌')"
+          echo "  - build success/skipped: $([ '${{ needs.build.result }}' == 'success' ] || [ '${{ needs.build.result }}' == 'skipped' ] && echo '✅' || echo '❌')"
+          echo "  - validate-setup success/skipped: $([ '${{ needs.validate-setup.result }}' == 'success' ] || [ '${{ needs.validate-setup.result }}' == 'skipped' ] && echo '✅' || echo '❌')"
+          echo "  - networking success/skipped: $([ '${{ needs.deploy-networking.result }}' == 'success' ] || [ '${{ needs.deploy-networking.result }}' == 'skipped' ] && echo '✅' || echo '❌')"
+          echo "  - efs success/skipped: $([ '${{ needs.deploy-monitoring-efs.result }}' == 'success' ] || [ '${{ needs.deploy-monitoring-efs.result }}' == 'skipped' ] && echo '✅' || echo '❌')"
+          echo "  - stack condition: $([ '${{ github.event.inputs.stack }}' == 'monitoring-infra' ] || [ '${{ github.event_name }}' == 'push' ] || [ -n '${{ github.event.inputs.jobs_to_run }}' ] && echo '✅' || echo '❌')"
+          echo ""
+
       - name: Setup CDK Deployment Environment
         uses: ./.github/actions/setup-cdk-deployment
         with:
@@ -1275,7 +1298,15 @@ jobs:
   # ============================================================================
   deploy-monitoring-services:
     name: Deploy Monitoring Services
-    needs: [determine-jobs, build, validate-setup, deploy-monitoring-infra]
+    needs:
+      [
+        determine-jobs,
+        build,
+        validate-setup,
+        deploy-networking,
+        deploy-monitoring-efs,
+        deploy-monitoring-infra,
+      ]
     runs-on: ubuntu-latest
     environment: pipeline
     if: |
@@ -1283,12 +1314,49 @@ jobs:
       needs.determine-jobs.outputs.run_deploy_services == 'true' &&
       (needs.build.result == 'success' || needs.build.result == 'skipped') &&
       (needs.validate-setup.result == 'success' || needs.validate-setup.result == 'skipped') &&
-      (needs.deploy-monitoring-infra.result == 'success' || needs.deploy-monitoring-infra.result == 'skipped') &&
+      (needs.deploy-networking.result == 'success' || needs.deploy-networking.result == 'skipped') &&
+      (needs.deploy-monitoring-efs.result == 'success' || needs.deploy-monitoring-efs.result == 'skipped') &&
+      (needs.deploy-monitoring-infra.result == 'success') &&
       (github.event.inputs.stack == 'monitoring-services' || github.event_name == 'push' || github.event.inputs.jobs_to_run != '')
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Verify Infrastructure Deployment
+        run: |
+          echo "🔍 Verifying Monitoring Infrastructure deployment status..."
+          echo "Infrastructure Job Result: ${{ needs.deploy-monitoring-infra.result }}"
+          echo ""
+
+          if [ "${{ needs.deploy-monitoring-infra.result }}" != "success" ]; then
+            echo "❌ CRITICAL: Monitoring Infrastructure deployment did not succeed"
+            echo ""
+            echo "🚨 ERROR: Cannot deploy Monitoring Services without successful Infrastructure deployment"
+            echo "📋 Infrastructure Job Status: ${{ needs.deploy-monitoring-infra.result }}"
+            echo ""
+            echo "🔧 POSSIBLE CAUSES:"
+            echo "  1. Infrastructure job was skipped (check determine-jobs output: run_deploy_infra)"
+            echo "  2. Infrastructure deployment failed"
+            echo "  3. Infrastructure job condition not met"
+            echo ""
+            echo "💡 TROUBLESHOOTING STEPS:"
+            echo "  1. Check if 'run_deploy_infra' is set to 'true' in determine-jobs"
+            echo "  2. Review deploy-monitoring-infra job logs"
+            echo "  3. Verify stack input matches 'monitoring-infra' or jobs_to_run includes 'infra'"
+            echo "  4. Ensure all dependencies (networking, efs) completed successfully"
+            echo ""
+            echo "📋 REQUIRED DEPENDENCIES:"
+            echo "  - deploy-networking: ${{ needs.deploy-networking.result }}"
+            echo "  - deploy-monitoring-efs: ${{ needs.deploy-monitoring-efs.result }}"
+            echo ""
+            exit 1
+          fi
+
+          echo "✅ Infrastructure deployment verified successfully"
+          echo "📊 Infrastructure Job Outputs Available:"
+          echo "  - ALB DNS: ${{ needs.deploy-monitoring-infra.outputs.alb_dns != '' && 'Available' || 'Not available' }}"
+          echo "  - EFS ID: ${{ needs.deploy-monitoring-infra.outputs.efs_id != '' && 'Available' || 'Not available' }}"
 
       - name: Setup CDK Deployment Environment
         uses: ./.github/actions/setup-cdk-deployment
