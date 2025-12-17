@@ -195,12 +195,55 @@ runs:
         echo "Stack found in CDK application"
         echo ""
 
+        # Clean up any existing change sets to avoid conflicts
+        echo "Cleaning up existing change sets..."
+        STACK_NAME="${{ inputs.stack-name }}"
+
+        # Check if stack exists before trying to list change sets
+        STACK_EXISTS=$(aws cloudformation describe-stacks \
+          --stack-name "$STACK_NAME" \
+          --query 'Stacks[0].StackName' \
+          --output text 2>/dev/null || echo "")
+
+        if [ -n "$STACK_EXISTS" ]; then
+          # List all change sets (including pending, in-progress, failed, and ready)
+          EXISTING_CHANGE_SETS=$(aws cloudformation list-change-sets \
+            --stack-name "$STACK_NAME" \
+            --query 'Summaries[].ChangeSetName' \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -n "$EXISTING_CHANGE_SETS" ]; then
+            echo "Found existing change sets, cleaning up..."
+            for change_set in $EXISTING_CHANGE_SETS; do
+              echo "  Deleting change set: $change_set"
+              # Delete change set (ignore errors if it doesn't exist or is already being deleted)
+              aws cloudformation delete-change-set \
+                --stack-name "$STACK_NAME" \
+                --change-set-name "$change_set" \
+                --no-cli-pager 2>/dev/null || true
+            done
+            # Wait a moment for deletions to complete
+            sleep 2
+            echo "Change set cleanup completed"
+            echo ""
+          else
+            echo "No existing change sets found"
+            echo ""
+          fi
+        else
+          echo "Stack does not exist yet, skipping change set cleanup"
+          echo ""
+        fi
+
         # Deploy the stack with enhanced error handling
         echo "Executing CDK deployment..."
         echo "⏱Started at: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
         echo ""
 
-        if yarn cdk deploy "${{ inputs.stack-name }}" ${{ inputs.additional-args }}; then
+        # Capture deployment output for error analysis
+        DEPLOY_OUTPUT_FILE="/tmp/cdk-deploy-output-$$.log"
+
+        if yarn cdk deploy "${{ inputs.stack-name }}" ${{ inputs.additional-args }} 2>&1 | tee "$DEPLOY_OUTPUT_FILE"; then
           echo ""
           echo "DEPLOYMENT SUCCESSFUL"
           echo "⏱Completed at: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
@@ -209,13 +252,53 @@ runs:
           echo "Region: ${{ inputs.aws-region }}"
           echo ""
           echo "status=success" >> $GITHUB_OUTPUT
+          # Clean up temp file
+          rm -f "$DEPLOY_OUTPUT_FILE" 2>/dev/null || true
         else
           DEPLOY_EXIT_CODE=$?
+          DEPLOY_OUTPUT=$(cat "$DEPLOY_OUTPUT_FILE" 2>/dev/null || echo "")
+          
           echo ""
           echo "❌ DEPLOYMENT FAILED"
           echo "⏱️  Failed at: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
           echo "🔢 Exit Code: $DEPLOY_EXIT_CODE"
           echo ""
+          
+          # Check for specific change set error
+          if echo "$DEPLOY_OUTPUT" | grep -qi "AlreadyExistsException.*ChangeSet.*ClientToken" || \
+             echo "$DEPLOY_OUTPUT" | grep -qi "cdk-deploy-change-set"; then
+            echo "🚨 CHANGE SET CONFLICT DETECTED"
+            echo ""
+            echo "This error occurs when a previous deployment left a change set in place."
+            echo "Attempting to clean up and retry..."
+            echo ""
+            
+            # Try to clean up the specific change set
+            STACK_NAME="${{ inputs.stack-name }}"
+            aws cloudformation delete-change-set \
+              --stack-name "$STACK_NAME" \
+              --change-set-name "cdk-deploy-change-set" \
+              --no-cli-pager 2>/dev/null || true
+            
+            # Wait for cleanup
+            sleep 3
+            
+            echo "Retrying deployment..."
+            if yarn cdk deploy "${{ inputs.stack-name }}" ${{ inputs.additional-args }} 2>&1 | tee "$DEPLOY_OUTPUT_FILE"; then
+              echo ""
+              echo "✅ DEPLOYMENT SUCCESSFUL (after retry)"
+              echo "⏱Completed at: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+              echo "status=success" >> $GITHUB_OUTPUT
+              # Clean up temp file
+              rm -f "$DEPLOY_OUTPUT_FILE" 2>/dev/null || true
+              exit 0
+            else
+              echo ""
+              echo "❌ Retry also failed. Manual intervention may be required."
+              echo ""
+            fi
+          fi
+          
           echo "🚨 COMMON DEPLOYMENT FAILURE CAUSES:"
           echo ""
           echo "1️⃣  RESOURCE CONFLICTS:"
@@ -257,5 +340,7 @@ runs:
           echo "   - Compare with previous successful runs"
           echo ""
           echo "status=failure" >> $GITHUB_OUTPUT
+          # Clean up temp file
+          rm -f "$DEPLOY_OUTPUT_FILE" 2>/dev/null || true
           exit $DEPLOY_EXIT_CODE
         fi
