@@ -208,9 +208,10 @@ export class EcsClusterConstruct extends Construct {
       }
 
       // Create default launch template
+      // Using Amazon Linux 2023 ECS-optimized AMI (Amazon Linux 2 reaches EOL June 30, 2026)
       this.launchTemplate = new ec2.LaunchTemplate(this, "LaunchTemplate", {
         instanceType,
-        machineImage: ecs.EcsOptimizedImage.amazonLinux2(),
+        machineImage: ecs.EcsOptimizedImage.amazonLinux2023(),
         userData,
         role: instanceRole,
         // Use securityGroup (singular) if no additional groups, securityGroups (plural) if additional groups

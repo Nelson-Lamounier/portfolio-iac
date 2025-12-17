@@ -160,9 +160,10 @@ export class AutoScalingGroupConstruct extends Construct {
     });
 
     // Create launch template
+    // Using Amazon Linux 2023 ECS-optimized AMI (Amazon Linux 2 reaches EOL June 30, 2026)
     this.launchTemplate = new ec2.LaunchTemplate(this, "LaunchTemplate", {
       instanceType,
-      machineImage: ecs.EcsOptimizedImage.amazonLinux2(),
+      machineImage: ecs.EcsOptimizedImage.amazonLinux2023(),
       userData: userData || this.createDefaultUserData(cluster.clusterName),
       role: this.instanceRole,
       securityGroup: securityGroups[0], // Primary security group

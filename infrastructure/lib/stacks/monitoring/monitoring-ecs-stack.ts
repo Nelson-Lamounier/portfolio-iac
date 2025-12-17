@@ -17,6 +17,7 @@ import {
   GrafanaConstruct,
   PrometheusConstruct,
   NodeExporterConstruct,
+  LaunchTemplateConstruct,
 } from "../../constructs";
 import { SuppressionManager } from "../../cdk-nag";
 import { CrossAccountTarget } from "../../types";
@@ -228,6 +229,7 @@ export class MonitoringEcsStack extends cdk.Stack {
 
   /**
    * Create ECS cluster with EC2 capacity and S3-based config provisioning
+   * Uses LaunchTemplateConstruct for consistent, secure launch template configuration
    */
   private createEcsCluster(
     vpc: ec2.IVpc,
@@ -242,9 +244,10 @@ export class MonitoringEcsStack extends cdk.Stack {
       onePerAz: true,
     });
 
+    const clusterName = `${envName}-monitoring-cluster`;
     const cluster = new ecs.Cluster(this, "MonitoringCluster", {
       vpc,
-      clusterName: `${envName}-monitoring-cluster`,
+      clusterName,
     });
 
     // Enable Container Insights
@@ -256,53 +259,92 @@ export class MonitoringEcsStack extends cdk.Stack {
       },
     ];
 
-    // Add EC2 capacity
-    const autoScalingGroup = cluster.addCapacity("MonitoringCapacity", {
-      instanceType: ec2.InstanceType.of(
-        ec2.InstanceClass.T3,
-        ec2.InstanceSize.SMALL
-      ),
-      minCapacity: 1,
-      maxCapacity: 1,
-      desiredCapacity: 1,
-      machineImage: ecs.EcsOptimizedImage.amazonLinux2(),
-      vpcSubnets: { subnets: publicAz0Subnets.subnets },
-      associatePublicIpAddress: true,
-      blockDevices: [
-        {
-          deviceName: "/dev/xvda",
-          volume: autoscaling.BlockDeviceVolume.ebs(30, {
-            volumeType: autoscaling.EbsDeviceVolumeType.GP3,
-            encrypted: true,
-            deleteOnTermination: true,
-          }),
-        },
-      ],
-    });
+    // Create ECS-compatible user data for the launch template
+    const ecsUserData = ec2.UserData.forLinux();
+    ecsUserData.addCommands(
+      "#!/bin/bash",
+      // ECS configuration - CRITICAL for ECS cluster integration
+      `echo ECS_CLUSTER=${clusterName} >> /etc/ecs/ecs.config`,
+      "echo ECS_ENABLE_CONTAINER_METADATA=true >> /etc/ecs/ecs.config",
+      "echo ECS_ENABLE_TASK_IAM_ROLE=true >> /etc/ecs/ecs.config",
+      "echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config",
+      // System updates and ECS agent
+      "yum update -y",
+      "yum install -y amazon-cloudwatch-agent",
+      "systemctl enable ecs",
+      "systemctl start ecs",
+      // Security: Block container access to IMDS
+      "iptables --insert FORWARD 1 --in-interface docker+ --destination 169.254.169.254/32 --jump DROP",
+      "service iptables save"
+    );
 
-    // Security: Require IMDSv2 (Instance Metadata Service Version 2)
-    // Access the launch template created by addCapacity and set IMDSv2 requirement
-    // The launch template is a child resource of the Auto Scaling Group
-    const launchTemplateNode =
-      autoScalingGroup.node.tryFindChild("LaunchTemplate");
-    if (launchTemplateNode) {
-      const cfnLaunchTemplate = launchTemplateNode.node
-        .defaultChild as ec2.CfnLaunchTemplate;
-      if (cfnLaunchTemplate) {
-        cfnLaunchTemplate.addPropertyOverride(
-          "LaunchTemplateData.MetadataOptions.HttpTokens",
-          "required"
-        );
-        cfnLaunchTemplate.addPropertyOverride(
-          "LaunchTemplateData.MetadataOptions.HttpEndpoint",
-          "enabled"
-        );
-        cfnLaunchTemplate.addPropertyOverride(
-          "LaunchTemplateData.MetadataOptions.HttpPutResponseHopLimit",
-          2
-        );
+    // Create launch template using LaunchTemplateConstruct
+    // This ensures IMDSv2 is required and follows security best practices
+    const launchTemplateConstruct = new LaunchTemplateConstruct(
+      this,
+      "EcsLaunchTemplate",
+      {
+        vpc,
+        envName,
+        instanceType: ec2.InstanceType.of(
+          ec2.InstanceClass.T3,
+          ec2.InstanceSize.SMALL
+        ),
+        // Using Amazon Linux 2023 ECS-optimized AMI (Amazon Linux 2 reaches EOL June 30, 2026)
+        machineImage: ecs.EcsOptimizedImage.amazonLinux2023(),
+        userData: ecsUserData,
+        enableMonitoring: true,
+        associatePublicIpAddress: true,
+        blockDevices: [
+          {
+            deviceName: "/dev/xvda",
+            // Reduced from 30GB to 20GB since all persistent data is stored on EFS
+            // EBS root volume only needs: OS (~8GB) + ECS agent + logs + temp files (~2-5GB) + buffer
+            volume: ec2.BlockDeviceVolume.ebs(20, {
+              volumeType: ec2.EbsDeviceVolumeType.GP3,
+              encrypted: true,
+              deleteOnTermination: true,
+            }),
+          },
+        ],
       }
-    }
+    );
+
+    // Add ECS managed policy to the launch template's IAM role
+    launchTemplateConstruct.role.addManagedPolicy(
+      iam.ManagedPolicy.fromAwsManagedPolicyName(
+        "service-role/AmazonEC2ContainerServiceforEC2Role"
+      )
+    );
+
+    // Create Auto Scaling Group using the launch template from LaunchTemplateConstruct
+    const autoScalingGroup = new autoscaling.AutoScalingGroup(
+      this,
+      "MonitoringCapacity",
+      {
+        vpc,
+        launchTemplate: launchTemplateConstruct.launchTemplate,
+        minCapacity: 1,
+        maxCapacity: 1,
+        desiredCapacity: 1,
+        vpcSubnets: { subnets: publicAz0Subnets.subnets },
+        healthChecks: autoscaling.HealthChecks.ec2({
+          gracePeriod: cdk.Duration.seconds(300),
+        }),
+      }
+    );
+
+    // Add the Auto Scaling Group as a capacity provider to the cluster
+    const capacityProvider = new ecs.AsgCapacityProvider(
+      this,
+      "AsgCapacityProvider",
+      {
+        autoScalingGroup,
+        enableManagedScaling: true,
+        enableManagedTerminationProtection: false,
+      }
+    );
+    cluster.addAsgCapacityProvider(capacityProvider);
 
     // ========================================================================
     // S3 ASSETS FOR CONFIG FILES
