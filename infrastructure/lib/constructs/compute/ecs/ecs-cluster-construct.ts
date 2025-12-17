@@ -315,7 +315,7 @@ export class EcsClusterConstruct extends Construct {
         // The ASG will still launch instances based on desiredCapacity initially
         // If you need instances to launch immediately regardless of tasks, consider
         // setting enableManagedScaling: false temporarily for troubleshooting
-        enableManagedScaling: true,
+        enableManagedScaling: false,
         enableManagedTerminationProtection: false,
       }
     );

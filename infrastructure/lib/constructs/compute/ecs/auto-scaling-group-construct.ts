@@ -235,7 +235,7 @@ export class AutoScalingGroupConstruct extends Construct {
       "CapacityProvider",
       {
         autoScalingGroup: this.autoScalingGroup,
-        enableManagedScaling: true,
+        enableManagedScaling: false,
         enableManagedTerminationProtection: false,
       }
     );

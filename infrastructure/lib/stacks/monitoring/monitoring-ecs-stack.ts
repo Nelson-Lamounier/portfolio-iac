@@ -357,7 +357,7 @@ export class MonitoringEcsStack extends cdk.Stack {
       "AsgCapacityProvider",
       {
         autoScalingGroup,
-        enableManagedScaling: true,
+        enableManagedScaling: false,
         enableManagedTerminationProtection: false,
       }
     );
