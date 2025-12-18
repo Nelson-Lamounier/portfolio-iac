@@ -43,6 +43,11 @@ runs:
       uses: actions/cache@v4
       with:
         path: |
+          .yarn/cache
+          .yarn/unplugged
+          .yarn/install-state.gz
+          .pnp.cjs
+          .pnp.loader.mjs
           node_modules
           infrastructure/node_modules
         key: ${{ runner.os }}-deps-${{ hashFiles('**/yarn.lock', '**/package.json') }}
@@ -50,6 +55,8 @@ runs:
           ${{ runner.os }}-deps-
 
     - name: Install Dependencies
-      if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
-      run: yarn install --immutable
+      run: |
+        # Always run install to guarantee binaries (like CDK) exist.
+        # With Yarn v4 this is fast when cache is warm, and fixes "command not found: cdk".
+        yarn install --immutable
