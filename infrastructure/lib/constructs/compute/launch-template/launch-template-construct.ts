@@ -20,6 +20,16 @@ export interface LaunchTemplateConstructProps {
   enableMonitoring?: boolean;
   associatePublicIpAddress?: boolean;
   blockDevices?: ec2.BlockDevice[];
+  /**
+   * Add an SSH (22/tcp) ingress rule from anywhere.
+   * Default false (least privilege).
+   */
+  allowSshFromAnywhere?: boolean;
+  /**
+   * Add an HTTP (80/tcp) ingress rule from anywhere.
+   * Default false (least privilege).
+   */
+  allowHttpFromAnywhere?: boolean;
 }
 
 export class LaunchTemplateConstruct extends Construct {
@@ -50,19 +60,22 @@ export class LaunchTemplateConstruct extends Construct {
       "Allow outbound HTTPS for SSM/ECS/ECR endpoints"
     );
 
-    // Allow SSH from anywhere (restrict this in production!)
-    this.securityGroup.addIngressRule(
-      ec2.Peer.anyIpv4(),
-      ec2.Port.tcp(22),
-      "Allow SSH access"
-    );
+    // Optional ingress rules (disabled by default for least privilege)
+    if (props.allowSshFromAnywhere) {
+      this.securityGroup.addIngressRule(
+        ec2.Peer.anyIpv4(),
+        ec2.Port.tcp(22),
+        "Allow SSH access"
+      );
+    }
 
-    // Allow HTTP traffic
-    this.securityGroup.addIngressRule(
-      ec2.Peer.anyIpv4(),
-      ec2.Port.tcp(80),
-      "Allow HTTP access"
-    );
+    if (props.allowHttpFromAnywhere) {
+      this.securityGroup.addIngressRule(
+        ec2.Peer.anyIpv4(),
+        ec2.Port.tcp(80),
+        "Allow HTTP access"
+      );
+    }
 
     // Create IAM role for EC2 instances
     // Create IAM role for EC2 instances
@@ -136,8 +149,7 @@ export class LaunchTemplateConstruct extends Construct {
     // Default machine image - ECS-Optimized Amazon Linux 2023
     // This AMI includes Docker/container runtime + ECS agent (required for EC2 instances to register to ECS).
     const machineImage =
-      props.machineImage ||
-      ecs.EcsOptimizedImage.amazonLinux2023();
+      props.machineImage || ecs.EcsOptimizedImage.amazonLinux2023();
 
     // Default block devices
     const blockDevices = props.blockDevices || [
@@ -195,7 +207,7 @@ export class LaunchTemplateConstruct extends Construct {
 
     // Output the launch template ID
     new cdk.CfnOutput(this, "LaunchTemplateId", {
-      value: this.launchTemplate.launchTemplateId!,
+      value: this.launchTemplate.launchTemplateId ?? "",
       description: "Launch Template ID",
       exportName: `${cdk.Stack.of(this).stackName}-LaunchTemplateId`,
     });

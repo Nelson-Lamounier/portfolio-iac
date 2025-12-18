@@ -92,7 +92,7 @@ describe("MonitoringInfraStack", () => {
       // Check Launch Template for instance type
       testSetup.template.hasResourceProperties("AWS::EC2::LaunchTemplate", {
         LaunchTemplateData: Match.objectLike({
-          InstanceType: "t3.micro",
+          InstanceType: "t3.small",
         }),
       });
     });

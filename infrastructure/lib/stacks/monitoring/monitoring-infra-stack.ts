@@ -10,6 +10,7 @@ import * as events from "aws-cdk-lib/aws-events";
 import * as events_targets from "aws-cdk-lib/aws-events-targets";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
+import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 
 import { SuppressionManager } from "../../cdk-nag";
@@ -139,6 +140,21 @@ export class MonitoringInfraStack extends cdk.Stack {
         "service-role/AmazonEC2ContainerServiceforEC2Role"
       )
     );
+
+    // CDK Nag suppressions for AWS managed policies on the Launch Template instance role.
+    // These are standard AWS-managed policies required for SSM + CloudWatch + ECS container instances.
+    NagSuppressions.addResourceSuppressions(ltConstruct.role, [
+      {
+        id: "AwsSolutions-IAM4",
+        reason:
+          "ECS monitoring instances require AWS managed policies for SSM, CloudWatch Agent, and ECS EC2 registration.",
+        appliesTo: [
+          "Policy::arn:<AWS::Partition>:iam::aws:policy/AmazonSSMManagedInstanceCore",
+          "Policy::arn:<AWS::Partition>:iam::aws:policy/CloudWatchAgentServerPolicy",
+          "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role",
+        ],
+      },
+    ]);
 
     const ecsClusterConstruct = new EcsClusterConstruct(this, "EcsCluster", {
       vpc,
