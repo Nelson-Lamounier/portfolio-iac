@@ -59,16 +59,19 @@ export class MonitoringUserDataConstruct extends Construct {
     // Build UserData script in logical sections
     this.addScriptHeader(props.envName);
 
-    if (props.enableEfsMount !== false) {
-      this.addEfsSetup(props);
-    }
-
     if (props.enableS3Assets && props.prometheusAsset) {
       this.addS3AssetDownloads(props);
     }
 
     if (props.enableEcsAgent !== false) {
       this.addEcsConfiguration(props.clusterName);
+    }
+
+    // IMPORTANT: EFS setup can fail transiently (DNS, network, mount targets not ready).
+    // We intentionally run ECS agent configuration BEFORE EFS mounting so the instance
+    // still registers into the cluster even if EFS mount needs retries.
+    if (props.enableEfsMount !== false) {
+      this.addEfsSetup(props);
     }
 
     this.addScriptFooter();
@@ -156,22 +159,35 @@ export class MonitoringUserDataConstruct extends Construct {
       "# Mount EFS with retry logic",
       "mkdir -p /mnt/efs",
       "MOUNT_RETRIES=5",
+      "# Do NOT fail the whole boot if EFS isn't ready yet. We'll retry and continue.",
+      "EFS_MOUNTED=false",
+      "set +e",
       "for i in $(seq 1 $MOUNT_RETRIES); do",
       `  echo "EFS mount attempt $i of $MOUNT_RETRIES"`,
       `  if timeout 90 mount -t efs -o tls,iam ${props.fileSystemId}:/ /mnt/efs; then`,
       "    echo '✓ EFS mounted successfully'",
+      "    EFS_MOUNTED=true",
       "    break",
       "  else",
       "    echo 'Mount failed, retrying in 10 seconds...'",
-      "    [ $i -eq $MOUNT_RETRIES ] && { echo 'ERROR: EFS mount failed'; exit 1; }",
       "    sleep 10",
       "  fi",
       "done",
+      "set -e",
       "",
       "# Verify EFS mount is working",
       "if ! mountpoint -q /mnt/efs; then",
-      "  echo 'ERROR: EFS is not properly mounted'",
-      "  exit 1",
+      "  echo 'WARNING: EFS is not mounted yet. Instance will still register to ECS.'",
+      "  echo '         A background retry will continue attempting the mount.'",
+      "  (",
+      "    set +e",
+      "    for i in $(seq 1 30); do",
+      "      echo \"Background EFS mount retry $i/30\"",
+      `      timeout 90 mount -t efs -o tls,iam ${props.fileSystemId}:/ /mnt/efs && break`,
+      "      sleep 20",
+      "    done",
+      "  ) >/var/log/efs-mount-retry.log 2>&1 &",
+      "  return",
       "fi",
       "",
       "# Add to fstab for persistence",
