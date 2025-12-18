@@ -1,9 +1,9 @@
-import Image, { type ImageProps } from 'next/image'
-import clsx from 'clsx'
+import Image from 'next/image'
 
 import { Button } from '@/components/Button'
 import { Card } from '@/components/Card'
 import { Container } from '@/components/Container'
+import { DevOpsPipelineAnimation } from '@/components/DevOpsPipelineAnimation'
 import {
   GitHubIcon,
   InstagramIcon,
@@ -14,11 +14,6 @@ import logoFacebook from '@/images/logos/facebook.svg'
 import logoPlanetaria from '@/images/logos/planetaria.svg'
 import logoaws from '@/images/logos/aws.png'
 import logsedwick from '@/images/logos/sedwick.png'
-import image1 from '@/images/photos/image-1.jpg'
-import image2 from '@/images/photos/image-2.jpg'
-import image3 from '@/images/photos/image-3.jpg'
-import image4 from '@/images/photos/image-4.jpg'
-import image5 from '@/images/photos/image-5.jpg'
 import { type ArticleWithSlug, getAllArticles } from '@/lib/articles'
 import { formatDate } from '@/lib/formatDate'
 
@@ -247,35 +242,6 @@ function Resume() {
   )
 }
 
-function Photos() {
-  const rotations = ['rotate-2', '-rotate-2', 'rotate-2', 'rotate-2', '-rotate-2']
-
-  return (
-    <div className="mt-16 sm:mt-20">
-      <div className="-my-4 flex justify-center gap-5 overflow-hidden py-4 sm:gap-8">
-        {[image1, image2, image3, image4, image5].map((image, imageIndex) => (
-          <div
-            key={imageIndex}
-            className={clsx(
-              'relative w-44 flex-none overflow-hidden rounded-xl bg-zinc-100 sm:w-72 sm:rounded-2xl dark:bg-zinc-800',
-              rotations[imageIndex % rotations.length],
-            )}
-          >
-            <div className="aspect-9/10">
-              <Image
-                src={image}
-                alt=""
-                sizes="(min-width: 640px) 18rem, 11rem"
-                className="absolute inset-0 h-full w-full object-cover"
-              />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 export default async function Home() {
   const articles = (await getAllArticles()).slice(0, 4)
 
@@ -313,7 +279,7 @@ export default async function Home() {
           </div>
         </div>
       </Container>
-      <Photos />
+      <DevOpsPipelineAnimation />
       <Container className="mt-24 md:mt-28">
         <div className="mx-auto grid max-w-xl grid-cols-1 gap-y-20 lg:max-w-none lg:grid-cols-2">
           <div className="flex flex-col gap-16">
@@ -331,5 +297,4 @@ export default async function Home() {
   )
 }
 
-// Test Ci 
-
+// Test Ci
