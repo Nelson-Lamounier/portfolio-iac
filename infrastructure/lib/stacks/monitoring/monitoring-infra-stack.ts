@@ -16,6 +16,7 @@ import { SuppressionManager } from "../../cdk-nag";
 import { MonitoringConfigBucketConstruct } from "../../constructs/monitoring";
 import { MonitoringUserDataConstruct } from "../../constructs/compute/user-data/monitoring-user-data-construct";
 import { EcsClusterConstruct } from "../../constructs/compute/ecs";
+import { LaunchTemplateConstruct } from "../../constructs/compute/launch-template";
 import {
   ApplicationLoadBalancerConstruct,
   AlbListenerConstruct,
@@ -114,6 +115,31 @@ export class MonitoringInfraStack extends cdk.Stack {
     // ========================================================================
     // ECS CLUSTER
     // ========================================================================
+    const ltConstruct = new LaunchTemplateConstruct(
+      this,
+      "MonitoringInfraLaunchTemplate",
+      {
+        vpc,
+        envName,
+        instanceType: ec2.InstanceType.of(
+          ec2.InstanceClass.T3,
+          ec2.InstanceSize.SMALL
+        ),
+        machineImage: ecs.EcsOptimizedImage.amazonLinux2023(),
+        userData: userDataConstruct.userData,
+        associatePublicIpAddress: true,
+        // Attach any additional security groups needed by the instances (e.g., EFS SG)
+        securityGroups: [efsSecurityGroup],
+      }
+    );
+
+    // Required for ECS EC2 container instances
+    ltConstruct.role.addManagedPolicy(
+      iam.ManagedPolicy.fromAwsManagedPolicyName(
+        "service-role/AmazonEC2ContainerServiceforEC2Role"
+      )
+    );
+
     const ecsClusterConstruct = new EcsClusterConstruct(this, "EcsCluster", {
       vpc,
       envName,
@@ -121,8 +147,7 @@ export class MonitoringInfraStack extends cdk.Stack {
       enableExecuteCommand: true,
       logRetention: logs.RetentionDays.TWO_WEEKS,
       clusterName,
-      additionalSecurityGroups: [efsSecurityGroup],
-      customUserData: userDataConstruct.userData, // Pass user data directly to avoid conflicts
+      customLaunchTemplate: ltConstruct.launchTemplate,
       // Explicitly set capacity to ensure at least one instance launches
       // This is critical - without this, managed scaling might not launch instances
       minCapacity: 1,

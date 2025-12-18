@@ -102,7 +102,6 @@ export class EcsClusterConstruct extends Construct {
   public readonly cluster: ecs.Cluster;
   public readonly logGroup: logs.LogGroup;
   public readonly asg: autoscaling.AutoScalingGroup;
-  public readonly securityGroup: ec2.SecurityGroup;
   public readonly launchTemplate: ec2.ILaunchTemplate;
 
   constructor(scope: Construct, id: string, props: EcsClusterConstructProps) {
@@ -150,17 +149,31 @@ export class EcsClusterConstruct extends Construct {
         : undefined,
     });
 
-    // Create security group for ECS instances (only if not using custom launch template)
-    this.securityGroup = new ec2.SecurityGroup(this, "InstanceSecurityGroup", {
-      vpc,
-      description: `Security group for ${envName} ECS instances`,
-      allowAllOutbound: true,
-    });
-
     // Use custom launch template if provided, otherwise create default one
     if (customLaunchTemplate) {
       this.launchTemplate = customLaunchTemplate;
     } else {
+      // NOTE: If you prefer the “launch template owns the security group” approach,
+      // pass a custom launch template and avoid this default path.
+      const instanceSecurityGroup = new ec2.SecurityGroup(
+        this,
+        "InstanceSecurityGroup",
+        {
+          vpc,
+          description: `Security group for ${envName} ECS instances`,
+          allowAllOutbound: true,
+        }
+      );
+
+      // Even though allowAllOutbound=true adds a default egress rule, we add an explicit
+      // outbound HTTPS rule because SSM/ECS/ECR all require outbound 443 and it's a
+      // common source of “SSM not working” confusion when reviewing SG rules.
+      instanceSecurityGroup.addEgressRule(
+        ec2.Peer.anyIpv4(),
+        ec2.Port.tcp(443),
+        "Allow outbound HTTPS for SSM/ECS/ECR endpoints"
+      );
+
       // Create IAM role for EC2 instances
       const instanceRole = new iam.Role(this, "InstanceRole", {
         assumedBy: new iam.ServicePrincipal("ec2.amazonaws.com"),
@@ -217,9 +230,12 @@ export class EcsClusterConstruct extends Construct {
         // Use securityGroup (singular) if no additional groups, securityGroups (plural) if additional groups
         ...(additionalSecurityGroups.length > 0
           ? {
-              securityGroups: [this.securityGroup, ...additionalSecurityGroups],
+              securityGroups: [
+                instanceSecurityGroup,
+                ...additionalSecurityGroups,
+              ],
             }
-          : { securityGroup: this.securityGroup }),
+          : { securityGroup: instanceSecurityGroup }),
         blockDevices: [
           {
             deviceName: "/dev/xvda",
@@ -345,7 +361,9 @@ export class EcsClusterConstruct extends Construct {
   ): void {
     // Use provided CIDR or a default to avoid cyclic dependencies
     const vpcCidr = cidr || "10.0.0.0/16";
-    this.securityGroup.addIngressRule(
+    // Use ASG connections rather than a construct-owned SG so this continues to
+    // work even when the launch template is responsible for the security groups.
+    this.asg.connections.allowFrom(
       ec2.Peer.ipv4(vpcCidr),
       ec2.Port.tcp(port),
       description

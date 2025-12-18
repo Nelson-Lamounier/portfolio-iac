@@ -41,6 +41,15 @@ export class LaunchTemplateConstruct extends Construct {
       allowAllOutbound: true,
     });
 
+    // Even though allowAllOutbound=true adds a default egress rule, we add an explicit
+    // outbound HTTPS rule because SSM/ECS/ECR all require outbound 443 and it's a
+    // common source of “SSM not working” confusion when reviewing SG rules.
+    this.securityGroup.addEgressRule(
+      ec2.Peer.anyIpv4(),
+      ec2.Port.tcp(443),
+      "Allow outbound HTTPS for SSM/ECS/ECR endpoints"
+    );
+
     // Allow SSH from anywhere (restrict this in production!)
     this.securityGroup.addIngressRule(
       ec2.Peer.anyIpv4(),
@@ -149,7 +158,11 @@ export class LaunchTemplateConstruct extends Construct {
       machineImage,
       userData,
       role: this.role,
-      securityGroup: this.securityGroup,
+      ...(props.securityGroups && props.securityGroups.length > 0
+        ? {
+            securityGroups: [this.securityGroup, ...props.securityGroups],
+          }
+        : { securityGroup: this.securityGroup }),
       keyName: props.keyName,
       detailedMonitoring: props.enableMonitoring ?? true,
       associatePublicIpAddress: props.associatePublicIpAddress ?? false,
