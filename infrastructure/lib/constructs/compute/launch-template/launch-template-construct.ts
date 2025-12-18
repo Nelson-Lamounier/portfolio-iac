@@ -3,6 +3,7 @@
 // lib/constructs/launch-template-construct.ts
 import * as cdk from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
+import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as iam from "aws-cdk-lib/aws-iam";
 import { Tags } from "aws-cdk-lib";
 import { Construct } from "constructs";
@@ -72,13 +73,19 @@ export class LaunchTemplateConstruct extends Construct {
         ],
       });
 
-    // Default user data - install and start SSM agent, CloudWatch agent
+    // Default user data - ensure SSM agent is installed and running
     const userData = props.userData || ec2.UserData.forLinux();
     if (!props.userData) {
       userData.addCommands(
         "#!/bin/bash",
-        "yum update -y",
-        "yum install -y amazon-cloudwatch-agent",
+        "set -e",
+        "",
+        "# Choose package manager (AL2023 uses dnf, AL2 uses yum)",
+        "PKG_MGR=yum",
+        "command -v dnf >/dev/null 2>&1 && PKG_MGR=dnf",
+        "$PKG_MGR -y update",
+        "$PKG_MGR -y install amazon-ssm-agent amazon-cloudwatch-agent",
+        "systemctl enable --now amazon-ssm-agent",
 
         // Install Node Exporter for Prometheus monitoring
         "useradd --no-create-home --shell /bin/false node_exporter",
@@ -117,12 +124,11 @@ export class LaunchTemplateConstruct extends Construct {
       props.instanceType ||
       ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO);
 
-    // Default machine image - Amazon Linux 2023
+    // Default machine image - ECS-Optimized Amazon Linux 2023
+    // This AMI includes Docker/container runtime + ECS agent (required for EC2 instances to register to ECS).
     const machineImage =
       props.machineImage ||
-      ec2.MachineImage.latestAmazonLinux2023({
-        cachedInContext: true,
-      });
+      ecs.EcsOptimizedImage.amazonLinux2023();
 
     // Default block devices
     const blockDevices = props.blockDevices || [

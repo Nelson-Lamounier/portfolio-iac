@@ -268,16 +268,19 @@ export class AutoScalingGroupConstruct extends Construct {
       "echo ECS_ENABLE_CONTAINER_METADATA=true >> /etc/ecs/ecs.config",
       "echo ECS_ENABLE_TASK_IAM_ROLE=true >> /etc/ecs/ecs.config",
 
-      // Install CloudWatch agent
-      "yum update -y",
-      "yum install -y amazon-cloudwatch-agent",
+      // Install required agents/utilities (AL2023 uses dnf, AL2 uses yum)
+      "PKG_MGR=yum",
+      "command -v dnf >/dev/null 2>&1 && PKG_MGR=dnf",
+      "$PKG_MGR -y update",
+      "$PKG_MGR -y install amazon-ssm-agent amazon-cloudwatch-agent",
 
       // Install EFS utilities
-      "yum install -y amazon-efs-utils",
+      "$PKG_MGR -y install amazon-efs-utils",
 
       // Start services
       "systemctl enable ecs",
       "systemctl start ecs",
+      "systemctl enable --now amazon-ssm-agent",
       "systemctl enable amazon-cloudwatch-agent",
       "systemctl start amazon-cloudwatch-agent"
     );

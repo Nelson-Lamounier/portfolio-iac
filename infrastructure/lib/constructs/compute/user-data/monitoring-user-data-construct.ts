@@ -112,6 +112,12 @@ export class MonitoringUserDataConstruct extends Construct {
       `echo 'Monitoring Setup Started - ${envName}'`,
       "echo 'Timestamp:' $(date)",
       `echo '========================================='`,
+      "",
+      "# Ensure SSM agent is installed and running (needed for Session Manager / SSM)",
+      "PKG_MGR=yum",
+      "command -v dnf >/dev/null 2>&1 && PKG_MGR=dnf",
+      "$PKG_MGR -y install amazon-ssm-agent || true",
+      "systemctl enable --now amazon-ssm-agent || true",
       ""
     );
   }
