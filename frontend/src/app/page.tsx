@@ -143,7 +143,7 @@ function Newsletter() {
 interface Role {
   company: string
   title: string
-  logo: ImageProps['src']
+  logo: React.ComponentProps<typeof Image>['src']
   start: string | { label: string; dateTime: string }
   end: string | { label: string; dateTime: string }
 }
