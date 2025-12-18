@@ -95,10 +95,10 @@ runs:
           SETUP_ERRORS=$((SETUP_ERRORS + 1))
         fi
 
-        # Check CDK
+        # Check CDK (use yarn exec so we don't depend on a workspace script alias)
         if [ -d "infrastructure" ] && command -v yarn &> /dev/null; then
           cd infrastructure
-          if CDK_VERSION=$(yarn cdk --version 2>/dev/null); then
+          if CDK_VERSION=$(yarn exec cdk --version 2>/dev/null); then
             echo "✅ CDK: $CDK_VERSION"
           else
             echo "❌ CDK: Not available or not installed"

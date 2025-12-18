@@ -181,7 +181,7 @@ runs:
         echo "📋 Running CDK diff for ${{ inputs.stack-name }}..."
 
         # Capture CDK diff output
-        if CDK_DIFF_OUTPUT=$(yarn cdk diff "${{ inputs.stack-name }}" 2>&1); then
+        if CDK_DIFF_OUTPUT=$(yarn exec cdk diff "${{ inputs.stack-name }}" 2>&1); then
           echo "✅ CDK diff completed successfully"
           
           # Analyze diff output for changes

@@ -145,15 +145,15 @@ runs:
 
         echo ""
         echo "CDK Deployment Command:"
-        echo "  yarn cdk deploy ${{ inputs.stack-name }} ${{ inputs.additional-args }}"
+        echo "  yarn exec cdk deploy ${{ inputs.stack-name }} ${{ inputs.additional-args }}"
         echo ""
 
         # Pre-deployment checks
         echo "Pre-deployment validation..."
 
-        # Check if CDK is available via yarn
-        if ! yarn cdk --version &> /dev/null; then
-          echo "CDK CLI not found via yarn"
+        # Check if CDK is available via yarn (use exec to invoke the dependency binary)
+        if ! yarn exec cdk --version &> /dev/null; then
+          echo "CDK CLI not found via yarn exec"
           echo ""
           echo "DEPLOYMENT FAILED: CDK CLI Missing"
           echo ""
@@ -169,13 +169,13 @@ runs:
 
         # Check if stack exists in CDK app
         echo "Checking if stack exists in CDK application..."
-        if ! yarn cdk list | grep -q "${{ inputs.stack-name }}"; then
+        if ! yarn exec cdk list | grep -q "${{ inputs.stack-name }}"; then
           echo "Stack '${{ inputs.stack-name }}' not found in CDK application"
           echo ""
           echo "DEPLOYMENT FAILED: Stack Not Found"
           echo ""
           echo "Available Stacks:"
-          yarn cdk list | sed 's/^/    /'
+          yarn exec cdk list | sed 's/^/    /'
           echo ""
           echo "Possible Issues:"
           echo "  1. Stack name mismatch (check environment suffix)"
@@ -186,7 +186,7 @@ runs:
           echo "Quick Fixes:"
           echo "  1. Verify stack name format: [StackName]-${{ inputs.environment }}"
           echo "  2. Check infrastructure/bin/app.ts for stack definitions"
-          echo "  3. Run 'yarn cdk synth' locally to test"
+          echo "  3. Run 'cd infrastructure && yarn exec cdk synth' locally to test"
           echo ""
           echo "status=failure" >> $GITHUB_OUTPUT
           exit 1
@@ -243,7 +243,7 @@ runs:
         # Capture deployment output for error analysis
         DEPLOY_OUTPUT_FILE="/tmp/cdk-deploy-output-$$.log"
 
-        if yarn cdk deploy "${{ inputs.stack-name }}" ${{ inputs.additional-args }} 2>&1 | tee "$DEPLOY_OUTPUT_FILE"; then
+        if yarn exec cdk deploy "${{ inputs.stack-name }}" ${{ inputs.additional-args }} 2>&1 | tee "$DEPLOY_OUTPUT_FILE"; then
           echo ""
           echo "DEPLOYMENT SUCCESSFUL"
           echo "⏱Completed at: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
@@ -304,7 +304,7 @@ runs:
             sleep 3
             
             echo "Retrying deployment..."
-            if yarn cdk deploy "${{ inputs.stack-name }}" ${{ inputs.additional-args }} 2>&1 | tee "$DEPLOY_OUTPUT_FILE"; then
+            if yarn exec cdk deploy "${{ inputs.stack-name }}" ${{ inputs.additional-args }} 2>&1 | tee "$DEPLOY_OUTPUT_FILE"; then
               echo ""
               echo "✅ DEPLOYMENT SUCCESSFUL (after retry)"
               echo "⏱Completed at: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
@@ -350,8 +350,8 @@ runs:
           echo "5. Review previous successful deployments for differences"
           echo ""
           echo "💡 DEBUGGING COMMANDS:"
-          echo "   yarn cdk diff ${{ inputs.stack-name }}  # See changes"
-          echo "   yarn cdk synth ${{ inputs.stack-name }} # Test synthesis"
+          echo "   yarn exec cdk diff ${{ inputs.stack-name }}  # See changes"
+          echo "   yarn exec cdk synth ${{ inputs.stack-name }} # Test synthesis"
           echo "   aws cloudformation describe-stack-events --stack-name ${{ inputs.stack-name }}"
           echo ""
           echo "📞 NEED HELP?"
