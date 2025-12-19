@@ -45,19 +45,29 @@ export class LaunchTemplateConstruct extends Construct {
     super(scope, id);
 
     // Create security group for the instances
+    // CRITICAL: allowAllOutbound must be true for ECS container instances to register
+    // This allows instances to communicate with ECS, SSM, ECR, CloudWatch, and other AWS services
     this.securityGroup = new ec2.SecurityGroup(this, "SecurityGroup", {
       vpc: props.vpc,
       description: "Security group for launch template instances",
-      allowAllOutbound: true,
+      allowAllOutbound: true, // Required for ECS container instance registration
     });
 
-    // Even though allowAllOutbound=true adds a default egress rule, we add an explicit
-    // outbound HTTPS rule because SSM/ECS/ECR all require outbound 443 and it's a
-    // common source of “SSM not working” confusion when reviewing SG rules.
+    // Add explicit outbound HTTPS rule for visibility and documentation
+    // Even though allowAllOutbound=true creates a default "allow all" rule,
+    // adding this explicit rule makes it clear what ports are needed and ensures
+    // the rule is visible in the AWS console
     this.securityGroup.addEgressRule(
       ec2.Peer.anyIpv4(),
       ec2.Port.tcp(443),
-      "Allow outbound HTTPS for SSM/ECS/ECR endpoints"
+      "Allow outbound HTTPS for SSM/ECS/ECR/CloudWatch endpoints"
+    );
+
+    // Add explicit HTTP rule for package updates (yum/dnf)
+    this.securityGroup.addEgressRule(
+      ec2.Peer.anyIpv4(),
+      ec2.Port.tcp(80),
+      "Allow outbound HTTP for package updates"
     );
 
     // Optional ingress rules (disabled by default for least privilege)
@@ -201,6 +211,35 @@ export class LaunchTemplateConstruct extends Construct {
       "LaunchTemplateData.MetadataOptions.HttpPutResponseHopLimit",
       2
     );
+
+    // CRITICAL FIX: Explicitly set security groups in NetworkInterfaces
+    // When multiple security groups are provided, they must be in NetworkInterfaces
+    // Otherwise, AWS may fall back to the default VPC security group
+    if (props.securityGroups && props.securityGroups.length > 0) {
+      const allSecurityGroups = [this.securityGroup, ...props.securityGroups];
+      cfnLaunchTemplate.addPropertyOverride(
+        "LaunchTemplateData.NetworkInterfaces",
+        [
+          {
+            DeviceIndex: 0,
+            Groups: allSecurityGroups.map((sg) => sg.securityGroupId),
+            AssociatePublicIpAddress: props.associatePublicIpAddress ?? false,
+          },
+        ]
+      );
+    } else {
+      // For single security group, also explicitly set it in NetworkInterfaces to be safe
+      cfnLaunchTemplate.addPropertyOverride(
+        "LaunchTemplateData.NetworkInterfaces",
+        [
+          {
+            DeviceIndex: 0,
+            Groups: [this.securityGroup.securityGroupId],
+            AssociatePublicIpAddress: props.associatePublicIpAddress ?? false,
+          },
+        ]
+      );
+    }
 
     // Tag service
     Tags.of(this.launchTemplate).add("Environment", props.envName);
