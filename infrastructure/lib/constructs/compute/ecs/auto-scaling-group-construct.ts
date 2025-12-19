@@ -63,9 +63,14 @@ export interface AutoScalingGroupConstructProps {
   role?: iam.Role;
 
   /**
-   * Key pair name for SSH access
+   * @deprecated Use `keyPair` instead
    */
   keyName?: string;
+  /**
+   * EC2 Key Pair for SSH access to instances.
+   * If both `keyName` and `keyPair` are provided, `keyPair` takes precedence.
+   */
+  keyPair?: ec2.IKeyPair;
 
   /**
    * Whether to enable detailed monitoring
@@ -105,6 +110,7 @@ export class AutoScalingGroupConstruct extends Construct {
       securityGroups = [],
       role,
       keyName,
+      keyPair,
       enableDetailedMonitoring = true,
     } = props;
 
@@ -159,6 +165,13 @@ export class AutoScalingGroupConstruct extends Construct {
       role: this.instanceRole,
     });
 
+    // Resolve key pair: prefer keyPair over keyName (for backward compatibility)
+    const resolvedKeyPair =
+      keyPair ||
+      (keyName
+        ? ec2.KeyPair.fromKeyPairName(this, "KeyPair", keyName)
+        : undefined);
+
     // Create launch template
     // Using Amazon Linux 2023 ECS-optimized AMI (Amazon Linux 2 reaches EOL June 30, 2026)
     this.launchTemplate = new ec2.LaunchTemplate(this, "LaunchTemplate", {
@@ -167,7 +180,7 @@ export class AutoScalingGroupConstruct extends Construct {
       userData: userData || this.createDefaultUserData(cluster.clusterName),
       role: this.instanceRole,
       securityGroup: securityGroups[0], // Primary security group
-      keyName,
+      ...(resolvedKeyPair ? { keyPair: resolvedKeyPair } : {}),
       detailedMonitoring: enableDetailedMonitoring,
       blockDevices: [
         {

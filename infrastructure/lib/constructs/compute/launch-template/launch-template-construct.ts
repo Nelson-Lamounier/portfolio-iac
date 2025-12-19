@@ -13,7 +13,15 @@ export interface LaunchTemplateConstructProps {
   envName: string;
   instanceType?: ec2.InstanceType;
   machineImage?: ec2.IMachineImage;
+  /**
+   * @deprecated Use `keyPair` instead
+   */
   keyName?: string;
+  /**
+   * EC2 Key Pair for SSH access to instances.
+   * If both `keyName` and `keyPair` are provided, `keyPair` takes precedence.
+   */
+  keyPair?: ec2.IKeyPair;
   securityGroups?: ec2.ISecurityGroup[];
   userData?: ec2.UserData;
   role?: iam.Role;
@@ -182,6 +190,13 @@ export class LaunchTemplateConstruct extends Construct {
       },
     ];
 
+    // Resolve key pair: prefer keyPair over keyName (for backward compatibility)
+    const keyPair =
+      props.keyPair ||
+      (props.keyName
+        ? ec2.KeyPair.fromKeyPairName(this, "KeyPair", props.keyName)
+        : undefined);
+
     // Create the launch template
     // NOTE: We pass role (not instanceProfile) - CDK will create instance profile automatically
     // But we also created instanceProfile explicitly above to ensure it exists
@@ -196,7 +211,7 @@ export class LaunchTemplateConstruct extends Construct {
             securityGroups: [this.securityGroup, ...props.securityGroups],
           }
         : { securityGroup: this.securityGroup }),
-      keyName: props.keyName,
+      ...(keyPair ? { keyPair } : {}),
       detailedMonitoring: props.enableMonitoring ?? true,
       associatePublicIpAddress: props.associatePublicIpAddress ?? false,
       blockDevices,

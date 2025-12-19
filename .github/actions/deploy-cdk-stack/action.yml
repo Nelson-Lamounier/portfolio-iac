@@ -151,6 +151,19 @@ runs:
         # Pre-deployment checks
         echo "Pre-deployment validation..."
 
+        # Verify ENVIRONMENT variable is set correctly
+        echo "Environment Configuration:"
+        echo "  ENVIRONMENT=$ENVIRONMENT"
+        echo "  Expected stack name: NetworkingStack-$ENVIRONMENT"
+        echo ""
+
+        if [ "$ENVIRONMENT" != "${{ inputs.environment }}" ]; then
+          echo "⚠️  WARNING: ENVIRONMENT variable mismatch"
+          echo "  Input: ${{ inputs.environment }}"
+          echo "  Actual: $ENVIRONMENT"
+          echo ""
+        fi
+
         # Check if CDK is available (use npx to invoke the local dependency binary)
         if ! npx cdk --version &> /dev/null; then
           echo "CDK CLI not found via npx"
@@ -169,28 +182,72 @@ runs:
 
         # Check if stack exists in CDK app
         echo "Checking if stack exists in CDK application..."
-        if ! npx cdk list | grep -q "${{ inputs.stack-name }}"; then
+
+        # Use a temporary file to capture CDK list output and handle EPIPE errors
+        CDK_LIST_OUTPUT="/tmp/cdk-list-output-$$.log"
+
+        # Run cdk list with error handling - redirect stderr and handle EPIPE gracefully
+        # Use timeout to prevent hanging, and handle EPIPE errors
+        set +e  # Don't exit on error
+        npx cdk list 2>&1 | tee "$CDK_LIST_OUTPUT" || true
+        CDK_LIST_EXIT=$?
+        set -e  # Re-enable exit on error
+
+        # Check if we got valid output
+        if [ $CDK_LIST_EXIT -ne 0 ] || [ ! -s "$CDK_LIST_OUTPUT" ]; then
+          echo "⚠️  CDK list command had issues (exit code: $CDK_LIST_EXIT)"
+          echo "This may be due to SSM parameter lookups during synthesis or EPIPE errors"
+          echo "Attempting to verify stack by synthesizing it directly..."
+          echo ""
+          
+          # Try to synthesize the specific stack to verify it exists
+          if npx cdk synth "${{ inputs.stack-name }}" >/dev/null 2>&1; then
+            echo "✅ Stack can be synthesized - continuing with deployment"
+            rm -f "$CDK_LIST_OUTPUT" 2>/dev/null || true
+          else
+            echo "❌ Stack synthesis also failed - stack may not exist or has errors"
+            echo ""
+            echo "Attempting to get synthesis errors..."
+            npx cdk synth "${{ inputs.stack-name }}" 2>&1 | head -100 || true
+            rm -f "$CDK_LIST_OUTPUT" 2>/dev/null || true
+            echo "status=failure" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+        elif ! grep -q "${{ inputs.stack-name }}" "$CDK_LIST_OUTPUT" 2>/dev/null; then
           echo "Stack '${{ inputs.stack-name }}' not found in CDK application"
           echo ""
           echo "DEPLOYMENT FAILED: Stack Not Found"
           echo ""
           echo "Available Stacks:"
-          npx cdk list | sed 's/^/    /'
+          cat "$CDK_LIST_OUTPUT" 2>/dev/null | sed 's/^/    /' || echo "    (Could not retrieve stack list)"
           echo ""
           echo "Possible Issues:"
           echo "  1. Stack name mismatch (check environment suffix)"
           echo "  2. Stack not properly exported in CDK app"
           echo "  3. Environment configuration issues"
-          echo "  4. CDK synthesis errors"
+          echo "  4. CDK synthesis errors (SSM lookups, etc.)"
           echo ""
           echo "Quick Fixes:"
           echo "  1. Verify stack name format: [StackName]-${{ inputs.environment }}"
           echo "  2. Check infrastructure/bin/app.ts for stack definitions"
-          echo "  3. Run 'cd infrastructure && npx cdk synth' locally to test"
+          echo "  3. Verify ENVIRONMENT variable is set correctly: ${{ inputs.environment }}"
+          echo "  4. Try running: cd infrastructure && ENVIRONMENT=${{ inputs.environment }} npx cdk list"
           echo ""
+          
+          # Try to synthesize the specific stack to get better error messages
+          echo "Attempting to synthesize stack for better error details..."
+          if ! npx cdk synth "${{ inputs.stack-name }}" 2>&1 | head -50; then
+            echo ""
+            echo "Synthesis failed - check errors above"
+          fi
+          
+          rm -f "$CDK_LIST_OUTPUT" 2>/dev/null || true
           echo "status=failure" >> $GITHUB_OUTPUT
           exit 1
         fi
+
+        echo "Stack found in CDK application"
+        rm -f "$CDK_LIST_OUTPUT" 2>/dev/null || true
 
         echo "Stack found in CDK application"
         echo ""
@@ -243,7 +300,21 @@ runs:
         # Capture deployment output for error analysis
         DEPLOY_OUTPUT_FILE="/tmp/cdk-deploy-output-$$.log"
 
-        if npx cdk deploy "${{ inputs.stack-name }}" ${{ inputs.additional-args }} 2>&1 | tee "$DEPLOY_OUTPUT_FILE"; then
+        # Deploy with proper error handling for EPIPE and other stream errors
+        # Redirect output to file first, then display it to avoid EPIPE issues
+        set +e  # Don't exit on error immediately
+
+        # Run deployment and capture output, handling EPIPE gracefully
+        npx cdk deploy "${{ inputs.stack-name }}" ${{ inputs.additional-args }} > "$DEPLOY_OUTPUT_FILE" 2>&1
+        DEPLOY_EXIT_CODE=$?
+
+        # Display the output (this won't cause EPIPE since we're not piping)
+        cat "$DEPLOY_OUTPUT_FILE"
+
+        set -e  # Re-enable exit on error
+
+        # Check if deployment was successful
+        if [ $DEPLOY_EXIT_CODE -eq 0 ]; then
           echo ""
           echo "DEPLOYMENT SUCCESSFUL"
           echo "⏱Completed at: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
@@ -255,8 +326,28 @@ runs:
           # Clean up temp file
           rm -f "$DEPLOY_OUTPUT_FILE" 2>/dev/null || true
         else
-          DEPLOY_EXIT_CODE=$?
           DEPLOY_OUTPUT=$(cat "$DEPLOY_OUTPUT_FILE" 2>/dev/null || echo "")
+          
+          # Check if the error was an EPIPE (broken pipe)
+          if echo "$DEPLOY_OUTPUT" | grep -qi "EPIPE\|broken pipe"; then
+            echo "⚠️  EPIPE (broken pipe) error detected"
+            echo "This usually means output was redirected to a closed pipe"
+            echo "Attempting to retry deployment without tee..."
+            echo ""
+            
+            # Retry without tee to avoid pipe issues
+            if npx cdk deploy "${{ inputs.stack-name }}" ${{ inputs.additional-args }} 2>&1 > "$DEPLOY_OUTPUT_FILE"; then
+              echo ""
+              echo "✅ DEPLOYMENT SUCCESSFUL (after EPIPE retry)"
+              echo "⏱Completed at: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+              echo "status=success" >> $GITHUB_OUTPUT
+              rm -f "$DEPLOY_OUTPUT_FILE" 2>/dev/null || true
+              exit 0
+            else
+              DEPLOY_EXIT_CODE=$?
+              DEPLOY_OUTPUT=$(cat "$DEPLOY_OUTPUT_FILE" 2>/dev/null || echo "")
+            fi
+          fi
           
           echo ""
           echo "❌ DEPLOYMENT FAILED"
@@ -304,7 +395,9 @@ runs:
             sleep 3
             
             echo "Retrying deployment..."
-            if npx cdk deploy "${{ inputs.stack-name }}" ${{ inputs.additional-args }} 2>&1 | tee "$DEPLOY_OUTPUT_FILE"; then
+            # Retry without tee to avoid EPIPE issues
+            if npx cdk deploy "${{ inputs.stack-name }}" ${{ inputs.additional-args }} > "$DEPLOY_OUTPUT_FILE" 2>&1; then
+              cat "$DEPLOY_OUTPUT_FILE"
               echo ""
               echo "✅ DEPLOYMENT SUCCESSFUL (after retry)"
               echo "⏱Completed at: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"

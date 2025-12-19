@@ -613,11 +613,33 @@ describe("LaunchTemplateConstruct", () => {
       expect(construct.launchTemplate).toBeInstanceOf(ec2.LaunchTemplate);
     });
 
-    test("uses custom key name when provided", () => {
+    test("uses custom key name when provided (backward compatibility)", () => {
       new LaunchTemplateConstruct(stack, "TestLaunchTemplate", {
         vpc,
         envName: "test",
         keyName: "my-key-pair",
+      });
+
+      const template = Template.fromStack(stack);
+
+      template.hasResourceProperties("AWS::EC2::LaunchTemplate", {
+        LaunchTemplateData: {
+          KeyName: "my-key-pair",
+        },
+      });
+    });
+
+    test("uses keyPair when provided", () => {
+      const keyPair = ec2.KeyPair.fromKeyPairName(
+        stack,
+        "TestKeyPair",
+        "my-key-pair"
+      );
+
+      new LaunchTemplateConstruct(stack, "TestLaunchTemplate", {
+        vpc,
+        envName: "test",
+        keyPair,
       });
 
       const template = Template.fromStack(stack);

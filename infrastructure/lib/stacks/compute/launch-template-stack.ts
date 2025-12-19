@@ -96,7 +96,15 @@ export class LaunchTemplateStack extends cdk.Stack {
         ),
         // Using Amazon Linux 2023 ECS-optimized AMI (Amazon Linux 2 reaches EOL June 30, 2026)
         machineImage: cdk.aws_ecs.EcsOptimizedImage.amazonLinux2023(),
-        keyName: keyPairName,
+        ...(keyPairName
+          ? {
+              keyPair: ec2.KeyPair.fromKeyPairName(
+                this,
+                "KeyPair",
+                keyPairName
+              ),
+            }
+          : {}),
         userData,
         role: ecsInstanceRole, // Use ECS-compatible role
         enableMonitoring: true,
