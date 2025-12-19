@@ -298,9 +298,9 @@ export class MonitoringEcsStack extends cdk.Stack {
         blockDevices: [
           {
             deviceName: "/dev/xvda",
-            // Reduced from 30GB to 20GB since all persistent data is stored on EFS
-            // EBS root volume only needs: OS (~8GB) + ECS agent + logs + temp files (~2-5GB) + buffer
-            volume: ec2.BlockDeviceVolume.ebs(20, {
+            // ECS-optimized AMI snapshots require at least 30GB minimum
+            // While persistent data is stored on EFS, the root volume must meet snapshot size requirements
+            volume: ec2.BlockDeviceVolume.ebs(30, {
               volumeType: ec2.EbsDeviceVolumeType.GP3,
               encrypted: true,
               deleteOnTermination: true,

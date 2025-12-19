@@ -152,10 +152,11 @@ export class LaunchTemplateConstruct extends Construct {
       props.machineImage || ecs.EcsOptimizedImage.amazonLinux2023();
 
     // Default block devices
+    // Note: ECS-optimized AMI snapshots require at least 30GB, so default to 30GB
     const blockDevices = props.blockDevices || [
       {
         deviceName: "/dev/xvda",
-        volume: ec2.BlockDeviceVolume.ebs(20, {
+        volume: ec2.BlockDeviceVolume.ebs(30, {
           volumeType: ec2.EbsDeviceVolumeType.GP3,
           encrypted: true,
           deleteOnTermination: true,
