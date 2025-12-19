@@ -141,6 +141,33 @@ export class MonitoringInfraStack extends cdk.Stack {
       )
     );
 
+    // Add EFS permissions to the INSTANCE role (not ASG role)
+    // Instances need these permissions to mount EFS volumes
+    ltConstruct.role.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          "elasticfilesystem:ClientMount",
+          "elasticfilesystem:ClientWrite",
+          "elasticfilesystem:ClientRootAccess",
+        ],
+        resources: [fileSystem.fileSystemArn],
+      })
+    );
+
+    // Add SSM permissions to the INSTANCE role (instances need this to read SSM parameters)
+    ltConstruct.role.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          "ssm:GetParameter",
+          "ssm:GetParameters",
+          "ssm:GetParametersByPath",
+        ],
+        resources: ["*"],
+      })
+    );
+
     // CDK Nag suppressions for AWS managed policies on the Launch Template instance role.
     // These are standard AWS-managed policies required for SSM + CloudWatch + ECS container instances.
     NagSuppressions.addResourceSuppressions(ltConstruct.role, [
@@ -152,6 +179,16 @@ export class MonitoringInfraStack extends cdk.Stack {
           "Policy::arn:<AWS::Partition>:iam::aws:policy/AmazonSSMManagedInstanceCore",
           "Policy::arn:<AWS::Partition>:iam::aws:policy/CloudWatchAgentServerPolicy",
           "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role",
+        ],
+      },
+      {
+        id: "AwsSolutions-IAM5",
+        reason:
+          "SSM parameter access uses wildcard to allow reading monitoring configuration parameters. EFS access uses wildcard for mount operations.",
+        appliesTo: [
+          "Action::ssm:GetParameter",
+          "Action::ssm:GetParameters",
+          "Action::ssm:GetParametersByPath",
         ],
       },
     ]);
@@ -180,31 +217,9 @@ export class MonitoringInfraStack extends cdk.Stack {
     // Use the ASG from the ECS cluster construct (avoids duplicate ASGs)
     this.autoScalingGroup = ecsClusterConstruct.asg;
 
-    // Add EFS permissions to ASG role
-    this.autoScalingGroup.role.addToPrincipalPolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: [
-          "elasticfilesystem:ClientMount",
-          "elasticfilesystem:ClientWrite",
-          "elasticfilesystem:ClientRootAccess",
-        ],
-        resources: [fileSystem.fileSystemArn],
-      })
-    );
-
-    // Add SSM permissions to ASG role
-    this.autoScalingGroup.role.addToPrincipalPolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: [
-          "ssm:GetParameter",
-          "ssm:GetParameters",
-          "ssm:GetParametersByPath",
-        ],
-        resources: ["*"],
-      })
-    );
+    // NOTE: EFS and SSM permissions are added to the INSTANCE role (ltConstruct.role)
+    // above, not the ASG role. The ASG role is only for Auto Scaling lifecycle operations.
+    // The instance role (from launch template) is what EC2 instances actually use.
 
     // ========================================================================
     // APPLICATION LOAD BALANCER
