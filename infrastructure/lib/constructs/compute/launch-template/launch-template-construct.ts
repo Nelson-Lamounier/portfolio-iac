@@ -36,7 +36,6 @@ export class LaunchTemplateConstruct extends Construct {
   public readonly launchTemplate: ec2.LaunchTemplate;
   public readonly securityGroup: ec2.SecurityGroup;
   public readonly role: iam.Role; // Always concrete Role type
-  public readonly instanceProfile: iam.InstanceProfile; // Instance profile for the role
 
   constructor(
     scope: Construct,
@@ -107,10 +106,10 @@ export class LaunchTemplateConstruct extends Construct {
       });
 
     // CRITICAL: Create instance profile explicitly
-    // CDK normally creates this automatically when role is set on launch template,
-    // but we create it explicitly to ensure it's properly referenced and not lost
+    // Even though CDK creates one automatically when we pass role to LaunchTemplate,
+    // we create our own to ensure we can reference it explicitly and it's not lost
     // when we override NetworkInterfaces
-    this.instanceProfile = new iam.InstanceProfile(this, "InstanceProfile", {
+    const instanceProfile = new iam.InstanceProfile(this, "InstanceProfile", {
       role: this.role,
     });
 
@@ -252,12 +251,13 @@ export class LaunchTemplateConstruct extends Construct {
       );
     }
 
-    // CRITICAL: Explicitly set IamInstanceProfile to ensure it's attached to instances
-    // Even though we pass role to launch template (which should create instance profile automatically),
-    // we explicitly set it here to ensure it's not removed when we override NetworkInterfaces
-    // We use the instance profile we created explicitly above
-    const cfnInstanceProfile = this.instanceProfile.node
+    // CRITICAL: Explicitly set IamInstanceProfile using our instance profile
+    // We create the instance profile explicitly above, and now we reference it
+    // This ensures it's set even when we override NetworkInterfaces
+    const cfnInstanceProfile = instanceProfile.node
       .defaultChild as iam.CfnInstanceProfile;
+    // Use the instance profile's ARN - this is the most reliable way
+    // The ARN will be resolved at CloudFormation deployment time
     cfnLaunchTemplate.addPropertyOverride(
       "LaunchTemplateData.IamInstanceProfile",
       {
