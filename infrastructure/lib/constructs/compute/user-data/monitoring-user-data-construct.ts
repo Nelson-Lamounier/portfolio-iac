@@ -101,7 +101,8 @@ export class MonitoringUserDataConstruct extends Construct {
   private addScriptHeader(envName: string): void {
     this.userDataCommands.push(
       "#!/bin/bash",
-      "set -e",
+      "# NOTE: set -e is NOT used - we want the script to continue even if some steps fail",
+      "# This allows ECS agent and EFS mounting to retry later if they fail initially",
       "",
       "# ==========================================================================",
       `# MONITORING INFRASTRUCTURE SETUP - ${envName.toUpperCase()}`,
@@ -179,7 +180,6 @@ export class MonitoringUserDataConstruct extends Construct {
       "MOUNT_RETRIES=5",
       "# Do NOT fail the whole boot if EFS isn't ready yet. We'll retry and continue.",
       "EFS_MOUNTED=false",
-      "set +e",
       "for i in $(seq 1 $MOUNT_RETRIES); do",
       `  echo "EFS mount attempt $i of $MOUNT_RETRIES"`,
       `  if timeout 90 mount -t efs -o tls,iam ${props.fileSystemId}:/ /mnt/efs; then`,
@@ -191,14 +191,12 @@ export class MonitoringUserDataConstruct extends Construct {
       "    sleep 10",
       "  fi",
       "done",
-      "set -e",
       "",
       "# Verify EFS mount is working",
       "if ! mountpoint -q /mnt/efs; then",
       "  echo 'WARNING: EFS is not mounted yet. Instance will still register to ECS.'",
       "  echo '         A background retry will continue attempting the mount.'",
       "  (",
-      "    set +e",
       "    for i in $(seq 1 30); do",
       '      echo "Background EFS mount retry $i/30"',
       `      timeout 90 mount -t efs -o tls,iam ${props.fileSystemId}:/ /mnt/efs && break`,
@@ -392,13 +390,14 @@ export class MonitoringUserDataConstruct extends Construct {
       "ls -la /mnt/efs/",
       "ls -la /mnt/efs/config/ 2>/dev/null || echo 'Config directory not found'",
       "",
-      "# Final verification - ensure symlinks point to EFS",
+      "# Final verification - ensure symlinks point to EFS (non-fatal)",
+      "# Note: If EFS isn't mounted yet, symlinks may not exist - this is OK, they'll be created later",
       "for link in prometheus-data grafana-data prometheus-config grafana-provisioning grafana-dashboards; do",
       '  if [ -L "/mnt/$link" ]; then',
       '    echo "✓ /mnt/$link -> $(readlink /mnt/$link)"',
       "  else",
-      '    echo "✗ /mnt/$link is not a symlink!"',
-      "    exit 1",
+      '    echo "WARNING: /mnt/$link is not a symlink (EFS may not be mounted yet - will retry later)"',
+      "    # Don't exit - allow script to continue",
       "  fi",
       "done",
       "",
@@ -517,14 +516,11 @@ export class MonitoringUserDataConstruct extends Construct {
       "",
       "# Start and enable ECS agent (non-fatal - may fail if IAM role not attached yet)",
       "echo 'Starting ECS agent...'",
-      "set +e", // Temporarily disable exit on error for ECS agent operations
       "systemctl enable ecs || echo 'WARNING: Failed to enable ECS service (may retry later)'",
       "systemctl start ecs || echo 'WARNING: Failed to start ECS agent (will retry below)'",
-      "set -e", // Re-enable exit on error for rest of script
       "",
       "# Verify ECS agent is running (with retries - IAM role attachment can take time)",
       "echo 'Waiting for ECS agent to start...'",
-      "set +e", // Disable exit on error for retry loop
       "RETRY_COUNT=0",
       "MAX_RETRIES=12", // 2 minutes total (10s * 12)
       "while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do",
@@ -539,10 +535,8 @@ export class MonitoringUserDataConstruct extends Construct {
       "    sleep 10",
       "  fi",
       "done",
-      "set -e", // Re-enable exit on error
       "",
       "# Final check - log warning but don't fail (instance can still register later)",
-      "set +e", // Disable exit on error for final check
       "if ! systemctl is-active ecs >/dev/null 2>&1; then",
       "  echo 'WARNING: ECS agent not active after $MAX_RETRIES attempts'",
       "  echo 'This may be due to IAM role attachment delay - agent may start later'",
@@ -551,7 +545,6 @@ export class MonitoringUserDataConstruct extends Construct {
       "else",
       "  echo '✓ ECS agent verified running'",
       "fi",
-      "set -e", // Re-enable exit on error
       ""
     );
   }
