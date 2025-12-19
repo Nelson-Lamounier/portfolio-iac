@@ -36,6 +36,7 @@ export class LaunchTemplateConstruct extends Construct {
   public readonly launchTemplate: ec2.LaunchTemplate;
   public readonly securityGroup: ec2.SecurityGroup;
   public readonly role: iam.Role; // Always concrete Role type
+  public readonly instanceProfile: iam.InstanceProfile; // Instance profile for the role
 
   constructor(
     scope: Construct,
@@ -104,6 +105,14 @@ export class LaunchTemplateConstruct extends Construct {
           ),
         ],
       });
+
+    // CRITICAL: Create instance profile explicitly
+    // CDK normally creates this automatically when role is set on launch template,
+    // but we create it explicitly to ensure it's properly referenced and not lost
+    // when we override NetworkInterfaces
+    this.instanceProfile = new iam.InstanceProfile(this, "InstanceProfile", {
+      role: this.role,
+    });
 
     // Default user data - ensure SSM agent is installed and running
     const userData = props.userData || ec2.UserData.forLinux();
@@ -175,12 +184,14 @@ export class LaunchTemplateConstruct extends Construct {
     ];
 
     // Create the launch template
+    // NOTE: We pass role (not instanceProfile) - CDK will create instance profile automatically
+    // But we also created instanceProfile explicitly above to ensure it exists
     this.launchTemplate = new ec2.LaunchTemplate(this, "LaunchTemplate", {
       launchTemplateName: `${cdk.Stack.of(this).stackName}-template`,
       instanceType,
       machineImage,
       userData,
-      role: this.role,
+      role: this.role, // CDK will create instance profile automatically from this role
       ...(props.securityGroups && props.securityGroups.length > 0
         ? {
             securityGroups: [this.securityGroup, ...props.securityGroups],
@@ -240,6 +251,19 @@ export class LaunchTemplateConstruct extends Construct {
         ]
       );
     }
+
+    // CRITICAL: Explicitly set IamInstanceProfile to ensure it's attached to instances
+    // Even though we pass role to launch template (which should create instance profile automatically),
+    // we explicitly set it here to ensure it's not removed when we override NetworkInterfaces
+    // We use the instance profile we created explicitly above
+    const cfnInstanceProfile = this.instanceProfile.node
+      .defaultChild as iam.CfnInstanceProfile;
+    cfnLaunchTemplate.addPropertyOverride(
+      "LaunchTemplateData.IamInstanceProfile",
+      {
+        Arn: cfnInstanceProfile.getAtt("Arn"),
+      }
+    );
 
     // Tag service
     Tags.of(this.launchTemplate).add("Environment", props.envName);
