@@ -219,6 +219,10 @@ export class LaunchTemplateConstruct extends Construct {
       httpTokens: ec2.LaunchTemplateHttpTokens.REQUIRED, // IMDSv2 required
     });
 
+    // CDK automatically compresses user data if it exceeds 16KB using gzip compression
+    // and multi-part MIME format. No explicit configuration needed - CDK handles this.
+    // The user data will be base64 encoded and gzip compressed automatically.
+
     // Explicitly enforce IMDSv2 requirement via CloudFormation property override
     // This ensures the setting is applied correctly in the generated template
     // Even though we set requireImdsv2 and httpTokens, the override guarantees it works
