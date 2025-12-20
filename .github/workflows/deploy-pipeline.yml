@@ -653,7 +653,8 @@ jobs:
       - name: Build with Turbo
         run: |
           echo "🚀 Building infrastructure with Turbo..."
-          yarn turbo build --filter=infrastructure
+          # Use npx to run turbo (avoids Yarn script lookup issues)
+          npx turbo build --filter=infrastructure
 
           echo "📊 Build Results:"
           if [ -d "infrastructure/dist" ]; then

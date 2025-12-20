@@ -127,7 +127,7 @@ runs:
           # Fallback: build infrastructure if cache miss
           if [ -d "infrastructure" ]; then
             cd infrastructure
-            if yarn turbo build --filter=infrastructure; then
+            if npx turbo build --filter=infrastructure; then
               if [ -d "dist" ]; then
                 DIST_FILES=$(find dist -name "*.js" | wc -l)
                 echo "✅ Fallback Build Successful: $DIST_FILES JavaScript files created"
