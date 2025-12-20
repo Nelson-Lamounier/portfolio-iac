@@ -244,7 +244,8 @@ describe("Comprehensive Monitoring Infrastructure Tests", () => {
         {
           Port: 9090,
           Protocol: "HTTP",
-          HealthCheckPath: "/prometheus/-/healthy",
+          HealthCheckPath: "/-/healthy", // Direct container health check (not through ALB routing)
+          HealthCheckTimeoutSeconds: 10, // Increased from 5s to 10s for Prometheus startup
         }
       );
 
@@ -254,7 +255,8 @@ describe("Comprehensive Monitoring Infrastructure Tests", () => {
         {
           Port: 3000,
           Protocol: "HTTP",
-          HealthCheckPath: "/grafana/api/health",
+          HealthCheckPath: "/api/health", // Direct container health check (not through ALB routing)
+          HealthCheckTimeoutSeconds: 10, // Increased from 5s to 10s for Grafana startup
         }
       );
     });

@@ -173,7 +173,7 @@ export class PrometheusConstruct extends Construct {
       // Deployment configuration
       minHealthyPercent: 0, // Allow restart
       maxHealthyPercent: 100, // Single instance
-      healthCheckGracePeriod: cdk.Duration.seconds(60),
+      healthCheckGracePeriod: cdk.Duration.seconds(180), // Increased from 60s to 180s to allow Prometheus time to start and load configuration
 
       // Enable circuit breaker
       enableCircuitBreaker: false,

@@ -172,6 +172,8 @@ export class MonitoringServiceStack extends cdk.Stack {
     listener: elbv2.IApplicationListener
   ): void {
     // Grafana target group
+    // Note: When using TargetType.INSTANCE, health checks hit the container directly on port 3000
+    // The health check path should be /api/health (not /grafana/api/health) because it bypasses ALB routing
     const grafanaTargetGroup = new elbv2.ApplicationTargetGroup(
       this,
       "GrafanaTargetGroup",
@@ -181,10 +183,10 @@ export class MonitoringServiceStack extends cdk.Stack {
         vpc: cluster.vpc,
         targetType: elbv2.TargetType.INSTANCE,
         healthCheck: {
-          path: "/grafana/api/health",
+          path: "/api/health", // Direct container health check (not through ALB routing)
           healthyHttpCodes: "200",
           interval: cdk.Duration.seconds(30),
-          timeout: cdk.Duration.seconds(5),
+          timeout: cdk.Duration.seconds(10), // Increased from 5s to 10s for Grafana startup
           healthyThresholdCount: 2,
           unhealthyThresholdCount: 3,
         },
@@ -193,6 +195,8 @@ export class MonitoringServiceStack extends cdk.Stack {
     );
 
     // Prometheus target group
+    // Note: When using TargetType.INSTANCE, health checks hit the container directly on port 9090
+    // The health check path should be /-/healthy (not /prometheus/-/healthy) because it bypasses ALB routing
     const prometheusTargetGroup = new elbv2.ApplicationTargetGroup(
       this,
       "PrometheusTargetGroup",
@@ -202,10 +206,10 @@ export class MonitoringServiceStack extends cdk.Stack {
         vpc: cluster.vpc,
         targetType: elbv2.TargetType.INSTANCE,
         healthCheck: {
-          path: "/prometheus/-/healthy",
+          path: "/-/healthy", // Direct container health check (not through ALB routing)
           healthyHttpCodes: "200",
           interval: cdk.Duration.seconds(30),
-          timeout: cdk.Duration.seconds(5),
+          timeout: cdk.Duration.seconds(10), // Increased from 5s to 10s for Prometheus startup
           healthyThresholdCount: 2,
           unhealthyThresholdCount: 3,
         },
