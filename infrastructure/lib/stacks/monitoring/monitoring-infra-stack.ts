@@ -15,7 +15,8 @@ import { Construct } from "constructs";
 
 import { SuppressionManager } from "../../cdk-nag";
 import { MonitoringConfigBucketConstruct } from "../../constructs/monitoring";
-import { MonitoringUserDataConstruct } from "../../constructs/compute/user-data/monitoring-user-data-construct";
+import { MinimalUserDataConstruct } from "../../constructs/compute/user-data/minimal-user-data-construct";
+import { ApplicationSetupLambdaConstruct } from "../../constructs/monitoring/application-setup-lambda-construct";
 import { EcsClusterConstruct } from "../../constructs/compute/ecs";
 import { LaunchTemplateConstruct } from "../../constructs/compute/launch-template";
 import {
@@ -96,20 +97,19 @@ export class MonitoringInfraStack extends cdk.Stack {
     });
 
     // ========================================================================
-    // USER DATA FOR EC2 INSTANCES (created first to pass to cluster construct)
+    // MINIMAL USER DATA FOR EC2 INSTANCES (Infrastructure Registration Only)
+    // ========================================================================
+    // Phase 1: Minimal user data that only handles SSM + ECS registration
+    // Goal: Get instance into ECS cluster ASAP (~2-3KB, well under 16KB limit)
+    // Phase 2: Application setup (EFS, Prometheus, Grafana) handled by Lambda
     // ========================================================================
     const clusterName = `${envName}-monitoring-cluster`;
-    const userDataConstruct = new MonitoringUserDataConstruct(
+    const userDataConstruct = new MinimalUserDataConstruct(
       this,
       "UserData",
       {
-        clusterName,
-        fileSystemId: fileSystem.fileSystemId,
-        efsStackName,
         envName,
-        region: cdk.Stack.of(this).region,
-        enableEfsMount: true,
-        enableEcsAgent: true,
+        clusterName,
       }
     );
 
@@ -252,6 +252,24 @@ export class MonitoringInfraStack extends cdk.Stack {
     });
 
     this.listener = listenerConstruct.listener;
+
+    // ========================================================================
+    // APPLICATION SETUP LAMBDA (Phase 2: Application Setup)
+    // ========================================================================
+    // Handles EFS mounting, Prometheus, Grafana configuration after instance registers
+    // Triggered by EventBridge rule when container instance registers with ECS
+    // ========================================================================
+    const applicationSetupLambda = new ApplicationSetupLambdaConstruct(
+      this,
+      "ApplicationSetupLambda",
+      {
+        clusterName: this.cluster.clusterName,
+        fileSystemId: fileSystem.fileSystemId,
+        efsStackName,
+        region: cdk.Stack.of(this).region,
+        envName,
+      }
+    );
 
     // ========================================================================
     // CONFIGURATION BUCKET
