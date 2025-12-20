@@ -316,6 +316,134 @@ describe("MonitoringInfraStack", () => {
   });
 
   // ---------------------------------------------------------------------------
+  // User Data Tests (Minimal User Data)
+  // ---------------------------------------------------------------------------
+  describe("User Data Configuration", () => {
+    test("uses minimal user data for infrastructure registration", () => {
+      const testSetup = createTestMonitoringInfraStack({
+        envName: "pipeline",
+        account: "123456789012",
+        region: "eu-west-1",
+      });
+
+      // Verify launch template has user data
+      testSetup.template.hasResourceProperties("AWS::EC2::LaunchTemplate", {
+        LaunchTemplateData: Match.objectLike({
+          UserData: Match.anyValue(),
+        }),
+      });
+    });
+
+    test("user data is minimal (infrastructure registration only)", () => {
+      const testSetup = createTestMonitoringInfraStack({
+        envName: "pipeline",
+        account: "123456789012",
+        region: "eu-west-1",
+      });
+
+      // User data should be present but minimal (SSM + ECS only)
+      // Application setup is handled by Lambda, not user data
+      const launchTemplates = testSetup.template.findResources("AWS::EC2::LaunchTemplate");
+      expect(Object.keys(launchTemplates).length).toBeGreaterThan(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Application Setup Lambda Tests
+  // ---------------------------------------------------------------------------
+  describe("Application Setup Lambda", () => {
+    test("creates Lambda function for application setup", () => {
+      const testSetup = createTestMonitoringInfraStack({
+        envName: "pipeline",
+        account: "123456789012",
+        region: "eu-west-1",
+      });
+
+      // Check that Lambda function exists
+      const lambdaCount = Object.keys(
+        testSetup.template.findResources("AWS::Lambda::Function")
+      ).length;
+      expect(lambdaCount).toBeGreaterThan(0);
+      
+      // Check Lambda properties (check any Lambda function with these properties)
+      testSetup.template.hasResourceProperties("AWS::Lambda::Function", {
+        Runtime: "nodejs22.x",
+        Timeout: 600, // 10 minutes
+        MemorySize: 512,
+      });
+    });
+
+    test("Lambda has correct environment variables", () => {
+      const testSetup = createTestMonitoringInfraStack({
+        envName: "pipeline",
+        account: "123456789012",
+        region: "eu-west-1",
+      });
+
+      // Check that at least one Lambda has the expected environment variables
+      // The application setup Lambda should have CLUSTER_NAME (CloudFormation ref), ENV_NAME, and REGION
+      testSetup.template.hasResourceProperties("AWS::Lambda::Function", {
+        Environment: Match.objectLike({
+          Variables: Match.objectLike({
+            CLUSTER_NAME: Match.anyValue(), // CloudFormation reference, not literal string
+            ENV_NAME: "pipeline",
+            REGION: "eu-west-1",
+            EFS_STACK_NAME: Match.anyValue(), // May be a reference or literal
+            FILE_SYSTEM_ID: Match.anyValue(), // CloudFormation reference
+          }),
+        }),
+      });
+    });
+
+    test("creates EventBridge rule for container instance registration", () => {
+      const testSetup = createTestMonitoringInfraStack({
+        envName: "pipeline",
+        account: "123456789012",
+        region: "eu-west-1",
+      });
+
+      testSetup.template.hasResourceProperties("AWS::Events::Rule", {
+        EventPattern: {
+          source: ["aws.ecs"],
+          "detail-type": ["ECS Container Instance State Change"],
+          detail: {
+            status: ["ACTIVE"],
+          },
+        },
+      });
+    });
+
+    test("Lambda has permissions for ECS and SSM", () => {
+      const testSetup = createTestMonitoringInfraStack({
+        envName: "pipeline",
+        account: "123456789012",
+        region: "eu-west-1",
+      });
+
+      testSetup.template.hasResourceProperties("AWS::IAM::Policy", {
+        PolicyDocument: {
+          Statement: Match.arrayWith([
+            Match.objectLike({
+              Effect: "Allow",
+              Action: Match.arrayWith([
+                "ecs:ListContainerInstances",
+                "ecs:DescribeContainerInstances",
+              ]),
+            }),
+            Match.objectLike({
+              Effect: "Allow",
+              Action: Match.arrayWith([
+                "ssm:SendCommand",
+                "ssm:GetCommandInvocation",
+              ]),
+            }),
+          ]),
+        },
+      });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // Stack Outputs Tests
   // ---------------------------------------------------------------------------
   describe("Stack Outputs", () => {

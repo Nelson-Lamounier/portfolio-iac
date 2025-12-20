@@ -49,14 +49,14 @@ export class ApplicationSetupLambdaConstruct extends Construct {
 
     // Create Lambda function
     // Path resolution: __dirname in compiled code is dist/lib/constructs/monitoring/
-    // From there: ../../ goes to dist/lib/, then lambda/monitoring/application-setup/
-    // But our Lambda is at infrastructure/lambda/..., so we need to go up 4 levels
-    // Alternative: Use path relative to infrastructure root
-    const infrastructureRoot = path.resolve(__dirname, "../../../../");
-    const lambdaEntryPath = path.join(
-      infrastructureRoot,
-      "lambda/monitoring/application-setup/index.ts"
-    );
+    // In source/test: __dirname is lib/constructs/monitoring/
+    // From lib/constructs/monitoring/: ../../ goes to lib/, then ../ goes to infrastructure root
+    // Then lambda/monitoring/application-setup/index.ts
+    // From dist/lib/constructs/monitoring/: ../../../../ goes to repo root, then infrastructure/lambda/...
+    const isCompiled = __dirname.includes("/dist/");
+    const lambdaEntryPath = isCompiled
+      ? path.join(path.resolve(__dirname, "../../../../"), "infrastructure/lambda/monitoring/application-setup/index.ts")
+      : path.join(path.resolve(__dirname, "../../../"), "lambda/monitoring/application-setup/index.ts");
 
     this.function = new nodejs.NodejsFunction(this, "Function", {
       entry: lambdaEntryPath,
