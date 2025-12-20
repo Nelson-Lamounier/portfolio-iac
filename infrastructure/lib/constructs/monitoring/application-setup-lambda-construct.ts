@@ -48,15 +48,31 @@ export class ApplicationSetupLambdaConstruct extends Construct {
     });
 
     // Create Lambda function
-    // Path resolution: __dirname in compiled code is dist/lib/constructs/monitoring/
-    // In source/test: __dirname is lib/constructs/monitoring/
-    // From lib/constructs/monitoring/: ../../ goes to lib/, then ../ goes to infrastructure root
-    // Then lambda/monitoring/application-setup/index.ts
-    // From dist/lib/constructs/monitoring/: ../../../../ goes to repo root, then infrastructure/lambda/...
+    // Path resolution: Handle both compiled (dist/) and source (lib/) contexts
+    // - From lib/constructs/monitoring/: ../../../ goes to infrastructure root, then lambda/...
+    // - From dist/lib/constructs/monitoring/: ../../../../ goes to infrastructure root (when running from infrastructure/)
+    //   or repo root (when running from repo root)
     const isCompiled = __dirname.includes("/dist/");
-    const lambdaEntryPath = isCompiled
-      ? path.join(path.resolve(__dirname, "../../../../"), "infrastructure/lambda/monitoring/application-setup/index.ts")
-      : path.join(path.resolve(__dirname, "../../../"), "lambda/monitoring/application-setup/index.ts");
+    let lambdaEntryPath: string;
+    
+    if (isCompiled) {
+      // Compiled: dist/lib/constructs/monitoring/ -> ../../../../ -> infrastructure root or repo root
+      const possibleRoot = path.resolve(__dirname, "../../../../");
+      const fs = require("fs");
+      
+      // Try lambda/ directly first (if already in infrastructure directory)
+      const pathDirect = path.join(possibleRoot, "lambda/monitoring/application-setup/index.ts");
+      if (fs.existsSync(pathDirect)) {
+        lambdaEntryPath = pathDirect;
+      } else {
+        // Try infrastructure/lambda/ (if running from repo root)
+        const pathWithInfra = path.join(possibleRoot, "infrastructure/lambda/monitoring/application-setup/index.ts");
+        lambdaEntryPath = pathWithInfra;
+      }
+    } else {
+      // Source/test: lib/constructs/monitoring/ -> ../../../ -> infrastructure root
+      lambdaEntryPath = path.join(path.resolve(__dirname, "../../../"), "lambda/monitoring/application-setup/index.ts");
+    }
 
     this.function = new nodejs.NodejsFunction(this, "Function", {
       entry: lambdaEntryPath,
