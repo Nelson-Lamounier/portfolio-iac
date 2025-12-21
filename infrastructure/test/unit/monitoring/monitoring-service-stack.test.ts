@@ -159,9 +159,12 @@ describe("MonitoringServiceStack", () => {
           Port: 3000,
           Protocol: "HTTP",
           TargetType: "instance",
-          HealthCheckPath: "/api/health", // Direct container health check (not through ALB routing)
-          HealthCheckIntervalSeconds: 30,
-          HealthCheckTimeoutSeconds: 10, // Increased from 5s to 10s for Grafana startup
+          HealthCheckPath: "/", // Root path - Grafana may redirect, so accept 200, 301, 302
+          HealthCheckIntervalSeconds: 60, // Increased from 30s to 60s
+          HealthCheckTimeoutSeconds: 30, // Increased from 10s to 30s for Grafana startup
+          Matcher: {
+            HttpCode: "200,301,302", // Accept redirects as healthy
+          },
           HealthyThresholdCount: 2,
           UnhealthyThresholdCount: 3,
         }
@@ -175,9 +178,9 @@ describe("MonitoringServiceStack", () => {
           Port: 9090,
           Protocol: "HTTP",
           TargetType: "instance",
-          HealthCheckPath: "/-/healthy", // Direct container health check (not through ALB routing)
-          HealthCheckIntervalSeconds: 30,
-          HealthCheckTimeoutSeconds: 10, // Increased from 5s to 10s for Prometheus startup
+          HealthCheckPath: "/", // Root path - Prometheus root endpoint works for health checks
+          HealthCheckIntervalSeconds: 60, // Increased from 30s to 60s
+          HealthCheckTimeoutSeconds: 30, // Increased from 10s to 30s for Prometheus startup
           HealthyThresholdCount: 2,
           UnhealthyThresholdCount: 3,
         }

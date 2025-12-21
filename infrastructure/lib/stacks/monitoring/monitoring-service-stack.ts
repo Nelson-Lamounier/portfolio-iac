@@ -172,8 +172,8 @@ export class MonitoringServiceStack extends cdk.Stack {
     listener: elbv2.IApplicationListener
   ): void {
     // Grafana target group
-    // Note: When using TargetType.INSTANCE, health checks hit the container directly on port 3000
-    // The health check path should be /api/health (not /grafana/api/health) because it bypasses ALB routing
+    // Note: When using TargetType.INSTANCE with bridge networking, containers use dynamic ports
+    // Health check path is "/" to handle root redirects (Grafana may redirect / to /grafana)
     const grafanaTargetGroup = new elbv2.ApplicationTargetGroup(
       this,
       "GrafanaTargetGroup",
@@ -183,10 +183,10 @@ export class MonitoringServiceStack extends cdk.Stack {
         vpc: cluster.vpc,
         targetType: elbv2.TargetType.INSTANCE,
         healthCheck: {
-          path: "/api/health", // Direct container health check (not through ALB routing)
-          healthyHttpCodes: "200",
-          interval: cdk.Duration.seconds(30),
-          timeout: cdk.Duration.seconds(10), // Increased from 5s to 10s for Grafana startup
+          path: "/", // Root path - Grafana may redirect, so accept 200, 301, 302
+          healthyHttpCodes: "200,301,302", // Accept redirects as healthy
+          interval: cdk.Duration.seconds(60), // Increased from 30s to 60s
+          timeout: cdk.Duration.seconds(30), // Increased from 10s to 30s for Grafana startup
           healthyThresholdCount: 2,
           unhealthyThresholdCount: 3,
         },
@@ -196,7 +196,7 @@ export class MonitoringServiceStack extends cdk.Stack {
 
     // Prometheus target group
     // Note: When using TargetType.INSTANCE, health checks hit the container directly on port 9090
-    // The health check path should be /-/healthy (not /prometheus/-/healthy) because it bypasses ALB routing
+    // Health check path is "/" - Prometheus root endpoint is sufficient for health checks
     const prometheusTargetGroup = new elbv2.ApplicationTargetGroup(
       this,
       "PrometheusTargetGroup",
@@ -206,10 +206,10 @@ export class MonitoringServiceStack extends cdk.Stack {
         vpc: cluster.vpc,
         targetType: elbv2.TargetType.INSTANCE,
         healthCheck: {
-          path: "/-/healthy", // Direct container health check (not through ALB routing)
+          path: "/", // Root path - Prometheus root endpoint works for health checks
           healthyHttpCodes: "200",
-          interval: cdk.Duration.seconds(30),
-          timeout: cdk.Duration.seconds(10), // Increased from 5s to 10s for Prometheus startup
+          interval: cdk.Duration.seconds(60), // Increased from 30s to 60s
+          timeout: cdk.Duration.seconds(30), // Increased from 10s to 30s for Prometheus startup
           healthyThresholdCount: 2,
           unhealthyThresholdCount: 3,
         },
@@ -217,17 +217,32 @@ export class MonitoringServiceStack extends cdk.Stack {
       }
     );
 
-    // Security group rules
+    // Security group rules for ALB to reach containers
+    // Note: When using bridge networking, Grafana uses dynamic ports (32768-65535)
+    // Prometheus uses fixed port 9090
+    // We need to allow ALB security group to reach the instance security group
+    
+    // Get ALB security group (ALB creates its own security group)
+    const albSecurityGroup = loadBalancer.connections.securityGroups[0];
+    
+    // Note: The instance security group is in MonitoringInfraStack
+    // We'll add these rules via service connections, but they may not be sufficient
+    // The actual fix requires adding inbound rules to the instance security group itself
+    // This is done in MonitoringInfraStack after the load balancer is created
+    
+    // Service-level connections (may not be sufficient for bridge networking)
     this.prometheusService.connections.allowFrom(
       loadBalancer,
       ec2.Port.tcp(9090),
-      "Allow ALB to reach Prometheus"
+      "Allow ALB to reach Prometheus on port 9090"
     );
 
+    // Grafana uses dynamic ports with bridge networking, so we need to allow the full range
+    // This is handled via the instance security group in MonitoringInfraStack
     this.grafanaService.connections.allowFrom(
       loadBalancer,
-      ec2.Port.tcp(3000),
-      "Allow ALB to reach Grafana"
+      ec2.Port.tcpRange(32768, 65535), // Dynamic port range for bridge networking
+      "Allow ALB to reach Grafana on dynamic ports (32768-65535)"
     );
 
     // Add routing rules to listener

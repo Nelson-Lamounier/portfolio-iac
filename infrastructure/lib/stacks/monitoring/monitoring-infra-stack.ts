@@ -254,6 +254,29 @@ export class MonitoringInfraStack extends cdk.Stack {
     this.listener = listenerConstruct.listener;
 
     // ========================================================================
+    // SECURITY GROUP RULES: Allow ALB to reach containers on instances
+    // ========================================================================
+    // CRITICAL: EC2 instances need inbound rules to allow ALB health checks and traffic
+    // - Grafana uses bridge networking with dynamic ports (32768-65535)
+    // - Prometheus uses fixed port 9090
+    // Without these rules, ALB health checks will timeout and tasks will be marked unhealthy
+    const albSecurityGroup = this.loadBalancer.connections.securityGroups[0];
+    
+    // Allow ALB to reach Grafana on dynamic ports (bridge networking)
+    ltConstruct.securityGroup.addIngressRule(
+      albSecurityGroup,
+      ec2.Port.tcpRange(32768, 65535),
+      "Allow ALB to reach Grafana containers on dynamic ports (bridge networking)"
+    );
+    
+    // Allow ALB to reach Prometheus on fixed port 9090
+    ltConstruct.securityGroup.addIngressRule(
+      albSecurityGroup,
+      ec2.Port.tcp(9090),
+      "Allow ALB to reach Prometheus on port 9090"
+    );
+
+    // ========================================================================
     // APPLICATION SETUP LAMBDA (Phase 2: Application Setup)
     // ========================================================================
     // Handles EFS mounting, Prometheus, Grafana configuration after instance registers
