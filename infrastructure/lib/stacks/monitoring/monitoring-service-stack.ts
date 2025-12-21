@@ -196,7 +196,7 @@ export class MonitoringServiceStack extends cdk.Stack {
 
     // Prometheus target group
     // Note: When using TargetType.INSTANCE, health checks hit the container directly on port 9090
-    // Health check path is "/" - Prometheus root endpoint is sufficient for health checks
+    // Health check path is "/" - Prometheus may redirect, so accept 200, 301, 302
     const prometheusTargetGroup = new elbv2.ApplicationTargetGroup(
       this,
       "PrometheusTargetGroup",
@@ -206,8 +206,8 @@ export class MonitoringServiceStack extends cdk.Stack {
         vpc: cluster.vpc,
         targetType: elbv2.TargetType.INSTANCE,
         healthCheck: {
-          path: "/", // Root path - Prometheus root endpoint works for health checks
-          healthyHttpCodes: "200",
+          path: "/", // Root path - Prometheus may redirect, so accept 200, 301, 302
+          healthyHttpCodes: "200,301,302", // Accept redirects as healthy (Prometheus returns 302 redirects)
           interval: cdk.Duration.seconds(60), // Increased from 30s to 60s
           timeout: cdk.Duration.seconds(30), // Increased from 10s to 30s for Prometheus startup
           healthyThresholdCount: 2,

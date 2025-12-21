@@ -244,9 +244,12 @@ describe("Comprehensive Monitoring Infrastructure Tests", () => {
         {
           Port: 9090,
           Protocol: "HTTP",
-          HealthCheckPath: "/", // Root path - Prometheus root endpoint works for health checks
+          HealthCheckPath: "/", // Root path - Prometheus may redirect, so accept 200, 301, 302
           HealthCheckIntervalSeconds: 60, // Increased from 30s to 60s
           HealthCheckTimeoutSeconds: 30, // Increased from 10s to 30s for Prometheus startup
+          Matcher: {
+            HttpCode: "200,301,302", // Accept redirects as healthy (Prometheus returns 302 redirects)
+          },
         }
       );
 
