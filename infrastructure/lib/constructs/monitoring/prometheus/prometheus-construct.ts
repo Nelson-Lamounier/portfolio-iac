@@ -161,6 +161,7 @@ export class PrometheusConstruct extends Construct {
     // 3. ADD IAM PERMISSIONS FOR EC2 SERVICE DISCOVERY
     // ========================================================================
     if (props.enableEc2ServiceDiscovery !== false) {
+      // EC2 service discovery permissions (same account)
       this.taskDefinition.taskRole.addToPrincipalPolicy(
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
@@ -168,8 +169,25 @@ export class PrometheusConstruct extends Construct {
             "ec2:DescribeInstances",
             "ec2:DescribeAvailabilityZones",
             "ec2:DescribeTags",
+            "ec2:DescribeInstanceStatus",
+            "ec2:DescribeRegions",
           ],
           resources: ["*"],
+        })
+      );
+
+      // STS AssumeRole permissions for cross-account EC2 service discovery
+      // Prometheus needs this to assume roles in other accounts for EC2 service discovery
+      // The role ARNs will be in the format: arn:aws:iam::ACCOUNT:role/env-PipelineMonitoringAccess
+      this.taskDefinition.taskRole.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ["sts:AssumeRole"],
+          resources: [
+            // Allow assuming cross-account monitoring roles
+            // Pattern: arn:aws:iam::*:role/*-PipelineMonitoringAccess
+            "arn:aws:iam::*:role/*-PipelineMonitoringAccess",
+          ],
         })
       );
     }

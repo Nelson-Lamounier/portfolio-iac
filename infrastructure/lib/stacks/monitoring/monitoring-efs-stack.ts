@@ -219,27 +219,198 @@ export class MonitoringEfsStack extends cdk.Stack {
     envName: string,
     crossAccountTargets?: CrossAccountTarget[]
   ): void {
+    const region = cdk.Stack.of(this).region;
+
+    // Prometheus scrape configuration type
+    type ScrapeConfig = {
+      job_name: string;
+      static_configs?: Array<{
+        targets: string[];
+        labels?: Record<string, string>;
+      }>;
+      ec2_sd_configs?: Array<{
+        region: string;
+        role_arn?: string;
+        port: number;
+        filters: Array<{ name: string; values: string[] }>;
+      }>;
+      relabel_configs?: Array<{
+        source_labels: string[];
+        target_label: string;
+        replacement?: string;
+      }>;
+      metrics_path?: string;
+    };
+
     // Prometheus configuration
+    const scrapeConfigs: ScrapeConfig[] = [
+      {
+        job_name: "prometheus",
+        static_configs: [{ targets: ["localhost:9090"] }],
+        metrics_path: "/prometheus/metrics",
+      },
+      {
+        job_name: "node-exporter",
+        static_configs: [{ targets: ["localhost:9100"] }],
+      },
+    ];
+
+    // Add pipeline account EC2 service discovery (same account - no role_arn needed)
+    scrapeConfigs.push({
+      job_name: "node-exporter-pipeline",
+      ec2_sd_configs: [
+        {
+          region: region,
+          port: 9100,
+          filters: [
+            {
+              name: "tag:Environment",
+              values: [envName],
+            },
+            {
+              name: "tag:Service",
+              values: ["NodeExporter", "monitoring"],
+            },
+            {
+              name: "instance-state-name",
+              values: ["running"],
+            },
+          ],
+        },
+      ],
+      relabel_configs: [
+        {
+          source_labels: ["__meta_ec2_private_ip"],
+          target_label: "__address__",
+          replacement: "${1}:9100",
+        },
+        {
+          source_labels: ["__meta_ec2_tag_Environment"],
+          target_label: "environment",
+        },
+        {
+          source_labels: ["__meta_ec2_tag_Service"],
+          target_label: "service",
+        },
+        {
+          source_labels: ["__meta_ec2_instance_id"],
+          target_label: "instance_id",
+        },
+        {
+          source_labels: ["__meta_ec2_tag_Name"],
+          target_label: "instance_name",
+        },
+      ],
+    });
+
+    // Add cross-account targets using EC2 service discovery or static configs
+    if (crossAccountTargets && crossAccountTargets.length > 0) {
+      // Group targets by environment and type
+      const targetsByEnv = crossAccountTargets.reduce(
+        (acc, target) => {
+          const key = `${target.envName}-${target.targetType}`;
+          if (!acc[key]) {
+            acc[key] = [];
+          }
+          acc[key].push(target);
+          return acc;
+        },
+        {} as Record<string, CrossAccountTarget[]>
+      );
+
+      // Generate scrape configs for each environment/type combination
+      for (const targets of Object.values(targetsByEnv)) {
+        const firstTarget = targets[0];
+        const useEc2Sd =
+          firstTarget.useEc2ServiceDiscovery !== false &&
+          firstTarget.accountId &&
+          firstTarget.roleArn;
+
+        if (useEc2Sd) {
+          // Use EC2 service discovery for cross-account scraping
+          scrapeConfigs.push({
+            job_name: `${firstTarget.targetType}-${firstTarget.envName}`,
+            ec2_sd_configs: [
+              {
+                region: region,
+                role_arn: firstTarget.roleArn,
+                port: firstTarget.port,
+                filters: [
+                  {
+                    name: "tag:Environment",
+                    values: [firstTarget.envName],
+                  },
+                  {
+                    name: "instance-state-name",
+                    values: ["running"],
+                  },
+                  ...(firstTarget.targetType === "node-exporter"
+                    ? [
+                        {
+                          name: "tag:Service",
+                          values: ["NodeExporter", "monitoring"],
+                        },
+                      ]
+                    : []),
+                ],
+              },
+            ],
+            relabel_configs: [
+              {
+                source_labels: ["__meta_ec2_private_ip"],
+                target_label: "__address__",
+                replacement: `\${1}:${firstTarget.port}`,
+              },
+              {
+                source_labels: ["__meta_ec2_tag_Environment"],
+                target_label: "environment",
+              },
+              {
+                source_labels: ["__meta_ec2_instance_id"],
+                target_label: "instance_id",
+              },
+              {
+                source_labels: ["__meta_ec2_tag_Name"],
+                target_label: "instance_name",
+              },
+              {
+                source_labels: ["__meta_ec2_tag_Service"],
+                target_label: "service",
+              },
+            ],
+            metrics_path: firstTarget.metricsPath || "/metrics",
+          });
+        } else if (firstTarget.privateIp) {
+          // Fallback to static configs if EC2 SD not available
+          scrapeConfigs.push({
+            job_name: `${firstTarget.targetType}-${firstTarget.envName}`,
+            static_configs: [
+              {
+                targets: targets.map((t) => `${t.privateIp}:${t.port}`),
+                labels: {
+                  environment: firstTarget.envName,
+                  service: firstTarget.targetType,
+                  account: firstTarget.accountId || firstTarget.envName,
+                },
+              },
+            ],
+            metrics_path: firstTarget.metricsPath || "/metrics",
+          });
+        }
+      }
+    }
+
     const prometheusConfig = {
       global: {
         scrape_interval: "15s",
         evaluation_interval: "15s",
+        external_labels: {
+          environment: envName,
+          cluster: `${envName}-monitoring`,
+        },
       },
-      scrape_configs: [
-        {
-          job_name: "prometheus",
-          static_configs: [{ targets: ["localhost:9090"] }],
-        },
-        {
-          job_name: "node-exporter",
-          static_configs: [{ targets: ["localhost:9100"] }],
-        },
-        ...(crossAccountTargets?.map((target) => ({
-          job_name: `${target.targetType}-${target.envName}`,
-          static_configs: [{ targets: [`${target.privateIp}:${target.port}`] }],
-          metrics_path: target.metricsPath || "/metrics",
-        })) || []),
-      ],
+      rule_files: ["/etc/prometheus/alerts.yml"],
+      scrape_configs: scrapeConfigs,
     };
 
     new ssm.StringParameter(this, "PrometheusConfig", {
