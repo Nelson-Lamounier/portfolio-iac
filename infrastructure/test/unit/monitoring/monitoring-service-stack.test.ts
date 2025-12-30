@@ -304,6 +304,130 @@ describe("MonitoringServiceStack", () => {
   });
 
   // ========================================================================
+  // CLOUDWATCH LOGS TESTS
+  // ========================================================================
+
+  describe("CloudWatch Logs Configuration", () => {
+    test("should create log group for Prometheus", () => {
+      template.hasResourceProperties("AWS::Logs::LogGroup", {
+        LogGroupName: "/ecs/test-prometheus",
+        RetentionInDays: 7,
+      });
+    });
+
+    test("should create log group for Grafana", () => {
+      template.hasResourceProperties("AWS::Logs::LogGroup", {
+        LogGroupName: "/ecs/test-grafana",
+        RetentionInDays: 7,
+      });
+    });
+
+    test("should create log group for Node Exporter", () => {
+      template.hasResourceProperties("AWS::Logs::LogGroup", {
+        LogGroupName: "/ecs/test-monitoring-node-exporter",
+        RetentionInDays: 7,
+      });
+    });
+
+    test("should configure Prometheus container with CloudWatch logging", () => {
+      template.hasResourceProperties("AWS::ECS::TaskDefinition", {
+        ContainerDefinitions: Match.arrayWith([
+          Match.objectLike({
+            Name: "prometheus",
+            LogConfiguration: {
+              LogDriver: "awslogs",
+              Options: {
+                "awslogs-group": Match.objectLike({
+                  Ref: Match.stringLikeRegexp(".*Prometheus.*LogGroup.*"),
+                }),
+                "awslogs-region": "eu-west-1",
+                "awslogs-stream-prefix": "prometheus",
+              },
+            },
+          }),
+        ]),
+      });
+    });
+
+    test("should configure Grafana container with CloudWatch logging", () => {
+      template.hasResourceProperties("AWS::ECS::TaskDefinition", {
+        ContainerDefinitions: Match.arrayWith([
+          Match.objectLike({
+            Name: "grafana",
+            LogConfiguration: {
+              LogDriver: "awslogs",
+              Options: {
+                "awslogs-group": Match.objectLike({
+                  Ref: Match.stringLikeRegexp(".*Grafana.*LogGroup.*"),
+                }),
+                "awslogs-region": "eu-west-1",
+                "awslogs-stream-prefix": "grafana",
+              },
+            },
+          }),
+        ]),
+      });
+    });
+
+    test("should configure Node Exporter container with CloudWatch logging", () => {
+      template.hasResourceProperties("AWS::ECS::TaskDefinition", {
+        ContainerDefinitions: Match.arrayWith([
+          Match.objectLike({
+            Name: "node-exporter",
+            LogConfiguration: {
+              LogDriver: "awslogs",
+              Options: {
+                "awslogs-group": Match.objectLike({
+                  Ref: Match.stringLikeRegexp(".*NodeExporter.*LogGroup.*"),
+                }),
+                "awslogs-region": "eu-west-1",
+                "awslogs-stream-prefix": "node-exporter",
+              },
+            },
+          }),
+        ]),
+      });
+    });
+
+    test("should have execution roles with CloudWatch Logs permissions", () => {
+      // Find all IAM policies
+      const policies = template.findResources("AWS::IAM::Policy");
+      const rolePolicies = template.findResources("AWS::IAM::Role");
+
+      // Verify that execution roles exist (they're created by EcsTaskExecutionRole construct)
+      expect(Object.keys(rolePolicies).length).toBeGreaterThan(0);
+
+      // Verify that at least one policy has CloudWatch Logs permissions
+      let hasCloudWatchLogsPermissions = false;
+      Object.values(policies).forEach((policy: any) => {
+        const statements = policy.Properties?.PolicyDocument?.Statement || [];
+        statements.forEach((stmt: any) => {
+          if (
+            stmt.Action &&
+            (stmt.Action.includes("logs:CreateLogStream") ||
+              stmt.Action.includes("logs:PutLogEvents"))
+          ) {
+            hasCloudWatchLogsPermissions = true;
+          }
+        });
+      });
+
+      expect(hasCloudWatchLogsPermissions).toBe(true);
+    });
+
+    test("should have correct number of log groups", () => {
+      const logGroups = template.findResources("AWS::Logs::LogGroup");
+      // Should have at least 3 log groups: Prometheus, Grafana, Node Exporter
+      const logGroupNames = Object.values(logGroups).map(
+        (lg: any) => lg.Properties?.LogGroupName
+      );
+      expect(logGroupNames).toContain("/ecs/test-prometheus");
+      expect(logGroupNames).toContain("/ecs/test-grafana");
+      expect(logGroupNames).toContain("/ecs/test-monitoring-node-exporter");
+    });
+  });
+
+  // ========================================================================
   // ENVIRONMENT CONFIGURATION TESTS
   // ========================================================================
 

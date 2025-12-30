@@ -480,6 +480,106 @@ describe("Comprehensive Monitoring Infrastructure Tests", () => {
         expect(retention).toBeLessThanOrEqual(365); // Max 1 year
       });
     });
+
+    test("creates log groups for Prometheus, Grafana, and Node Exporter", () => {
+      const result = createTestMonitoringServiceStack({
+        envName: "pipeline",
+      });
+      const template = result.template;
+
+      // Prometheus log group
+      template.hasResourceProperties("AWS::Logs::LogGroup", {
+        LogGroupName: "/ecs/pipeline-prometheus",
+        RetentionInDays: 7,
+      });
+
+      // Grafana log group
+      template.hasResourceProperties("AWS::Logs::LogGroup", {
+        LogGroupName: "/ecs/pipeline-grafana",
+        RetentionInDays: 7,
+      });
+
+      // Node Exporter log group
+      template.hasResourceProperties("AWS::Logs::LogGroup", {
+        LogGroupName: "/ecs/pipeline-monitoring-node-exporter",
+        RetentionInDays: 7,
+      });
+    });
+
+    test("configures Prometheus container with CloudWatch logging", () => {
+      const result = createTestMonitoringServiceStack({
+        envName: "pipeline",
+      });
+      const template = result.template;
+
+      template.hasResourceProperties("AWS::ECS::TaskDefinition", {
+        ContainerDefinitions: Match.arrayWith([
+          Match.objectLike({
+            Name: "prometheus",
+            LogConfiguration: {
+              LogDriver: "awslogs",
+              Options: {
+                "awslogs-group": Match.objectLike({
+                  Ref: Match.stringLikeRegexp(".*Prometheus.*LogGroup.*"),
+                }),
+                "awslogs-region": "eu-west-1",
+                "awslogs-stream-prefix": "prometheus",
+              },
+            },
+          }),
+        ]),
+      });
+    });
+
+    test("configures Grafana container with CloudWatch logging", () => {
+      const result = createTestMonitoringServiceStack({
+        envName: "pipeline",
+      });
+      const template = result.template;
+
+      template.hasResourceProperties("AWS::ECS::TaskDefinition", {
+        ContainerDefinitions: Match.arrayWith([
+          Match.objectLike({
+            Name: "grafana",
+            LogConfiguration: {
+              LogDriver: "awslogs",
+              Options: {
+                "awslogs-group": Match.objectLike({
+                  Ref: Match.stringLikeRegexp(".*Grafana.*LogGroup.*"),
+                }),
+                "awslogs-region": "eu-west-1",
+                "awslogs-stream-prefix": "grafana",
+              },
+            },
+          }),
+        ]),
+      });
+    });
+
+    test("configures Node Exporter container with CloudWatch logging", () => {
+      const result = createTestMonitoringServiceStack({
+        envName: "pipeline",
+      });
+      const template = result.template;
+
+      template.hasResourceProperties("AWS::ECS::TaskDefinition", {
+        ContainerDefinitions: Match.arrayWith([
+          Match.objectLike({
+            Name: "node-exporter",
+            LogConfiguration: {
+              LogDriver: "awslogs",
+              Options: {
+                "awslogs-group": Match.objectLike({
+                  Ref: Match.stringLikeRegexp(".*NodeExporter.*LogGroup.*"),
+                }),
+                "awslogs-region": "eu-west-1",
+                "awslogs-stream-prefix": "node-exporter",
+              },
+            },
+          }),
+        ]),
+      });
+    });
   });
 
   // ---------------------------------------------------------------------------
