@@ -6,6 +6,7 @@ import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
+import { Tags } from "aws-cdk-lib";
 import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 
@@ -344,14 +345,13 @@ export class EcsClusterConstruct extends Construct {
 
     this.cluster.addAsgCapacityProvider(capacityProvider);
 
-    // Add tags
-    cdk.Tags.of(this.cluster).add("Name", clusterName);
-    cdk.Tags.of(this.cluster).add("Environment", envName);
-    cdk.Tags.of(this.cluster).add("ManagedBy", "CDK");
+    // Add tags to cluster
+    Tags.of(this.cluster).add("Name", clusterName);
+    Tags.of(this.cluster).add("Environment", envName);
+    Tags.of(this.cluster).add("ManagedBy", "CDK");
 
-    cdk.Tags.of(this.asg).add("Name", `${envName}-asg`);
-    cdk.Tags.of(this.asg).add("Environment", envName);
-    cdk.Tags.of(this.asg).add("ManagedBy", "CDK");
+    // Add Name tag to ASG (Environment, Service, and ManagedBy already added above at lines 291-293)
+    Tags.of(this.asg).add("Name", `${envName}-asg`);
 
     // Note: Outputs are handled at the stack level to avoid cyclic dependencies
     // The stack that uses this construct should create the necessary outputs
