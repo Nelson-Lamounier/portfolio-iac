@@ -5,6 +5,7 @@ import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
 import { Construct } from "constructs";
+import { NagSuppressions } from "cdk-nag";
 
 import { EcsTaskDefinitionConstruct } from "../../compute/ecs/ecs-task-definition-construct";
 import { EcsServiceConstruct } from "../../compute/ecs/ecs-service-construct";
@@ -189,6 +190,49 @@ export class PrometheusConstruct extends Construct {
             "arn:aws:iam::*:role/*-PipelineMonitoringAccess",
           ],
         })
+      );
+    }
+
+    // ========================================================================
+    // CDK NAG SUPPRESSIONS
+    // ========================================================================
+    if (this.taskDefinition.taskRole) {
+      NagSuppressions.addResourceSuppressions(
+        this.taskDefinition.taskRole,
+        [
+          {
+            id: "AwsSolutions-IAM5",
+            reason:
+              "Prometheus requires wildcard permissions for cross-account EC2 service discovery. " +
+              "The sts:AssumeRole action uses a wildcard resource pattern to allow Prometheus to assume " +
+              "cross-account monitoring roles in application accounts (dev, staging, production). " +
+              "The pattern 'arn:aws:iam::*:role/*-PipelineMonitoringAccess' is scoped to only monitoring roles " +
+              "created by the CrossAccountMonitoringRole construct, which are explicitly designed for this purpose. " +
+              "EC2 service discovery requires cross-account role assumption to discover and scrape metrics from " +
+              "instances in other AWS accounts. " +
+              "See: https://prometheus.io/docs/prometheus/latest/configuration/configuration/#ec2_sd_config",
+            appliesTo: [
+              "Resource::arn:aws:iam::*:role/*-PipelineMonitoringAccess",
+            ],
+          },
+          {
+            id: "AwsSolutions-IAM5",
+            reason:
+              "EC2 Describe actions do not support resource-level permissions. " +
+              "Prometheus EC2 service discovery requires these permissions to discover instances for scraping. " +
+              "These are read-only actions required for EC2 service discovery functionality. " +
+              "See: https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonec2.html",
+            appliesTo: [
+              "Action::ec2:DescribeInstances",
+              "Action::ec2:DescribeAvailabilityZones",
+              "Action::ec2:DescribeTags",
+              "Action::ec2:DescribeInstanceStatus",
+              "Action::ec2:DescribeRegions",
+              "Resource::*",
+            ],
+          },
+        ],
+        true // Apply to children (default policy)
       );
     }
 
