@@ -355,26 +355,66 @@ if [ "$PROM_HEALTH" == "200" ]; then
     local job_name=$1
     local state
     local last_error
+    local target_count
     
+    # Count how many targets exist for this job
+    target_count=$(echo "$TARGETS_JSON" | jq -r ".data.activeTargets[] | select(.labels.job==\"$job_name\") | .health" 2>/dev/null | wc -l | tr -d ' ')
+    
+    # Get the first target's state (for jobs with multiple targets, we check if any are up)
     state=$(echo "$TARGETS_JSON" | jq -r ".data.activeTargets[] | select(.labels.job==\"$job_name\") | .health" 2>/dev/null | head -1)
     last_error=$(echo "$TARGETS_JSON" | jq -r ".data.activeTargets[] | select(.labels.job==\"$job_name\") | .lastError" 2>/dev/null | head -1)
     
     if [ "$state" == "up" ]; then
-      log_success "Target '$job_name' is UP"
-    elif [ -z "$state" ]; then
-      log_warning "Target '$job_name' not found"
+      if [ "$target_count" -gt 1 ]; then
+        log_success "Target '$job_name' is UP ($target_count targets)"
+      else
+        log_success "Target '$job_name' is UP"
+      fi
+    elif [ -z "$state" ] || [ "$target_count" -eq 0 ]; then
+      log_warning "Target '$job_name' not found (may not be configured or discovered yet)"
     else
-      log_failure "Target '$job_name' is $state"
+      log_failure "Target '$job_name' is $state ($target_count target(s))"
       [ -n "$last_error" ] && [ "$last_error" != "null" ] && log_info "Error: $last_error"
     fi
   }
   
+  # Check Prometheus itself
   check_target "prometheus"
+  
+  # Check pipeline account node-exporter (EC2 service discovery job name)
+  check_target "node-exporter-pipeline"
+  
+  # Also check legacy job name for backward compatibility
   check_target "pipeline-node-exporter"
   
   if [ "$CROSS_ACCOUNT_ENABLED" == "true" ]; then
+    # Check development account node-exporter (EC2 service discovery job name)
+    check_target "node-exporter-development"
+    
+    # Also check legacy job names for backward compatibility
     check_target "dev-node-exporter"
+    check_target "node-exporter-dev"
+    
+    # Check application metrics (if configured)
+    check_target "nextjs-development"
     check_target "dev-nextjs-app"
+    check_target "nextjs-dev"
+  fi
+  
+  # Display summary of all targets
+  echo ""
+  echo "   All Discovered Targets:"
+  ALL_TARGETS=$(echo "$TARGETS_JSON" | jq -r '.data.activeTargets[] | "\(.labels.job) - \(.health) - \(.labels.instance // "unknown")"' 2>/dev/null)
+  if [ -n "$ALL_TARGETS" ]; then
+    echo "$ALL_TARGETS" | while IFS= read -r line; do
+      if echo "$line" | grep -q "up"; then
+        log_success "  $line"
+      else
+        log_warning "  $line"
+      fi
+    done
+  else
+    log_warning "  No targets discovered yet (Prometheus may still be initializing)"
   fi
 fi
 
