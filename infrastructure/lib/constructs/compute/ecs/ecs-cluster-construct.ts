@@ -288,16 +288,30 @@ export class EcsClusterConstruct extends Construct {
 
     // Tag ASG - tags will propagate to EC2 instances automatically
     // These tags are required for Prometheus EC2 service discovery
-    // Use addTag() to ensure PropagateAtLaunch is set to true
-    this.asg.addTag("Environment", props.envName, {
-      propagateAtLaunch: true,
-    });
-    this.asg.addTag("Service", "monitoring", {
-      propagateAtLaunch: true,
-    }); // Required for EC2 service discovery
-    this.asg.addTag("ManagedBy", "CDK", {
-      propagateAtLaunch: true,
-    });
+    // Access the CloudFormation resource to set tags with PropagateAtLaunch
+    const cfnAsg = this.asg.node.defaultChild as autoscaling.CfnAutoScalingGroup;
+    cfnAsg.tags = [
+      {
+        key: "Name",
+        value: `${props.envName}-asg`,
+        propagateAtLaunch: true,
+      },
+      {
+        key: "Environment",
+        value: props.envName,
+        propagateAtLaunch: true,
+      },
+      {
+        key: "Service",
+        value: "monitoring",
+        propagateAtLaunch: true,
+      },
+      {
+        key: "ManagedBy",
+        value: "CDK",
+        propagateAtLaunch: true,
+      },
+    ];
 
     // CDK Nag suppressions for Auto Scaling Group and its resources
     // Apply recursively to child resources (including Lambda function and its role policy)
@@ -357,10 +371,6 @@ export class EcsClusterConstruct extends Construct {
     Tags.of(this.cluster).add("Environment", envName);
     Tags.of(this.cluster).add("ManagedBy", "CDK");
 
-    // Add Name tag to ASG (Environment, Service, and ManagedBy already added above)
-    this.asg.addTag("Name", `${envName}-asg`, {
-      propagateAtLaunch: true,
-    });
 
     // Note: Outputs are handled at the stack level to avoid cyclic dependencies
     // The stack that uses this construct should create the necessary outputs
