@@ -290,28 +290,29 @@ export class EcsClusterConstruct extends Construct {
     // These tags are required for Prometheus EC2 service discovery
     // Access the CloudFormation resource to set tags with PropagateAtLaunch
     const cfnAsg = this.asg.node.defaultChild as autoscaling.CfnAutoScalingGroup;
-    cfnAsg.tags = [
+    // Use addPropertyOverride to ensure tags are set correctly in CloudFormation
+    cfnAsg.addPropertyOverride("Tags", [
       {
-        key: "Name",
-        value: `${props.envName}-asg`,
-        propagateAtLaunch: true,
+        Key: "Name",
+        Value: `${props.envName}-asg`,
+        PropagateAtLaunch: true,
       },
       {
-        key: "Environment",
-        value: props.envName,
-        propagateAtLaunch: true,
+        Key: "Environment",
+        Value: props.envName,
+        PropagateAtLaunch: true,
       },
       {
-        key: "Service",
-        value: "monitoring",
-        propagateAtLaunch: true,
+        Key: "Service",
+        Value: "monitoring",
+        PropagateAtLaunch: true,
       },
       {
-        key: "ManagedBy",
-        value: "CDK",
-        propagateAtLaunch: true,
+        Key: "ManagedBy",
+        Value: "CDK",
+        PropagateAtLaunch: true,
       },
-    ];
+    ]);
 
     // CDK Nag suppressions for Auto Scaling Group and its resources
     // Apply recursively to child resources (including Lambda function and its role policy)
