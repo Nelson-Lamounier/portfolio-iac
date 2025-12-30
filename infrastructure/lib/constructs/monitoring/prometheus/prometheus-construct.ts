@@ -8,6 +8,7 @@ import { Construct } from "constructs";
 
 import { EcsTaskDefinitionConstruct } from "../../compute/ecs/ecs-task-definition-construct";
 import { EcsServiceConstruct } from "../../compute/ecs/ecs-service-construct";
+import { EcsTaskExecutionRole } from "../../iam";
 
 export interface PrometheusConstructProps {
   cluster: ecs.ICluster;
@@ -80,6 +81,17 @@ export class PrometheusConstruct extends Construct {
     // ========================================================================
     // 1. CREATE TASK DEFINITION USING EcsTaskDefinitionConstruct
     // ========================================================================
+    // Create execution role with permissions for the Prometheus log group
+    const executionRoleConstruct = new EcsTaskExecutionRole(
+      this,
+      "ExecutionRole",
+      {
+        envName: props.envName,
+        enablePublicEcr: true, // Prometheus uses public Docker Hub image
+        logGroupArn: this.logGroup.logGroupArn, // Grant permissions to Prometheus log group
+      }
+    );
+
     this.taskDefConstruct = new EcsTaskDefinitionConstruct(
       this,
       "TaskDefinition",
@@ -87,6 +99,7 @@ export class PrometheusConstruct extends Construct {
         envName: props.envName,
         networkMode: ecs.NetworkMode.HOST, // HOST mode for static port 9090
         grantEcrReadAccess: false, // Using public registry
+        executionRole: executionRoleConstruct.role, // Use execution role with log group permissions
 
         // Define volumes for persistent storage
         volumes: [
@@ -115,6 +128,7 @@ export class PrometheusConstruct extends Construct {
             cpu: props.cpu,
             command: prometheusCommand,
             logStreamPrefix: "prometheus",
+            logGroup: this.logGroup, // Use the log group we created
             environment: {
               ENVIRONMENT: props.envName,
             },

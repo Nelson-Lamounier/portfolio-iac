@@ -9,6 +9,7 @@ import { NagSuppressions } from "cdk-nag";
 
 import { EcsTaskDefinitionConstruct } from "../../compute/ecs/ecs-task-definition-construct";
 import { EcsServiceConstruct } from "../../compute/ecs/ecs-service-construct";
+import { EcsTaskExecutionRole } from "../../iam";
 
 export interface GrafanaConstructProps {
   // Required parameters
@@ -164,6 +165,17 @@ export class GrafanaConstruct extends Construct {
     // ========================================================================
     // 1. CREATE TASK DEFINITION USING EcsTaskDefinitionConstruct
     // ========================================================================
+    // Create execution role with permissions for the Grafana log group
+    const executionRoleConstruct = new EcsTaskExecutionRole(
+      this,
+      "ExecutionRole",
+      {
+        envName: props.envName,
+        enablePublicEcr: true, // Grafana uses public Docker Hub image
+        logGroupArn: this.logGroup.logGroupArn, // Grant permissions to Grafana log group
+      }
+    );
+
     this.taskDefConstruct = new EcsTaskDefinitionConstruct(
       this,
       "TaskDefinition",
@@ -172,7 +184,7 @@ export class GrafanaConstruct extends Construct {
         networkMode: ecs.NetworkMode.BRIDGE,
         grantEcrReadAccess: false,
         taskRole: taskRole,
-        // Let EcsTaskDefinitionConstruct create execution role with CloudWatch Logs permissions
+        executionRole: executionRoleConstruct.role, // Use execution role with log group permissions
 
         // Volume
         volumes: [
@@ -204,6 +216,7 @@ export class GrafanaConstruct extends Construct {
             memoryReservationMiB: props.memoryReservationMiB || 256,
             cpu: props.cpu,
             logStreamPrefix: "grafana", // Enable CloudWatch Logs
+            logGroup: this.logGroup, // Use the log group we created
             environment: environment,
             user: "472:0", // Run as grafana user (472) with root group (0) for write access
           },

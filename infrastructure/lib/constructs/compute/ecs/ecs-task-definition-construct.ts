@@ -2,6 +2,7 @@
 
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as logs from "aws-cdk-lib/aws-logs";
 import { Tags } from "aws-cdk-lib";
 import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
@@ -20,6 +21,7 @@ export interface ContainerConfig {
   secrets?: { [key: string]: ecs.Secret };
   command?: string[];
   logStreamPrefix?: string;
+  logGroup?: logs.ILogGroup; // Optional - specific log group to use (if not provided, ECS will auto-create)
   user?: string; // Optional - run container as specific user (e.g., "472" for Grafana)
 }
 
@@ -53,6 +55,11 @@ export class EcsTaskDefinitionConstruct extends Construct {
     // Create or use provided execution role
     let executionRole = props.executionRole;
     if (!executionRole && props.grantEcrReadAccess !== false) {
+      // Collect all log group ARNs from containers that specify them
+      const logGroupArns = props.containers
+        .map((c) => c.logGroup?.logGroupArn)
+        .filter((arn): arn is string => arn !== undefined);
+
       // Use centralized ECS task execution role construct
       const executionRoleConstruct = new EcsTaskExecutionRole(
         this,
@@ -60,6 +67,10 @@ export class EcsTaskDefinitionConstruct extends Construct {
         {
           envName: props.envName,
           enablePublicEcr: false, // Only enable if needed
+          // If all containers use the same log group, pass it for more specific permissions
+          // Otherwise, use the default pattern matching
+          logGroupArn:
+            logGroupArns.length === 1 ? logGroupArns[0] : undefined,
         }
       );
       executionRole = executionRoleConstruct.role;
@@ -112,13 +123,26 @@ export class EcsTaskDefinitionConstruct extends Construct {
    * Add a container to the task definition
    */
   private addContainer(config: ContainerConfig, _envName: string): void {
+    // Configure logging: use logGroup if provided, otherwise auto-create
+    let logging: ecs.LogDriver | undefined;
+    if (config.logStreamPrefix) {
+      if (config.logGroup) {
+        // Use specific log group (preferred - ensures logs go to the right place)
+        logging = ecs.LogDrivers.awsLogs({
+          streamPrefix: config.logStreamPrefix,
+          logGroup: config.logGroup,
+        });
+      } else {
+        // Auto-create log group (ECS will create it with default naming)
+        logging = ecs.LogDrivers.awsLogs({
+          streamPrefix: config.logStreamPrefix,
+        });
+      }
+    }
+
     const container = this.taskDefinition.addContainer(config.name, {
       image: config.image,
-      logging: config.logStreamPrefix
-        ? ecs.LogDrivers.awsLogs({
-            streamPrefix: config.logStreamPrefix,
-          })
-        : undefined,
+      logging: logging,
       memoryReservationMiB: config.memoryReservationMiB || 512,
       memoryLimitMiB: config.memoryLimitMiB,
       cpu: config.cpu,

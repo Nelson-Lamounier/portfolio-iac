@@ -126,22 +126,55 @@ echo ""
 echo "Discovering infrastructure..."
 echo ""
 
-# Method priority: ALB_DNS (pipeline) > SSM > EC2 Tags > ECS Tasks > Fallback
+# Method priority: ALB_DNS (pipeline) > CloudFormation Output > SSM > EC2 Tags > ECS Tasks > Fallback
 
 # 1. Pipeline Monitoring - Use ALB DNS if provided (pipeline mode)
-if [ -n "$ALB_DNS" ] && [ "$ALB_DNS" != "None" ]; then
-  PIPELINE_EC2_IP="$ALB_DNS"
-  log_info "Using ALB DNS from pipeline: ***MASKED***"
-else
-  # Fallback to discovery methods
-  PIPELINE_EC2_IP=$(get_ssm_param "${SSM_PREFIX}/pipeline/ec2-ip" "")
-  if [ -z "$PIPELINE_EC2_IP" ]; then
-    PIPELINE_EC2_IP=$(get_ec2_ip_by_tags "*monitoring*" "pipeline")
+# First check if ALB_DNS is provided as environment variable
+if [ -z "$ALB_DNS" ] || [ "$ALB_DNS" == "None" ] || [ "$ALB_DNS" == "" ]; then
+  # Fallback: Get ALB DNS from CloudFormation stack output
+  log_info "ALB_DNS not provided, attempting to retrieve from CloudFormation..."
+  ALB_DNS=$(aws cloudformation describe-stacks \
+    --stack-name "MonitoringInfraStack-${ENVIRONMENT}" \
+    --region "$AWS_REGION" \
+    --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerDns`].OutputValue' \
+    --output text 2>/dev/null || echo "")
+  
+  if [ -n "$ALB_DNS" ] && [ "$ALB_DNS" != "None" ] && [ "$ALB_DNS" != "" ]; then
+    log_info "Retrieved ALB DNS from CloudFormation: ***MASKED***"
+  else
+    log_warning "ALB DNS not found in CloudFormation stack outputs"
   fi
-  if [ -z "$PIPELINE_EC2_IP" ] || [ "$PIPELINE_EC2_IP" == "None" ]; then
+fi
+
+# Use ALB DNS if available (preferred method for pipeline mode)
+if [ -n "$ALB_DNS" ] && [ "$ALB_DNS" != "None" ] && [ "$ALB_DNS" != "" ]; then
+  # When using ALB, we use ALB_DNS directly for health checks
+  # PIPELINE_EC2_IP is set to ALB_DNS for validation purposes
+  PIPELINE_EC2_IP="$ALB_DNS"
+  log_info "Using ALB DNS for health checks: ***MASKED***"
+else
+  # Fallback to discovery methods (for direct EC2 access scenarios)
+  log_info "ALB DNS not available, falling back to EC2 instance discovery..."
+  PIPELINE_EC2_IP=$(get_ssm_param "${SSM_PREFIX}/pipeline/ec2-ip" "")
+  if [ -z "$PIPELINE_EC2_IP" ] || [ "$PIPELINE_EC2_IP" == "None" ] || [ "$PIPELINE_EC2_IP" == "" ]; then
+    # Try finding instance by tags (more flexible tag matching)
+    PIPELINE_EC2_IP=$(get_ec2_ip_by_tags "*monitoring*" "pipeline")
+    if [ -z "$PIPELINE_EC2_IP" ] || [ "$PIPELINE_EC2_IP" == "None" ] || [ "$PIPELINE_EC2_IP" == "" ]; then
+      # Try finding by ASG tag
+      PIPELINE_EC2_IP=$(aws ec2 describe-instances \
+        --region "$AWS_REGION" \
+        --filters \
+          "Name=tag:aws:autoscaling:groupName,Values=*monitoring*" \
+          "Name=instance-state-name,Values=running" \
+        --query 'Reservations[0].Instances[0].PrivateIpAddress' \
+        --output text 2>/dev/null || echo "")
+    fi
+  fi
+  if [ -z "$PIPELINE_EC2_IP" ] || [ "$PIPELINE_EC2_IP" == "None" ] || [ "$PIPELINE_EC2_IP" == "" ]; then
     # Try localhost if running on the monitoring instance itself
     if curl -sf http://localhost:9090/prometheus/-/healthy >/dev/null 2>&1; then
       PIPELINE_EC2_IP="localhost"
+      log_info "Using localhost (running on monitoring instance)"
     fi
   fi
 fi
@@ -167,28 +200,47 @@ ECS_CLUSTER=$(get_ssm_param "${SSM_PREFIX}/pipeline/ecs-cluster" "pipeline-monit
 # ------------------------------------------------------------------------------
 
 # Validate minimum requirements
-if [ -z "$PIPELINE_EC2_IP" ] || [ "$PIPELINE_EC2_IP" == "None" ]; then
-  echo -e "${RED}ERROR: Could not determine Pipeline monitoring instance IP${NC}"
+if [ -z "$PIPELINE_EC2_IP" ] || [ "$PIPELINE_EC2_IP" == "None" ] || [ "$PIPELINE_EC2_IP" == "" ]; then
+  echo -e "${RED}ERROR: Could not determine Pipeline monitoring endpoint${NC}"
+  echo ""
+  echo "Debug Information:"
+  echo "  ALB_DNS variable: ${ALB_DNS:-(not set)}"
+  echo "  ENVIRONMENT: $ENVIRONMENT"
+  echo "  AWS_REGION: $AWS_REGION"
+  echo ""
+  echo "Attempted discovery methods:"
+  echo "  1. ALB_DNS from job output: ${ALB_DNS:-(not set)}"
+  echo "  2. CloudFormation stack output: $(aws cloudformation describe-stacks --stack-name MonitoringInfraStack-${ENVIRONMENT} --region $AWS_REGION --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerDns`].OutputValue' --output text 2>/dev/null || echo 'failed')"
+  echo "  3. SSM parameter: $(get_ssm_param "${SSM_PREFIX}/pipeline/ec2-ip" "not found")"
+  echo "  4. EC2 tags: $(get_ec2_ip_by_tags "*monitoring*" "pipeline" || echo 'not found')"
   echo ""
   echo "Troubleshooting:"
-  echo "  1. Ensure ALB_DNS is provided in pipeline mode"
-  echo "  2. Ensure EC2 instance has tags: Name=*monitoring*, Environment=pipeline"
-  echo "  3. Or set SSM parameter: ${SSM_PREFIX}/pipeline/ec2-ip"
-  echo "  4. Or run this script from the monitoring EC2 instance"
+  echo "  1. Verify MonitoringInfraStack-pipeline is deployed successfully"
+  echo "  2. Check if LoadBalancerDns output exists in CloudFormation stack"
+  echo "  3. Ensure ALB_DNS is provided in pipeline mode (from deploy-monitoring-infra job output)"
+  echo "  4. Ensure EC2 instance has tags: Name=*monitoring*, Environment=pipeline"
+  echo "  5. Or set SSM parameter: ${SSM_PREFIX}/pipeline/ec2-ip"
+  echo "  6. Or run this script from the monitoring EC2 instance"
   exit 1
 fi
 
 # Build URLs based on deployment type
-if [ -n "$ALB_DNS" ] && [ "$ALB_DNS" != "None" ]; then
+# Use ALB_DNS if available (either from env var or CloudFormation), otherwise use direct IP
+if [ -n "$ALB_DNS" ] && [ "$ALB_DNS" != "None" ] && [ "$ALB_DNS" != "" ]; then
   # ALB-based deployment (pipeline mode)
   PROMETHEUS_URL="http://${ALB_DNS}/prometheus"
   GRAFANA_URL="http://${ALB_DNS}/grafana"
   PIPELINE_NODE_EXPORTER="${ALB_DNS}/node-exporter"  # Through ALB if configured
-else
-  # Direct EC2 deployment
+  log_info "Using ALB-based URLs for health checks"
+elif [ -n "$PIPELINE_EC2_IP" ] && [ "$PIPELINE_EC2_IP" != "None" ] && [ "$PIPELINE_EC2_IP" != "" ]; then
+  # Direct EC2 deployment (fallback)
   PROMETHEUS_URL="http://${PIPELINE_EC2_IP}:9090/prometheus"
   GRAFANA_URL="http://${PIPELINE_EC2_IP}:3001"
   PIPELINE_NODE_EXPORTER="${PIPELINE_EC2_IP}:9100"
+  log_info "Using direct EC2 IP-based URLs for health checks"
+else
+  log_failure "Cannot build URLs - both ALB_DNS and PIPELINE_EC2_IP are unavailable"
+  exit 1
 fi
 
 if [ -n "$DEV_EC2_IP" ] && [ "$DEV_EC2_IP" != "None" ]; then

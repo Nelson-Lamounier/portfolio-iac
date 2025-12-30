@@ -1353,27 +1353,82 @@ jobs:
         run: |
           echo "Retrieving MonitoringInfraStack outputs..."
 
-          # Get outputs
-          ALB_DNS=$(aws cloudformation describe-stacks \
+          # Wait for stack to be in a stable state (if still deploying)
+          echo "Checking stack status..."
+          STACK_STATUS=$(aws cloudformation describe-stacks \
             --stack-name MonitoringInfraStack-pipeline \
-            --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerDns`].OutputValue' \
-            --output text 2>/dev/null || echo "")
-
-          EFS_ID=$(aws cloudformation describe-stacks \
-            --stack-name MonitoringInfraStack-pipeline \
-            --query 'Stacks[0].Outputs[?OutputKey==`EfsFileSystemId`].OutputValue' \
-            --output text 2>/dev/null || echo "")
-
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null || echo "NOT_FOUND")
+          
+          echo "Stack status: $STACK_STATUS"
+          
+          if [ "$STACK_STATUS" == "NOT_FOUND" ]; then
+            echo "ERROR: MonitoringInfraStack-pipeline not found"
+            exit 1
+          fi
+          
+          # Get outputs with retry logic
+          MAX_RETRIES=5
+          RETRY_COUNT=0
+          ALB_DNS=""
+          EFS_ID=""
+          
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            ALB_DNS=$(aws cloudformation describe-stacks \
+              --stack-name MonitoringInfraStack-pipeline \
+              --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerDns`].OutputValue' \
+              --output text 2>/dev/null || echo "")
+            
+            EFS_ID=$(aws cloudformation describe-stacks \
+              --stack-name MonitoringInfraStack-pipeline \
+              --query 'Stacks[0].Outputs[?OutputKey==`EfsFileSystemId`].OutputValue' \
+              --output text 2>/dev/null || echo "")
+            
+            # Check if we got valid outputs
+            if [ -n "$ALB_DNS" ] && [ "$ALB_DNS" != "None" ] && [ "$ALB_DNS" != "" ]; then
+              break
+            fi
+            
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+              echo "Outputs not available yet, retrying in 5 seconds... (attempt $RETRY_COUNT/$MAX_RETRIES)"
+              sleep 5
+            fi
+          done
+          
+          # Validate outputs
+          if [ -z "$ALB_DNS" ] || [ "$ALB_DNS" == "None" ] || [ "$ALB_DNS" == "" ]; then
+            echo "WARNING: ALB DNS not found in stack outputs"
+            echo "Checking all available outputs..."
+            aws cloudformation describe-stacks \
+              --stack-name MonitoringInfraStack-pipeline \
+              --query 'Stacks[0].Outputs[*].{Key:OutputKey,Value:OutputValue}' \
+              --output table || true
+          fi
+          
+          # Always set outputs (even if empty) so downstream jobs can handle it
           echo "alb_dns=$ALB_DNS" >> $GITHUB_OUTPUT
           echo "efs_id=$EFS_ID" >> $GITHUB_OUTPUT
 
-          # Security: Mask resource identifiers
-          echo "::add-mask::$ALB_DNS"
-          echo "::add-mask::$EFS_ID"
+          # Security: Mask resource identifiers (only if not empty)
+          if [ -n "$ALB_DNS" ] && [ "$ALB_DNS" != "None" ] && [ "$ALB_DNS" != "" ]; then
+            echo "::add-mask::$ALB_DNS"
+          fi
+          if [ -n "$EFS_ID" ] && [ "$EFS_ID" != "None" ] && [ "$EFS_ID" != "" ]; then
+            echo "::add-mask::$EFS_ID"
+          fi
 
-          echo "MonitoringInfraStack-pipeline outputs retrieved successfully"
-          echo "   ALB DNS: ***MASKED***"
-          echo "   EFS ID: ***MASKED***"
+          echo "MonitoringInfraStack-pipeline outputs retrieved"
+          if [ -n "$ALB_DNS" ] && [ "$ALB_DNS" != "None" ] && [ "$ALB_DNS" != "" ]; then
+            echo "   ALB DNS: ***MASKED*** (available)"
+          else
+            echo "   ALB DNS: (not available - health check will attempt to retrieve from CloudFormation)"
+          fi
+          if [ -n "$EFS_ID" ] && [ "$EFS_ID" != "None" ] && [ "$EFS_ID" != "" ]; then
+            echo "   EFS ID: ***MASKED*** (available)"
+          else
+            echo "   EFS ID: (not available)"
+          fi
 
   # ============================================================================
   # JOB 6: Deploy Monitoring Services
@@ -1537,9 +1592,15 @@ jobs:
           # Make health check script executable
           chmod +x ./scripts/monitoring/monitoring-health-check.sh
 
-          # Security: Mask ALB DNS and other sensitive outputs
+          # Get ALB DNS from job output
           ALB_DNS="${{ needs.deploy-monitoring-infra.outputs.alb_dns }}"
-          if [ -n "$ALB_DNS" ]; then
+          
+          # Debug: Check if ALB_DNS is available (without exposing the value)
+          if [ -z "$ALB_DNS" ] || [ "$ALB_DNS" == "None" ] || [ "$ALB_DNS" == "" ]; then
+            echo "⚠️  WARNING: ALB_DNS not available from job output"
+            echo "   This is OK - health check script will attempt to retrieve from CloudFormation"
+          else
+            echo "✓ ALB_DNS available from job output (will be masked)"
             echo "::add-mask::$ALB_DNS"
           fi
 
@@ -1547,6 +1608,14 @@ jobs:
           export AWS_REGION="${{ env.AWS_REGION }}"
           export ENVIRONMENT="pipeline"
           export ALB_DNS="$ALB_DNS"
+
+          # Debug output (without exposing sensitive data)
+          echo ""
+          echo "Health Check Configuration:"
+          echo "  Environment: pipeline"
+          echo "  AWS Region: $AWS_REGION"
+          echo "  ALB_DNS provided: $([ -n "$ALB_DNS" ] && [ "$ALB_DNS" != "None" ] && [ "$ALB_DNS" != "" ] && echo "yes" || echo "no (will attempt CloudFormation retrieval)")"
+          echo ""
 
           # Run comprehensive health check
           echo "Running comprehensive monitoring infrastructure validation..."
