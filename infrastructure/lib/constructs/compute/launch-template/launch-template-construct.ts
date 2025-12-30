@@ -284,8 +284,9 @@ export class LaunchTemplateConstruct extends Construct {
       }
     );
 
-    // Tag service
+    // Tag launch template (tags will propagate to instances via ASG)
     Tags.of(this.launchTemplate).add("Environment", props.envName);
+    Tags.of(this.launchTemplate).add("Service", "monitoring"); // Required for EC2 service discovery
     Tags.of(this.launchTemplate).add("ManagedBy", "CDK");
 
     // Output the launch template ID

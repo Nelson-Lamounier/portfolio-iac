@@ -259,6 +259,7 @@ export class MonitoringServiceStack extends cdk.Stack {
       targetGroups: [grafanaTargetGroup],
     });
 
+    // Priority 200: Prometheus paths
     new elbv2.ApplicationListenerRule(this, "PrometheusRule", {
       listener: listener,
       priority: 200,

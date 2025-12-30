@@ -285,6 +285,12 @@ export class EcsClusterConstruct extends Construct {
       }),
     });
 
+    // Tag ASG - tags will propagate to EC2 instances automatically
+    // These tags are required for Prometheus EC2 service discovery
+    Tags.of(this.asg).add("Environment", props.envName);
+    Tags.of(this.asg).add("Service", "monitoring"); // Required for EC2 service discovery
+    Tags.of(this.asg).add("ManagedBy", "CDK");
+
     // CDK Nag suppressions for Auto Scaling Group and its resources
     // Apply recursively to child resources (including Lambda function and its role policy)
     NagSuppressions.addResourceSuppressions(
