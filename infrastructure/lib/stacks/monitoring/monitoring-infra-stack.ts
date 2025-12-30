@@ -263,6 +263,8 @@ export class MonitoringInfraStack extends cdk.Stack {
     const albSecurityGroup = this.loadBalancer.connections.securityGroups[0];
     
     // Allow ALB to reach Grafana on dynamic ports (bridge networking)
+    // ECS automatically registers the dynamic port (32768-65535) with the target group
+    // The target group port (3000) is just a hint - ECS uses the actual dynamic port
     ltConstruct.securityGroup.addIngressRule(
       albSecurityGroup,
       ec2.Port.tcpRange(32768, 65535),

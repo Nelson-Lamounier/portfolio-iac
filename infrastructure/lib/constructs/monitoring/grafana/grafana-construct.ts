@@ -213,6 +213,8 @@ export class GrafanaConstruct extends Construct {
             name: "grafana",
             image: ecs.ContainerImage.fromRegistry("grafana/grafana:latest"),
             containerPort: 3000,
+            // hostPort not specified = dynamic port (0)
+            // ECS will automatically register the dynamic port with the target group via loadBalancerTarget()
             memoryReservationMiB: props.memoryReservationMiB || 256,
             cpu: props.cpu,
             logStreamPrefix: "grafana", // Enable CloudWatch Logs

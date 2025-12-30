@@ -173,17 +173,20 @@ export class MonitoringServiceStack extends cdk.Stack {
   ): void {
     // Grafana target group
     // Note: When using TargetType.INSTANCE with bridge networking, containers use dynamic ports
-    // Health check path is "/" to handle root redirects (Grafana may redirect / to /grafana)
+    // ECS automatically registers the instance with the dynamic port via loadBalancerTarget()
+    // The target group's port property (3000) is just a hint - ECS uses the actual dynamic port
+    // Health check uses "traffic-port" to check the port the target is registered on (dynamic port)
     const grafanaTargetGroup = new elbv2.ApplicationTargetGroup(
       this,
       "GrafanaTargetGroup",
       {
-        port: 3000,
+        port: 3000, // Hint only - ECS will use actual dynamic port when registering
         protocol: elbv2.ApplicationProtocol.HTTP,
         vpc: cluster.vpc,
         targetType: elbv2.TargetType.INSTANCE,
         healthCheck: {
           path: "/", // Root path - Grafana may redirect, so accept 200, 301, 302
+          port: "traffic-port", // Use the port the target is registered on (dynamic port)
           healthyHttpCodes: "200,301,302", // Accept redirects as healthy
           interval: cdk.Duration.seconds(60), // Increased from 30s to 60s
           timeout: cdk.Duration.seconds(30), // Increased from 10s to 30s for Grafana startup
@@ -221,15 +224,15 @@ export class MonitoringServiceStack extends cdk.Stack {
     // Note: When using bridge networking, Grafana uses dynamic ports (32768-65535)
     // Prometheus uses fixed port 9090
     // We need to allow ALB security group to reach the instance security group
-    
+
     // Get ALB security group (ALB creates its own security group)
     const albSecurityGroup = loadBalancer.connections.securityGroups[0];
-    
+
     // Note: The instance security group is in MonitoringInfraStack
     // We'll add these rules via service connections, but they may not be sufficient
     // The actual fix requires adding inbound rules to the instance security group itself
     // This is done in MonitoringInfraStack after the load balancer is created
-    
+
     // Service-level connections (may not be sufficient for bridge networking)
     this.prometheusService.connections.allowFrom(
       loadBalancer,
@@ -237,7 +240,10 @@ export class MonitoringServiceStack extends cdk.Stack {
       "Allow ALB to reach Prometheus on port 9090"
     );
 
-    // Grafana uses dynamic ports with bridge networking, so we need to allow the full range
+    // Grafana uses dynamic ports with bridge networking
+    // ECS automatically registers the dynamic port with the target group via loadBalancerTarget()
+    // The target group's port property (3000) is just a hint - ECS uses the actual dynamic port
+    // Security group rules must allow the dynamic port range (32768-65535)
     // This is handled via the instance security group in MonitoringInfraStack
     this.grafanaService.connections.allowFrom(
       loadBalancer,
