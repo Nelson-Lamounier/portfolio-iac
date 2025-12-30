@@ -114,6 +114,39 @@ describe("MonitoringInfraStack", () => {
         }
       );
     });
+
+    test("ASG has required tags for EC2 service discovery", () => {
+      const testSetup = createTestMonitoringInfraStack({
+        envName: "pipeline",
+        account: "123456789012",
+        region: "eu-west-1",
+      });
+
+      // Verify ASG has tags that will propagate to EC2 instances
+      // These tags are required for Prometheus EC2 service discovery
+      testSetup.template.hasResourceProperties(
+        "AWS::AutoScaling::AutoScalingGroup",
+        {
+          Tags: Match.arrayWith([
+            Match.objectLike({
+              Key: "Environment",
+              Value: "pipeline",
+              PropagateAtLaunch: true,
+            }),
+            Match.objectLike({
+              Key: "Service",
+              Value: "monitoring",
+              PropagateAtLaunch: true,
+            }),
+            Match.objectLike({
+              Key: "ManagedBy",
+              Value: "CDK",
+              PropagateAtLaunch: true,
+            }),
+          ]),
+        }
+      );
+    });
   });
 
   // ---------------------------------------------------------------------------

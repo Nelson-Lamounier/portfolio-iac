@@ -523,7 +523,7 @@ describe("LaunchTemplateConstruct", () => {
   });
 
   describe("Tags", () => {
-    test("adds Environment and ManagedBy tags", () => {
+    test("adds Environment, Service, and ManagedBy tags", () => {
       new LaunchTemplateConstruct(stack, "TestLaunchTemplate", {
         vpc,
         envName: "production",
@@ -540,6 +540,10 @@ describe("LaunchTemplateConstruct", () => {
               {
                 Key: "Environment",
                 Value: "production",
+              },
+              {
+                Key: "Service",
+                Value: "monitoring",
               },
               {
                 Key: "ManagedBy",
