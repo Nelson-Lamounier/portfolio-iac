@@ -1,6 +1,7 @@
 /** @format */
 
 import * as cdk from "aws-cdk-lib";
+import * as cr from "aws-cdk-lib/custom-resources";
 import * as events from "aws-cdk-lib/aws-events";
 import * as eventsTargets from "aws-cdk-lib/aws-events-targets";
 import * as iam from "aws-cdk-lib/aws-iam";
@@ -8,7 +9,6 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as nodejs from "aws-cdk-lib/aws-lambda-nodejs";
 import { NagSuppressions } from "cdk-nag";
-import * as path from "path";
 import { Construct } from "constructs";
 
 export interface ApplicationSetupLambdaConstructProps {
@@ -32,6 +32,7 @@ export interface ApplicationSetupLambdaConstructProps {
 export class ApplicationSetupLambdaConstruct extends Construct {
   public readonly function: nodejs.NodejsFunction;
   public readonly rule: events.Rule;
+  public readonly updateTrigger: cdk.CustomResource;
 
   constructor(
     scope: Construct,
@@ -54,24 +55,33 @@ export class ApplicationSetupLambdaConstruct extends Construct {
     //   or repo root (when running from repo root)
     const isCompiled = __dirname.includes("/dist/");
     let lambdaEntryPath: string;
-    
+
     if (isCompiled) {
       // Compiled: dist/lib/constructs/monitoring/ -> ../../../../ -> infrastructure root or repo root
       const possibleRoot = path.resolve(__dirname, "../../../../");
       const fs = require("fs");
-      
+
       // Try lambda/ directly first (if already in infrastructure directory)
-      const pathDirect = path.join(possibleRoot, "lambda/monitoring/application-setup/index.ts");
+      const pathDirect = path.join(
+        possibleRoot,
+        "lambda/monitoring/application-setup/index.ts"
+      );
       if (fs.existsSync(pathDirect)) {
         lambdaEntryPath = pathDirect;
       } else {
         // Try infrastructure/lambda/ (if running from repo root)
-        const pathWithInfra = path.join(possibleRoot, "infrastructure/lambda/monitoring/application-setup/index.ts");
+        const pathWithInfra = path.join(
+          possibleRoot,
+          "infrastructure/lambda/monitoring/application-setup/index.ts"
+        );
         lambdaEntryPath = pathWithInfra;
       }
     } else {
       // Source/test: lib/constructs/monitoring/ -> ../../../ -> infrastructure root
-      lambdaEntryPath = path.join(path.resolve(__dirname, "../../../"), "lambda/monitoring/application-setup/index.ts");
+      lambdaEntryPath = path.join(
+        path.resolve(__dirname, "../../../"),
+        "lambda/monitoring/application-setup/index.ts"
+      );
     }
 
     this.function = new nodejs.NodejsFunction(this, "Function", {
@@ -127,13 +137,15 @@ export class ApplicationSetupLambdaConstruct extends Construct {
       })
     );
 
-    // Grant permissions to read SSM parameters
+    // Grant permissions to read SSM parameters (use envName for correct path)
     this.function.addToRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         actions: ["ssm:GetParameter", "ssm:GetParameters"],
         resources: [
-          `arn:aws:ssm:${props.region}:${cdk.Stack.of(this).account}:parameter/monitoring/${props.efsStackName}/*`,
+          // Allow reading from both paths for backward compatibility
+          // `arn:aws:ssm:${props.region}:${cdk.Stack.of(this).account}:parameter/monitoring/${props.efsStackName}/*`,
+          `arn:aws:ssm:${props.region}:${cdk.Stack.of(this).account}:parameter/monitoring/${props.envName}/*`,
         ],
       })
     );
@@ -159,7 +171,8 @@ export class ApplicationSetupLambdaConstruct extends Construct {
           status: ["ACTIVE"],
         },
       },
-      description: "Trigger application setup when container instance registers",
+      description:
+        "Trigger application setup when container instance registers",
     });
 
     // Add Lambda as target
@@ -180,6 +193,33 @@ export class ApplicationSetupLambdaConstruct extends Construct {
       principal: new iam.ServicePrincipal("events.amazonaws.com"),
       sourceArn: this.rule.ruleArn,
     });
+
+    // ========================================================================
+    // CUSTOM RESOURCE TO TRIGGER ON STACK UPDATES
+    // ========================================================================
+    // This ensures the Lambda runs on stack updates, not just new instance registration
+    const provider = new cr.Provider(this, "ApplicationSetupProvider", {
+      onEventHandler: this.function,
+      logRetention: logs.RetentionDays.ONE_WEEK,
+    });
+
+    // Create Custom Resource that triggers on stack updates
+    this.updateTrigger = new cdk.CustomResource(
+      this,
+      "ApplicationSetupTrigger",
+      {
+        serviceToken: provider.serviceToken,
+        properties: {
+          clusterName: props.clusterName,
+          fileSystemId: props.fileSystemId,
+          efsStackName: props.efsStackName,
+          region: props.region,
+          envName: props.envName,
+          // Force update when stack is updated (timestamp changes on each deploy)
+          Timestamp: Date.now().toString(),
+        },
+      }
+    );
 
     // ========================================================================
     // CDK NAG SUPPRESSIONS
@@ -207,8 +247,7 @@ export class ApplicationSetupLambdaConstruct extends Construct {
             `Resource::arn:aws:ecs:${props.region}:${cdk.Stack.of(this).account}:container-instance/${props.clusterName}/*`,
             // Match EC2 instance ARNs with specific region/account (CDK Nag checks exact ARN)
             {
-              regex:
-                "/^Resource::arn:aws:ec2:.*:.*:instance\\/\\*$/",
+              regex: "/^Resource::arn:aws:ec2:.*:.*:instance\\/\\*$/",
             },
             // Also include the literal pattern for the specific region/account
             `Resource::arn:aws:ec2:${props.region}:${cdk.Stack.of(this).account}:instance/*`,
@@ -220,4 +259,3 @@ export class ApplicationSetupLambdaConstruct extends Construct {
     );
   }
 }
-

@@ -19,6 +19,9 @@ import {
   DescribeContainerInstancesCommand,
   ContainerInstanceStatus,
   ContainerInstance,
+  ListTasksCommand,
+  DescribeTasksCommand,
+  UpdateServiceCommand,
 } from "@aws-sdk/client-ecs";
 import {
   SSMClient,
@@ -26,6 +29,12 @@ import {
   GetCommandInvocationCommand,
   CommandStatus,
 } from "@aws-sdk/client-ssm";
+import {
+  CloudFormationCustomResourceEvent,
+  CloudFormationCustomResourceResponse,
+} from "aws-lambda";
+import * as https from "https";
+import * as url from "url";
 
 const ecsClient = new ECSClient({ region: process.env.AWS_REGION || "us-east-1" });
 const ssmClient = new SSMClient({ region: process.env.AWS_REGION || "us-east-1" });
@@ -40,13 +49,22 @@ interface ApplicationSetupEvent {
 }
 
 /**
- * Lambda handler
+ * Lambda handler - supports both EventBridge events and Custom Resource events
  */
-export const handler = async (event: ApplicationSetupEvent): Promise<void> => {
+export const handler = async (
+  event: ApplicationSetupEvent | CloudFormationCustomResourceEvent
+): Promise<void | CloudFormationCustomResourceResponse> => {
   console.log("Application Setup Lambda started");
   console.log("Event:", JSON.stringify(event, null, 2));
 
-  const { clusterName, instanceId, fileSystemId, efsStackName, region, envName } = event;
+  // Check if this is a Custom Resource event
+  if ("RequestType" in event) {
+    return handleCustomResourceEvent(event as CloudFormationCustomResourceEvent);
+  }
+
+  // Handle EventBridge event
+  const appEvent = event as ApplicationSetupEvent;
+  const { clusterName, instanceId, fileSystemId, efsStackName, region, envName } = appEvent;
 
   // If instanceId is provided, use it directly
   // Otherwise, find the most recently registered instance
@@ -72,8 +90,185 @@ export const handler = async (event: ApplicationSetupEvent): Promise<void> => {
     envName,
   });
 
+  // Reload Prometheus configuration after update
+  await reloadPrometheusConfig(targetInstanceId);
+
   console.log("✓ Application setup completed successfully");
 };
+
+/**
+ * Handle Custom Resource events (Create, Update, Delete)
+ */
+async function handleCustomResourceEvent(
+  event: CloudFormationCustomResourceEvent
+): Promise<CloudFormationCustomResourceResponse> {
+  const requestType = event.RequestType;
+  const props = event.ResourceProperties as ApplicationSetupEvent;
+
+  console.log(`Custom Resource ${requestType} event`);
+
+  try {
+    if (requestType === "Create" || requestType === "Update") {
+      // Find all container instances and update them
+      const instanceIds = await findAllContainerInstances(props.clusterName);
+
+      if (instanceIds.length === 0) {
+        console.log("No container instances found. Skipping application setup.");
+      } else {
+        // Update all instances
+        for (const instanceId of instanceIds) {
+          console.log(`Setting up application on instance: ${instanceId}`);
+          await executeApplicationSetup(instanceId, {
+            fileSystemId: props.fileSystemId,
+            efsStackName: props.efsStackName,
+            region: props.region,
+            envName: props.envName,
+          });
+
+          // Reload Prometheus configuration
+          await reloadPrometheusConfig(instanceId);
+        }
+      }
+    }
+
+    // Send success response
+    await sendCustomResourceResponse(event, {
+      Status: "SUCCESS",
+      PhysicalResourceId: `application-setup-${props.clusterName}`,
+      Data: {
+        Message: `Application setup ${requestType} completed`,
+        InstanceCount: requestType === "Delete" ? 0 : (await findAllContainerInstances(props.clusterName)).length,
+      },
+    });
+
+    return {
+      Status: "SUCCESS",
+      PhysicalResourceId: `application-setup-${props.clusterName}`,
+      StackId: event.StackId,
+      RequestId: event.RequestId,
+      LogicalResourceId: event.LogicalResourceId,
+      Data: {},
+    };
+  } catch (error) {
+    console.error("Error in Custom Resource handler:", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    await sendCustomResourceResponse(event, {
+      Status: "FAILED",
+      PhysicalResourceId: (event as any).PhysicalResourceId || `application-setup-${props.clusterName}`,
+      Reason: errorMessage,
+      Data: {},
+    });
+
+    throw error;
+  }
+}
+
+/**
+ * Find all container instances in the cluster
+ */
+async function findAllContainerInstances(
+  clusterName: string
+): Promise<string[]> {
+  try {
+    const listResponse = await ecsClient.send(
+      new ListContainerInstancesCommand({ cluster: clusterName })
+    );
+
+    if (!listResponse.containerInstanceArns || listResponse.containerInstanceArns.length === 0) {
+      return [];
+    }
+
+    const describeResponse = await ecsClient.send(
+      new DescribeContainerInstancesCommand({
+        cluster: clusterName,
+        containerInstances: listResponse.containerInstanceArns,
+      })
+    );
+
+    if (!describeResponse.containerInstances) {
+      return [];
+    }
+
+    return describeResponse.containerInstances
+      .filter((ci) => ci.status === ContainerInstanceStatus.ACTIVE && ci.ec2InstanceId)
+      .map((ci) => ci.ec2InstanceId!)
+      .filter((id): id is string => id !== undefined);
+  } catch (error) {
+    console.error("Error finding container instances:", error);
+    throw error;
+  }
+}
+
+/**
+ * Reload Prometheus configuration using lifecycle API
+ */
+async function reloadPrometheusConfig(instanceId: string): Promise<void> {
+  try {
+    console.log("Reloading Prometheus configuration...");
+    const command = new SendCommandCommand({
+      InstanceIds: [instanceId],
+      DocumentName: "AWS-RunShellScript",
+      Parameters: {
+        commands: [
+          "curl -X POST http://localhost:9090/prometheus/-/reload || echo 'Prometheus reload failed (may not be running yet)'",
+        ],
+      },
+      TimeoutSeconds: 30,
+    });
+
+    await ssmClient.send(command);
+    console.log("✓ Prometheus reload triggered");
+  } catch (error) {
+    console.warn("Failed to reload Prometheus (may not be running yet):", error);
+    // Don't throw - this is non-critical
+  }
+}
+
+/**
+ * Send Custom Resource response to CloudFormation
+ */
+async function sendCustomResourceResponse(
+  event: CloudFormationCustomResourceEvent,
+  response: CloudFormationCustomResourceResponse
+): Promise<void> {
+  const responseBody = JSON.stringify({
+    Status: response.Status,
+    Reason: response.Reason || `See CloudWatch Logs for requestId: ${event.RequestId}`,
+    PhysicalResourceId: response.PhysicalResourceId || event.RequestId,
+    StackId: event.StackId,
+    RequestId: event.RequestId,
+    LogicalResourceId: event.LogicalResourceId,
+    Data: response.Data || {},
+  });
+
+  const parsedUrl = url.parse(event.ResponseURL);
+  const options = {
+    hostname: parsedUrl.hostname,
+    port: 443,
+    path: parsedUrl.path,
+    method: "PUT",
+    headers: {
+      "content-type": "application/json",
+      "content-length": Buffer.byteLength(responseBody),
+    },
+  };
+
+  await new Promise<void>((resolve, reject) => {
+    const req = https.request(options, (res) => {
+      res.on("data", () => undefined);
+      res.on("end", resolve);
+    });
+
+    req.on("error", (err) => {
+      console.error("sendCustomResourceResponse error:", err);
+      reject(err);
+    });
+
+    req.write(responseBody);
+    req.end();
+  });
+}
 
 /**
  * Find the most recently registered container instance
@@ -276,9 +471,9 @@ sudo chmod -R 777 /mnt/efs/grafana-data
 # ==========================================================================
 echo 'Downloading configuration files from SSM...'
 
-# Download Prometheus config from SSM
-if aws ssm get-parameter --region ${config.region} --name "/monitoring/${config.efsStackName}/prometheus-config" --query "Parameter.Value" --output text > /tmp/prometheus.yml 2>/dev/null; then
-  echo '✓ Prometheus config downloaded from SSM'
+# Download Prometheus config from SSM (use YAML version created by EFS initialization Lambda)
+if aws ssm get-parameter --region ${config.region} --name "/monitoring/${config.envName}/prometheus-config-yaml" --query "Parameter.Value" --output text > /tmp/prometheus.yml 2>/dev/null; then
+  echo '✓ Prometheus config downloaded from SSM (YAML format)'
   cp /tmp/prometheus.yml /mnt/efs/config/prometheus/prometheus.yml
   sudo chown 65534:65534 /mnt/efs/config/prometheus/prometheus.yml
 else
@@ -289,8 +484,12 @@ global:
   evaluation_interval: 15s
 scrape_configs:
   - job_name: 'prometheus'
+    metrics_path: /prometheus/metrics
     static_configs:
       - targets: ['localhost:9090']
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['localhost:9100']
 EOF
   sudo chown 65534:65534 /mnt/efs/config/prometheus/prometheus.yml
 fi
