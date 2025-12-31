@@ -503,11 +503,13 @@ sudo chown -R 65534:65534 /mnt/efs/config/prometheus
 sudo chmod -R 755 /mnt/efs/prometheus-data
 sudo chmod -R 755 /mnt/efs/config/prometheus
 
-# Grafana permissions (UID 472)
-sudo chown -R 472:472 /mnt/efs/grafana-data
-sudo chown -R 472:472 /mnt/efs/config/grafana
+# Grafana permissions (UID 472, GID 0 - matches Grafana container user: "472:0")
+# Note: Grafana container runs as user "472:0" (grafana user, root group)
+sudo chown -R 472:0 /mnt/efs/grafana-data
+sudo chown -R 472:0 /mnt/efs/config/grafana
 sudo chmod -R 755 /mnt/efs/grafana-data
 sudo chmod -R 755 /mnt/efs/config/grafana
+# Ensure Grafana can write to its data directories
 sudo chmod -R 777 /mnt/efs/grafana-data
 
 # ==========================================================================
@@ -546,11 +548,39 @@ echo 'ℹ Grafana configuration managed by EFS Lambda'
 # ==========================================================================
 echo 'Creating symlinks...'
 
+# Remove any existing directories or symlinks to prevent circular references
+# This ensures we replace directories with symlinks, not create symlinks inside directories
+sudo rm -rf /mnt/prometheus-data /mnt/grafana-data /mnt/prometheus-config /mnt/grafana-provisioning /mnt/grafana-dashboards 2>/dev/null || true
+
+# Create symlinks (using absolute paths to avoid issues)
 sudo ln -sf /mnt/efs/prometheus-data /mnt/prometheus-data
 sudo ln -sf /mnt/efs/grafana-data /mnt/grafana-data
 sudo ln -sf /mnt/efs/config/prometheus /mnt/prometheus-config
 sudo ln -sf /mnt/efs/config/grafana/provisioning /mnt/grafana-provisioning
 sudo ln -sf /mnt/efs/config/grafana/dashboards /mnt/grafana-dashboards
+
+# Verify symlinks are correct (not circular)
+echo 'Verifying symlinks...'
+for link in prometheus-data grafana-data prometheus-config grafana-provisioning grafana-dashboards; do
+  if [ -L "/mnt/$link" ]; then
+    target=$(readlink -f "/mnt/$link")
+    echo "✓ /mnt/$link -> $target"
+    # Check for circular reference: target should not contain the link name
+    if echo "$target" | grep -q "/mnt/$link"; then
+      echo "ERROR: Circular symlink detected: /mnt/$link -> $target"
+      exit 1
+    fi
+  else
+    echo "ERROR: /mnt/$link is not a symlink"
+    exit 1
+  fi
+done
+
+# Clean up any circular symlinks that might exist inside EFS directories
+# This prevents issues if symlinks were incorrectly created inside directories
+echo 'Cleaning up any circular symlinks in EFS directories...'
+sudo find /mnt/efs/grafana-data -type l -name "grafana-data" -delete 2>/dev/null || true
+sudo find /mnt/efs/prometheus-data -type l -name "prometheus-data" -delete 2>/dev/null || true
 
 # ==========================================================================
 # COMPLETION
