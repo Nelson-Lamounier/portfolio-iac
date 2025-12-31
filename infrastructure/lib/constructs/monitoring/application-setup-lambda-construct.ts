@@ -1,5 +1,7 @@
 /** @format */
 
+import * as path from "path";
+
 import * as cdk from "aws-cdk-lib";
 import * as cr from "aws-cdk-lib/custom-resources";
 import * as events from "aws-cdk-lib/aws-events";
@@ -8,8 +10,8 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as nodejs from "aws-cdk-lib/aws-lambda-nodejs";
-import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
+import { NagSuppressions } from "cdk-nag";
 
 export interface ApplicationSetupLambdaConstructProps {
   clusterName: string;
