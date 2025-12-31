@@ -247,9 +247,9 @@ export class MonitoringEfsStack extends cdk.Stack {
       {
         job_name: "prometheus",
         static_configs: [{ targets: ["localhost:9090"] }],
-        // Use /metrics (not /prometheus/metrics) when scraping from localhost
-        // The /prometheus prefix only applies when accessing through ALB
-        metrics_path: "/metrics",
+        // Use /prometheus/metrics because Prometheus is started with --web.route-prefix=/prometheus
+        // This prefix applies to ALL endpoints, including when scraping from localhost
+        metrics_path: "/prometheus/metrics",
       },
       {
         job_name: "node-exporter",
