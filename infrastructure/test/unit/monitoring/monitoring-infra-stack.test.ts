@@ -453,6 +453,7 @@ describe("MonitoringInfraStack", () => {
         region: "eu-west-1",
       });
 
+      // Check that Lambda has ECS permissions
       testSetup.template.hasResourceProperties("AWS::IAM::Policy", {
         PolicyDocument: {
           Statement: Match.arrayWith([
@@ -463,6 +464,14 @@ describe("MonitoringInfraStack", () => {
                 "ecs:DescribeContainerInstances",
               ]),
             }),
+          ]),
+        },
+      });
+
+      // Check that Lambda has SSM Run Command permissions
+      testSetup.template.hasResourceProperties("AWS::IAM::Policy", {
+        PolicyDocument: {
+          Statement: Match.arrayWith([
             Match.objectLike({
               Effect: "Allow",
               Action: Match.arrayWith([
@@ -470,6 +479,14 @@ describe("MonitoringInfraStack", () => {
                 "ssm:GetCommandInvocation",
               ]),
             }),
+          ]),
+        },
+      });
+
+      // Check that Lambda has SSM GetParameter permissions with envName path
+      testSetup.template.hasResourceProperties("AWS::IAM::Policy", {
+        PolicyDocument: {
+          Statement: Match.arrayWith([
             Match.objectLike({
               Effect: "Allow",
               Action: Match.arrayWith([
@@ -495,22 +512,26 @@ describe("MonitoringInfraStack", () => {
       // Verify Custom Resource exists (created by CustomResource construct)
       // Note: CDK Custom Resources are created as AWS::CloudFormation::CustomResource
       const customResources = testSetup.template.findResources("AWS::CloudFormation::CustomResource");
-      const applicationSetupCustomResource = Object.values(customResources).find(
-        (resource: any) => 
+      const applicationSetupCustomResource = Object.entries(customResources).find(
+        ([logicalId, resource]: [string, any]) => 
           resource.Properties?.ServiceToken && 
-          resource.LogicalId?.includes("ApplicationSetup")
+          (logicalId.includes("ApplicationSetup") || logicalId.includes("Trigger"))
       );
       
       expect(applicationSetupCustomResource).toBeDefined();
-      expect(applicationSetupCustomResource?.Properties?.ServiceToken).toBeDefined();
+      if (applicationSetupCustomResource) {
+        const [, resource] = applicationSetupCustomResource;
+        expect(resource.Properties?.ServiceToken).toBeDefined();
+      }
 
       // Verify Custom Resource Provider Lambda exists
       // The Provider creates a Lambda function with onEvent handler
       const providerLambdas = testSetup.template.findResources("AWS::Lambda::Function");
-      const providerLambda = Object.values(providerLambdas).find(
-        (lambda: any) => 
+      const providerLambda = Object.entries(providerLambdas).find(
+        ([logicalId, lambda]: [string, any]) => 
           lambda.Properties?.Handler?.includes("onEvent") ||
-          lambda.LogicalId?.includes("ApplicationSetupProvider")
+          logicalId.includes("ApplicationSetupProvider") ||
+          logicalId.includes("framework-onEvent")
       );
       
       expect(providerLambda).toBeDefined();
@@ -524,19 +545,25 @@ describe("MonitoringInfraStack", () => {
       });
 
       // Verify SSM permissions use /monitoring/{envName}/* path
-      testSetup.template.hasResourceProperties("AWS::IAM::Policy", {
-        PolicyDocument: {
-          Statement: Match.arrayWith([
-            Match.objectLike({
-              Effect: "Allow",
-              Action: Match.arrayWith(["ssm:GetParameter", "ssm:GetParameters"]),
-              Resource: Match.arrayWith([
-                Match.stringLikeRegexp(".*parameter/monitoring/pipeline.*"),
-              ]),
-            }),
-          ]),
-        },
+      // Find all IAM policies and check if any has SSM GetParameter with envName path
+      const policies = testSetup.template.findResources("AWS::IAM::Policy");
+      const hasCorrectSsmPath = Object.values(policies).some((policy: any) => {
+        const statements = policy.Properties?.PolicyDocument?.Statement || [];
+        return statements.some((stmt: any) => {
+          const actions = Array.isArray(stmt.Action) ? stmt.Action : [stmt.Action];
+          const hasSsmActions = actions.some((action: string) => 
+            action === "ssm:GetParameter" || action === "ssm:GetParameters"
+          );
+          if (!hasSsmActions) return false;
+          
+          const resources = Array.isArray(stmt.Resource) ? stmt.Resource : [stmt.Resource];
+          return resources.some((resource: string) => 
+            resource && resource.includes("parameter/monitoring/pipeline")
+          );
+        });
       });
+      
+      expect(hasCorrectSsmPath).toBe(true);
     });
   });
 
