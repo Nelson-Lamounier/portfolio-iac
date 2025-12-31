@@ -135,6 +135,8 @@ export class ApplicationSetupLambdaConstruct extends Construct {
         resources: [
           `arn:aws:ec2:${props.region}:${cdk.Stack.of(this).account}:instance/*`,
           `arn:aws:ssm:${props.region}::document/AWS-RunShellScript`,
+          // GetCommandInvocation requires permission on the command invocation resource
+          `arn:aws:ssm:${props.region}:${cdk.Stack.of(this).account}:*`,
         ],
       })
     );
@@ -253,6 +255,11 @@ export class ApplicationSetupLambdaConstruct extends Construct {
             },
             // Also include the literal pattern for the specific region/account
             `Resource::arn:aws:ec2:${props.region}:${cdk.Stack.of(this).account}:instance/*`,
+            // SSM GetCommandInvocation requires wildcard access to command invocation resources
+            `Resource::arn:aws:ssm:${props.region}:${cdk.Stack.of(this).account}:*`,
+            {
+              regex: "/^Resource::arn:aws:ssm:.*:.*:\\*$/",
+            },
             "Resource::*", // For ec2:DescribeInstances which doesn't support resource-level permissions
           ],
         },
