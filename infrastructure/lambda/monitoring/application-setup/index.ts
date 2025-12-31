@@ -13,15 +13,15 @@
  * @format
  */
 
+import * as https from "https";
+import * as url from "url";
+
 import {
   ECSClient,
   ListContainerInstancesCommand,
   DescribeContainerInstancesCommand,
   ContainerInstanceStatus,
   ContainerInstance,
-  ListTasksCommand,
-  DescribeTasksCommand,
-  UpdateServiceCommand,
 } from "@aws-sdk/client-ecs";
 import {
   SSMClient,
@@ -33,11 +33,13 @@ import {
   CloudFormationCustomResourceEvent,
   CloudFormationCustomResourceResponse,
 } from "aws-lambda";
-import * as https from "https";
-import * as url from "url";
 
-const ecsClient = new ECSClient({ region: process.env.AWS_REGION || "us-east-1" });
-const ssmClient = new SSMClient({ region: process.env.AWS_REGION || "us-east-1" });
+const ecsClient = new ECSClient({
+  region: process.env.AWS_REGION || "us-east-1",
+});
+const ssmClient = new SSMClient({
+  region: process.env.AWS_REGION || "us-east-1",
+});
 
 interface ApplicationSetupEvent {
   clusterName: string;
@@ -59,12 +61,21 @@ export const handler = async (
 
   // Check if this is a Custom Resource event
   if ("RequestType" in event) {
-    return handleCustomResourceEvent(event as CloudFormationCustomResourceEvent);
+    return handleCustomResourceEvent(
+      event as CloudFormationCustomResourceEvent
+    );
   }
 
   // Handle EventBridge event
   const appEvent = event as ApplicationSetupEvent;
-  const { clusterName, instanceId, fileSystemId, efsStackName, region, envName } = appEvent;
+  const {
+    clusterName,
+    instanceId,
+    fileSystemId,
+    efsStackName,
+    region,
+    envName,
+  } = appEvent;
 
   // If instanceId is provided, use it directly
   // Otherwise, find the most recently registered instance
@@ -103,7 +114,7 @@ async function handleCustomResourceEvent(
   event: CloudFormationCustomResourceEvent
 ): Promise<CloudFormationCustomResourceResponse> {
   const requestType = event.RequestType;
-  const props = event.ResourceProperties as ApplicationSetupEvent;
+  const props = event.ResourceProperties as unknown as ApplicationSetupEvent;
 
   console.log(`Custom Resource ${requestType} event`);
 
@@ -113,7 +124,9 @@ async function handleCustomResourceEvent(
       const instanceIds = await findAllContainerInstances(props.clusterName);
 
       if (instanceIds.length === 0) {
-        console.log("No container instances found. Skipping application setup.");
+        console.log(
+          "No container instances found. Skipping application setup."
+        );
       } else {
         // Update all instances
         for (const instanceId of instanceIds) {
@@ -132,14 +145,21 @@ async function handleCustomResourceEvent(
     }
 
     // Send success response
-    await sendCustomResourceResponse(event, {
+    const response: CloudFormationCustomResourceResponse = {
       Status: "SUCCESS",
       PhysicalResourceId: `application-setup-${props.clusterName}`,
+      StackId: event.StackId,
+      RequestId: event.RequestId,
+      LogicalResourceId: event.LogicalResourceId,
       Data: {
         Message: `Application setup ${requestType} completed`,
-        InstanceCount: requestType === "Delete" ? 0 : (await findAllContainerInstances(props.clusterName)).length,
+        InstanceCount:
+          requestType === "Delete"
+            ? 0
+            : (await findAllContainerInstances(props.clusterName)).length,
       },
-    });
+    };
+    await sendCustomResourceResponse(event, response);
 
     return {
       Status: "SUCCESS",
@@ -153,12 +173,18 @@ async function handleCustomResourceEvent(
     console.error("Error in Custom Resource handler:", error);
     const errorMessage = error instanceof Error ? error.message : String(error);
 
-    await sendCustomResourceResponse(event, {
+    const failureResponse: CloudFormationCustomResourceResponse = {
       Status: "FAILED",
-      PhysicalResourceId: (event as any).PhysicalResourceId || `application-setup-${props.clusterName}`,
+      PhysicalResourceId:
+        (event as any).PhysicalResourceId ||
+        `application-setup-${props.clusterName}`,
       Reason: errorMessage,
+      StackId: event.StackId,
+      RequestId: event.RequestId,
+      LogicalResourceId: event.LogicalResourceId,
       Data: {},
-    });
+    };
+    await sendCustomResourceResponse(event, failureResponse);
 
     throw error;
   }
@@ -175,7 +201,10 @@ async function findAllContainerInstances(
       new ListContainerInstancesCommand({ cluster: clusterName })
     );
 
-    if (!listResponse.containerInstanceArns || listResponse.containerInstanceArns.length === 0) {
+    if (
+      !listResponse.containerInstanceArns ||
+      listResponse.containerInstanceArns.length === 0
+    ) {
       return [];
     }
 
@@ -191,7 +220,9 @@ async function findAllContainerInstances(
     }
 
     return describeResponse.containerInstances
-      .filter((ci) => ci.status === ContainerInstanceStatus.ACTIVE && ci.ec2InstanceId)
+      .filter(
+        (ci) => ci.status === ContainerInstanceStatus.ACTIVE && ci.ec2InstanceId
+      )
       .map((ci) => ci.ec2InstanceId!)
       .filter((id): id is string => id !== undefined);
   } catch (error) {
@@ -220,7 +251,10 @@ async function reloadPrometheusConfig(instanceId: string): Promise<void> {
     await ssmClient.send(command);
     console.log("✓ Prometheus reload triggered");
   } catch (error) {
-    console.warn("Failed to reload Prometheus (may not be running yet):", error);
+    console.warn(
+      "Failed to reload Prometheus (may not be running yet):",
+      error
+    );
     // Don't throw - this is non-critical
   }
 }
@@ -234,7 +268,9 @@ async function sendCustomResourceResponse(
 ): Promise<void> {
   const responseBody = JSON.stringify({
     Status: response.Status,
-    Reason: response.Reason || `See CloudWatch Logs for requestId: ${event.RequestId}`,
+    Reason:
+      response.Reason ||
+      `See CloudWatch Logs for requestId: ${event.RequestId}`,
     PhysicalResourceId: response.PhysicalResourceId || event.RequestId,
     StackId: event.StackId,
     RequestId: event.RequestId,
@@ -282,7 +318,10 @@ async function findLatestContainerInstance(
       new ListContainerInstancesCommand({ cluster: clusterName })
     );
 
-    if (!listResponse.containerInstanceArns || listResponse.containerInstanceArns.length === 0) {
+    if (
+      !listResponse.containerInstanceArns ||
+      listResponse.containerInstanceArns.length === 0
+    ) {
       return undefined;
     }
 
@@ -294,7 +333,10 @@ async function findLatestContainerInstance(
       })
     );
 
-    if (!describeResponse.containerInstances || describeResponse.containerInstances.length === 0) {
+    if (
+      !describeResponse.containerInstances ||
+      describeResponse.containerInstances.length === 0
+    ) {
       return undefined;
     }
 
@@ -361,14 +403,16 @@ async function executeApplicationSetup(
     })
   );
 
-    if (invocation.Status === CommandStatus.SUCCESS) {
-      console.log("✓ Application setup completed successfully");
-      console.log("Command output:", invocation.StandardOutputContent);
-    } else {
-      console.error("✗ Application setup failed");
-      console.error("Error:", invocation.StandardErrorContent);
-      throw new Error(`Application setup failed: ${invocation.StandardErrorContent}`);
-    }
+  if (invocation.Status === CommandStatus.SUCCESS) {
+    console.log("✓ Application setup completed successfully");
+    console.log("Command output:", invocation.StandardOutputContent);
+  } else {
+    console.error("✗ Application setup failed");
+    console.error("Error:", invocation.StandardErrorContent);
+    throw new Error(
+      `Application setup failed: ${invocation.StandardErrorContent}`
+    );
+  }
 }
 
 /**
@@ -554,9 +598,12 @@ async function waitForCommand(
     }
 
     // Still in progress, continue waiting
-    console.log(`Command status: ${invocation.Status} (attempt ${i + 1}/${maxAttempts})`);
+    console.log(
+      `Command status: ${invocation.Status} (attempt ${i + 1}/${maxAttempts})`
+    );
   }
 
-  throw new Error(`Command ${commandId} timed out after ${maxAttempts} attempts`);
+  throw new Error(
+    `Command ${commandId} timed out after ${maxAttempts} attempts`
+  );
 }
-
