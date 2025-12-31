@@ -470,6 +470,70 @@ describe("MonitoringInfraStack", () => {
                 "ssm:GetCommandInvocation",
               ]),
             }),
+            Match.objectLike({
+              Effect: "Allow",
+              Action: Match.arrayWith([
+                "ssm:GetParameter",
+                "ssm:GetParameters",
+              ]),
+              Resource: Match.arrayWith([
+                Match.stringLikeRegexp(".*monitoring/pipeline.*"),
+              ]),
+            }),
+          ]),
+        },
+      });
+    });
+
+    test("creates Custom Resource to trigger Lambda on stack updates", () => {
+      const testSetup = createTestMonitoringInfraStack({
+        envName: "pipeline",
+        account: "123456789012",
+        region: "eu-west-1",
+      });
+
+      // Verify Custom Resource exists (created by CustomResource construct)
+      // Note: CDK Custom Resources are created as AWS::CloudFormation::CustomResource
+      const customResources = testSetup.template.findResources("AWS::CloudFormation::CustomResource");
+      const applicationSetupCustomResource = Object.values(customResources).find(
+        (resource: any) => 
+          resource.Properties?.ServiceToken && 
+          resource.LogicalId?.includes("ApplicationSetup")
+      );
+      
+      expect(applicationSetupCustomResource).toBeDefined();
+      expect(applicationSetupCustomResource?.Properties?.ServiceToken).toBeDefined();
+
+      // Verify Custom Resource Provider Lambda exists
+      // The Provider creates a Lambda function with onEvent handler
+      const providerLambdas = testSetup.template.findResources("AWS::Lambda::Function");
+      const providerLambda = Object.values(providerLambdas).find(
+        (lambda: any) => 
+          lambda.Properties?.Handler?.includes("onEvent") ||
+          lambda.LogicalId?.includes("ApplicationSetupProvider")
+      );
+      
+      expect(providerLambda).toBeDefined();
+    });
+
+    test("Lambda SSM permissions use envName path", () => {
+      const testSetup = createTestMonitoringInfraStack({
+        envName: "pipeline",
+        account: "123456789012",
+        region: "eu-west-1",
+      });
+
+      // Verify SSM permissions use /monitoring/{envName}/* path
+      testSetup.template.hasResourceProperties("AWS::IAM::Policy", {
+        PolicyDocument: {
+          Statement: Match.arrayWith([
+            Match.objectLike({
+              Effect: "Allow",
+              Action: Match.arrayWith(["ssm:GetParameter", "ssm:GetParameters"]),
+              Resource: Match.arrayWith([
+                Match.stringLikeRegexp(".*parameter/monitoring/pipeline.*"),
+              ]),
+            }),
           ]),
         },
       });

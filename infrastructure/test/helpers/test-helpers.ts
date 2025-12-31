@@ -138,10 +138,19 @@ export function createTestMonitoringEfsStack(
   });
 
   // Create SSM Parameters (simplified for testing)
+  // Note: EFS initialization Lambda creates the YAML version, but we create JSON for testing
+  const envName = props?.envName || "test";
   new cdk.aws_ssm.StringParameter(stack, "PrometheusConfig", {
-    parameterName: `/monitoring/${stack.stackName}/prometheus-config`,
+    parameterName: `/monitoring/${envName}/prometheus-config`,
     stringValue: JSON.stringify({ test: "config" }),
     description: "Prometheus configuration for monitoring stack",
+  });
+  
+  // Also create YAML version (as created by EFS initialization Lambda)
+  new cdk.aws_ssm.StringParameter(stack, "PrometheusConfigYaml", {
+    parameterName: `/monitoring/${envName}/prometheus-config-yaml`,
+    stringValue: "global:\n  scrape_interval: 15s",
+    description: "Prometheus configuration in YAML format",
   });
 
   new cdk.aws_ssm.StringParameter(stack, "GrafanaDatasourceConfig", {
