@@ -112,7 +112,11 @@ export class EcsTaskExecutionRole extends Construct {
         new iam.PolicyStatement({
           sid: "CloudWatchLogsAccess",
           effect: iam.Effect.ALLOW,
-          actions: ["logs:CreateLogStream", "logs:PutLogEvents"],
+          actions: [
+            "logs:CreateLogStream",
+            "logs:PutLogEvents",
+            "logs:DescribeLogStreams", // Required for log stream discovery
+          ],
           resources: [logResource],
         })
       );

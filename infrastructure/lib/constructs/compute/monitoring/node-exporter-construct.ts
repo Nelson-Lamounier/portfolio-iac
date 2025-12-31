@@ -48,6 +48,10 @@ export class NodeExporterConstruct extends Construct {
     );
     const executionRole = executionRoleConstruct.role;
 
+    // Grant ECS tasks permission to write to this log group
+    // This helps prevent credential exhaustion by ensuring tasks have explicit permissions
+    this.logGroup.grantWrite(executionRole);
+
     // Create task definition with HOST network mode
     this.taskDefinition = new ecs.Ec2TaskDefinition(this, "TaskDef", {
       networkMode: ecs.NetworkMode.HOST,

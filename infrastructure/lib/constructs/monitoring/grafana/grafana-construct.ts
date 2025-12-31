@@ -228,6 +228,10 @@ export class GrafanaConstruct extends Construct {
 
     this.taskDefinition = this.taskDefConstruct.taskDefinition;
 
+    // Grant ECS tasks permission to write to this log group
+    // This helps prevent credential exhaustion by ensuring tasks have explicit permissions
+    this.logGroup.grantWrite(executionRoleConstruct.role);
+
     // ========================================================================
     // 2. ADD MOUNT POINTS TO CONTAINER
     // ========================================================================
