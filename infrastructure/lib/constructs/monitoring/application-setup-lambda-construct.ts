@@ -259,5 +259,22 @@ export class ApplicationSetupLambdaConstruct extends Construct {
       ],
       true // Apply to children (default policy)
     );
+
+    // Suppress wildcard permissions for Custom Resource Provider's framework Lambda
+    // The Provider creates a framework Lambda that needs to invoke the handler Lambda
+    NagSuppressions.addResourceSuppressions(
+      provider,
+      [
+        {
+          id: "AwsSolutions-IAM5",
+          reason:
+            "Custom Resource Provider framework Lambda requires wildcard permissions to invoke the handler Lambda function. " +
+            "The handler Lambda ARN is determined at runtime and cannot be pre-specified. " +
+            "This is a standard pattern for CDK Custom Resources. " +
+            "See: https://docs.aws.amazon.com/cdk/v2/guide/custom_resources.html",
+        },
+      ],
+      true // Apply to children (default policy)
+    );
   }
 }
