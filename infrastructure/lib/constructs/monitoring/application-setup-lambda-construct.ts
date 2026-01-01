@@ -123,6 +123,24 @@ export class ApplicationSetupLambdaConstruct extends Construct {
       })
     );
 
+    // Grant permissions to stop old tasks (critical for preventing credential exhaustion)
+    this.function.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          "ecs:ListServices",
+          "ecs:ListTasks",
+          "ecs:DescribeTasks",
+          "ecs:StopTask",
+        ],
+        resources: [
+          `arn:aws:ecs:${props.region}:${cdk.Stack.of(this).account}:cluster/${props.clusterName}`,
+          `arn:aws:ecs:${props.region}:${cdk.Stack.of(this).account}:service/${props.clusterName}/*`,
+          `arn:aws:ecs:${props.region}:${cdk.Stack.of(this).account}:task/${props.clusterName}/*`,
+        ],
+      })
+    );
+
     // Grant permissions to send SSM commands
     this.function.addToRolePolicy(
       new iam.PolicyStatement({
@@ -259,6 +277,16 @@ export class ApplicationSetupLambdaConstruct extends Construct {
             `Resource::arn:aws:ssm:${props.region}:${cdk.Stack.of(this).account}:*`,
             {
               regex: "/^Resource::arn:aws:ssm:.*:.*:\\*$/",
+            },
+            // ECS task management requires wildcard permissions for service and task ARNs
+            // Services and tasks are created dynamically and cannot be pre-specified
+            `Resource::arn:aws:ecs:${props.region}:${cdk.Stack.of(this).account}:service/${props.clusterName}/*`,
+            {
+              regex: "/^Resource::arn:aws:ecs:.*:.*:service\\/.*\\/\\*$/",
+            },
+            `Resource::arn:aws:ecs:${props.region}:${cdk.Stack.of(this).account}:task/${props.clusterName}/*`,
+            {
+              regex: "/^Resource::arn:aws:ecs:.*:.*:task\\/.*\\/\\*$/",
             },
             "Resource::*", // For ec2:DescribeInstances which doesn't support resource-level permissions
           ],

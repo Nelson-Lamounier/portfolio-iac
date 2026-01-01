@@ -266,8 +266,10 @@ export class GrafanaConstruct extends Construct {
       desiredCount: props.desiredCount || 1,
 
       // Deployment configuration
-      minHealthyPercent: 0, // Allow restart
-      maxHealthyPercent: 100, // Single instance
+      // minHealthyPercent: 0 allows stopping old tasks even if new ones aren't healthy yet
+      // This is critical for preventing credential exhaustion from old tasks
+      minHealthyPercent: 0, // Allow stopping old tasks immediately
+      maxHealthyPercent: 100, // Single instance (don't allow more than desired count)
       healthCheckGracePeriod: cdk.Duration.seconds(180), // Increased from 60s to 180s to allow Grafana time to start and initialize database
 
       // Enable circuit breaker

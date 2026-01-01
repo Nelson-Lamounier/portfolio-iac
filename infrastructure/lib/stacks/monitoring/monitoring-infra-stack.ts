@@ -168,6 +168,25 @@ export class MonitoringInfraStack extends cdk.Stack {
       })
     );
 
+    // Add CloudWatch Logs permissions to the INSTANCE role
+    // Required for ECS container instances to create log streams and put log events
+    // This is required even though tasks use the task execution role, because the
+    // ECS agent on the container instance also needs these permissions
+    ltConstruct.role.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "logs:DescribeLogStreams", // Required for log stream discovery
+        ],
+        resources: [
+          `arn:aws:logs:${this.region}:${this.account}:log-group:/ecs/*:*`,
+          `arn:aws:logs:${this.region}:${this.account}:log-group:/aws/ecs/*:*`,
+        ],
+      })
+    );
+
     // CDK Nag suppressions for AWS managed policies on the Launch Template instance role.
     // These are standard AWS-managed policies required for SSM + CloudWatch + ECS container instances.
     NagSuppressions.addResourceSuppressions(ltConstruct.role, [

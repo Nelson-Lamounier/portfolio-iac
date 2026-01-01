@@ -22,6 +22,10 @@ import {
   DescribeContainerInstancesCommand,
   ContainerInstanceStatus,
   ContainerInstance,
+  ListTasksCommand,
+  DescribeTasksCommand,
+  StopTaskCommand,
+  ListServicesCommand,
 } from "@aws-sdk/client-ecs";
 import {
   SSMClient,
@@ -120,6 +124,11 @@ async function handleCustomResourceEvent(
 
   try {
     if (requestType === "Create" || requestType === "Update") {
+      // CRITICAL: Stop old tasks FIRST to free up credentials before starting new ones
+      // This prevents credential exhaustion from old tasks blocking new deployments
+      console.log("Stopping old tasks to free up credentials...");
+      await stopOldTasks(props.clusterName, props.envName);
+
       // Find all container instances and update them
       const instanceIds = await findAllContainerInstances(props.clusterName);
 
@@ -636,4 +645,145 @@ async function waitForCommand(
   throw new Error(
     `Command ${commandId} timed out after ${maxAttempts} attempts`
   );
+}
+
+/**
+ * Stop old ECS tasks to free up credentials and prevent exhaustion
+ * This is critical when old tasks are consuming credentials and preventing new tasks from starting
+ */
+async function stopOldTasks(
+  clusterName: string,
+  _envName: string
+): Promise<void> {
+  try {
+    console.log(`Finding old tasks in cluster: ${clusterName}`);
+
+    // List all services in the cluster
+    const servicesResponse = await ecsClient.send(
+      new ListServicesCommand({
+        cluster: clusterName,
+      })
+    );
+
+    if (
+      !servicesResponse.serviceArns ||
+      servicesResponse.serviceArns.length === 0
+    ) {
+      console.log("No services found in cluster");
+      return;
+    }
+
+    // Filter to monitoring services (prometheus, grafana, node-exporter)
+    const monitoringServices = servicesResponse.serviceArns.filter((arn) => {
+      const serviceName = arn.split("/").pop() || "";
+      return (
+        serviceName.includes("prometheus") ||
+        serviceName.includes("grafana") ||
+        serviceName.includes("node-exporter")
+      );
+    });
+
+    if (monitoringServices.length === 0) {
+      console.log("No monitoring services found");
+      return;
+    }
+
+    console.log(`Found ${monitoringServices.length} monitoring services`);
+
+    // For each service, find and stop old tasks
+    for (const serviceArn of monitoringServices) {
+      const serviceName = serviceArn.split("/").pop() || "";
+      console.log(`Processing service: ${serviceName}`);
+
+      try {
+        // List all tasks for this service
+        const tasksResponse = await ecsClient.send(
+          new ListTasksCommand({
+            cluster: clusterName,
+            serviceName: serviceName,
+            desiredStatus: "RUNNING",
+          })
+        );
+
+        if (!tasksResponse.taskArns || tasksResponse.taskArns.length === 0) {
+          console.log(`No running tasks found for service: ${serviceName}`);
+          continue;
+        }
+
+        // Describe tasks to get their details
+        const describeResponse = await ecsClient.send(
+          new DescribeTasksCommand({
+            cluster: clusterName,
+            tasks: tasksResponse.taskArns,
+          })
+        );
+
+        if (!describeResponse.tasks) {
+          continue;
+        }
+
+        // Sort tasks by startedAt (oldest first)
+        const sortedTasks = describeResponse.tasks
+          .filter((task) => task.startedAt)
+          .sort((a, b) => {
+            const aTime = a.startedAt?.getTime() || 0;
+            const bTime = b.startedAt?.getTime() || 0;
+            return aTime - bTime;
+          });
+
+        // If we have more than desired count (1), stop the oldest tasks
+        // Keep only the newest task running
+        if (sortedTasks.length > 1) {
+          const tasksToStop = sortedTasks.slice(0, -1); // All except the newest
+          console.log(
+            `Found ${sortedTasks.length} tasks for ${serviceName}, stopping ${tasksToStop.length} old task(s)`
+          );
+
+          for (const task of tasksToStop) {
+            if (task.taskArn && task.startedAt) {
+              const ageHours =
+                (Date.now() - task.startedAt.getTime()) / (1000 * 60 * 60);
+              console.log(
+                `Stopping old task: ${task.taskArn.split("/").pop()} (age: ${ageHours.toFixed(1)} hours)`
+              );
+
+              try {
+                await ecsClient.send(
+                  new StopTaskCommand({
+                    cluster: clusterName,
+                    task: task.taskArn,
+                    reason:
+                      "Stopping old task to free credentials for new deployment",
+                  })
+                );
+                console.log(`✓ Stopped task: ${task.taskArn.split("/").pop()}`);
+              } catch (error) {
+                console.error(
+                  `Failed to stop task ${task.taskArn}:`,
+                  error instanceof Error ? error.message : String(error)
+                );
+                // Continue with other tasks
+              }
+            }
+          }
+        } else {
+          console.log(
+            `Service ${serviceName} has only ${sortedTasks.length} task(s), no cleanup needed`
+          );
+        }
+      } catch (error) {
+        console.error(
+          `Error processing service ${serviceName}:`,
+          error instanceof Error ? error.message : String(error)
+        );
+        // Continue with other services
+      }
+    }
+
+    console.log("✓ Finished stopping old tasks");
+  } catch (error) {
+    console.error("Error stopping old tasks:", error);
+    // Don't throw - this is a best-effort cleanup
+    // If it fails, the deployment will continue and may still work
+  }
 }
