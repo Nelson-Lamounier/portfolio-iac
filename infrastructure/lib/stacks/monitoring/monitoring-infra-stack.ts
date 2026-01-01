@@ -189,28 +189,57 @@ export class MonitoringInfraStack extends cdk.Stack {
 
     // CDK Nag suppressions for AWS managed policies on the Launch Template instance role.
     // These are standard AWS-managed policies required for SSM + CloudWatch + ECS container instances.
-    NagSuppressions.addResourceSuppressions(ltConstruct.role, [
-      {
-        id: "AwsSolutions-IAM4",
-        reason:
-          "ECS monitoring instances require AWS managed policies for SSM, CloudWatch Agent, and ECS EC2 registration.",
-        appliesTo: [
-          "Policy::arn:<AWS::Partition>:iam::aws:policy/AmazonSSMManagedInstanceCore",
-          "Policy::arn:<AWS::Partition>:iam::aws:policy/CloudWatchAgentServerPolicy",
-          "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role",
-        ],
-      },
-      {
-        id: "AwsSolutions-IAM5",
-        reason:
-          "SSM parameter access uses wildcard to allow reading monitoring configuration parameters. EFS access uses wildcard for mount operations.",
-        appliesTo: [
-          "Action::ssm:GetParameter",
-          "Action::ssm:GetParameters",
-          "Action::ssm:GetParametersByPath",
-        ],
-      },
-    ]);
+    NagSuppressions.addResourceSuppressions(
+      ltConstruct.role,
+      [
+        {
+          id: "AwsSolutions-IAM4",
+          reason:
+            "ECS monitoring instances require AWS managed policies for SSM, CloudWatch Agent, and ECS EC2 registration.",
+          appliesTo: [
+            "Policy::arn:<AWS::Partition>:iam::aws:policy/AmazonSSMManagedInstanceCore",
+            "Policy::arn:<AWS::Partition>:iam::aws:policy/CloudWatchAgentServerPolicy",
+            "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role",
+          ],
+        },
+        {
+          id: "AwsSolutions-IAM5",
+          reason:
+            "SSM parameter access uses wildcard to allow reading monitoring configuration parameters. EFS access uses wildcard for mount operations.",
+          appliesTo: [
+            "Action::ssm:GetParameter",
+            "Action::ssm:GetParameters",
+            "Action::ssm:GetParametersByPath",
+          ],
+        },
+      ],
+      true // Apply to children (default policy)
+    );
+
+    // Separate suppression for CloudWatch Logs wildcard permissions
+    // Required for ECS container instances to create log streams for tasks
+    NagSuppressions.addResourceSuppressions(
+      ltConstruct.role,
+      [
+        {
+          id: "AwsSolutions-IAM5",
+          reason:
+            "CloudWatch Logs wildcard permissions are required for ECS container instances to create log streams for tasks. Log group names are determined at runtime when tasks start. The ECS agent on the container instance needs these permissions to create log streams on behalf of tasks.",
+          appliesTo: [
+            // CloudWatch Logs wildcard permissions for ECS container instances
+            `Resource::arn:aws:logs:${this.region}:${this.account}:log-group:/ecs/*:*`,
+            `Resource::arn:aws:logs:${this.region}:${this.account}:log-group:/aws/ecs/*:*`,
+            {
+              regex: "/^Resource::arn:aws:logs:.*:.*:log-group:\\/ecs\\/.*:\\*$/",
+            },
+            {
+              regex: "/^Resource::arn:aws:logs:.*:.*:log-group:\\/aws\\/ecs\\/.*:\\*$/",
+            },
+          ],
+        },
+      ],
+      true // Apply to children (default policy)
+    );
 
     const ecsClusterConstruct = new EcsClusterConstruct(this, "EcsCluster", {
       vpc,

@@ -223,6 +223,22 @@ export class EcsClusterConstruct extends Construct {
             "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role",
           ],
         },
+        {
+          id: "AwsSolutions-IAM5",
+          reason:
+            "CloudWatch Logs wildcard permissions are required for ECS container instances to create log streams for tasks. Log group names are determined at runtime when tasks start.",
+          appliesTo: [
+            // CloudWatch Logs wildcard permissions for ECS container instances
+            `Resource::arn:aws:logs:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:log-group:/ecs/*:*`,
+            `Resource::arn:aws:logs:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:log-group:/aws/ecs/*:*`,
+            {
+              regex: "/^Resource::arn:aws:logs:.*:.*:log-group:\\/ecs\\/.*:\\*$/",
+            },
+            {
+              regex: "/^Resource::arn:aws:logs:.*:.*:log-group:\\/aws\\/ecs\\/.*:\\*$/",
+            },
+          ],
+        },
       ]);
 
       // Use custom user data if provided, otherwise create default ECS user data
