@@ -129,8 +129,11 @@ export class MonitoringInfraStack extends cdk.Stack {
         machineImage: ecs.EcsOptimizedImage.amazonLinux2023(),
         userData: userDataConstruct.userData,
         associatePublicIpAddress: true,
-        // Attach any additional security groups needed by the instances (e.g., EFS SG)
-        securityGroups: [efsSecurityGroup],
+        // NOTE: EFS security group should NOT be attached to EC2 instances
+        // It should only be attached to EFS mount targets
+        // EC2 instances use the launch template's security group (allowAllOutbound: true)
+        // EFS access is allowed via VPC CIDR in the EFS security group ingress rules
+        securityGroups: [],
       }
     );
 
@@ -264,6 +267,18 @@ export class MonitoringInfraStack extends cdk.Stack {
     // ========================================================================
     // Use the ASG from the ECS cluster construct (avoids duplicate ASGs)
     this.autoScalingGroup = ecsClusterConstruct.asg;
+
+    // ========================================================================
+    // EFS ACCESS CONFIGURATION
+    // ========================================================================
+    // Allow EC2 instances (via launch template security group) to access EFS
+    // The EFS security group already allows ingress from VPC CIDR, but we also
+    // explicitly allow the launch template's security group for better security
+    efsSecurityGroup.addIngressRule(
+      ltConstruct.securityGroup,
+      ec2.Port.tcp(2049),
+      "Allow NFS traffic from EC2 instances in launch template security group"
+    );
 
     // NOTE: EFS and SSM permissions are added to the INSTANCE role (ltConstruct.role)
     // above, not the ASG role. The ASG role is only for Auto Scaling lifecycle operations.
