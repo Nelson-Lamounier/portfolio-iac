@@ -268,17 +268,11 @@ export class MonitoringInfraStack extends cdk.Stack {
     // Use the ASG from the ECS cluster construct (avoids duplicate ASGs)
     this.autoScalingGroup = ecsClusterConstruct.asg;
 
-    // ========================================================================
-    // EFS ACCESS CONFIGURATION
-    // ========================================================================
-    // Allow EC2 instances (via launch template security group) to access EFS
-    // The EFS security group already allows ingress from VPC CIDR, but we also
-    // explicitly allow the launch template's security group for better security
-    efsSecurityGroup.addIngressRule(
-      ltConstruct.securityGroup,
-      ec2.Port.tcp(2049),
-      "Allow NFS traffic from EC2 instances in launch template security group"
-    );
+    // NOTE: EFS access is already configured in the EFS stack
+    // The EFS security group allows ingress from VPC CIDR block, which includes
+    // all EC2 instances in the VPC (including those with the launch template security group)
+    // We don't add an explicit ingress rule here to avoid creating a cyclic dependency
+    // between stacks (EFS stack -> MonitoringInfraStack -> EFS stack)
 
     // NOTE: EFS and SSM permissions are added to the INSTANCE role (ltConstruct.role)
     // above, not the ASG role. The ASG role is only for Auto Scaling lifecycle operations.
