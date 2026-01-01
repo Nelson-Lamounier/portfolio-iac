@@ -198,7 +198,7 @@ export class MonitoringInfraStack extends cdk.Stack {
         {
           id: "AwsSolutions-IAM4",
           reason:
-            "ECS monitoring instances require AWS managed policies for SSM, CloudWatch Agent, and ECS EC2 registration.",
+            "AWS managed policies are required for ECS monitoring instances because they provide necessary permissions for SSM, CloudWatch Agent, and ECS EC2 registration.",
           appliesTo: [
             "Policy::arn:<AWS::Partition>:iam::aws:policy/AmazonSSMManagedInstanceCore",
             "Policy::arn:<AWS::Partition>:iam::aws:policy/CloudWatchAgentServerPolicy",
@@ -208,7 +208,7 @@ export class MonitoringInfraStack extends cdk.Stack {
         {
           id: "AwsSolutions-IAM5",
           reason:
-            "SSM parameter access uses wildcard to allow reading monitoring configuration parameters. EFS access uses wildcard for mount operations.",
+            "SSM parameter access wildcard permissions are required for EC2 instances to read monitoring configuration parameters at runtime. EFS access wildcard permissions are needed for mount operations.",
           appliesTo: [
             "Action::ssm:GetParameter",
             "Action::ssm:GetParameters",
