@@ -322,6 +322,10 @@ export class GrafanaConstruct extends Construct {
       // Telemetry
       GF_ANALYTICS_REPORTING_ENABLED: "false",
       GF_METRICS_ENABLED: "false",
+
+      // Force task definition update on each deployment
+      // This ensures ECS creates a new task definition revision and deploys it
+      DEPLOYMENT_TIMESTAMP: Date.now().toString(),
     };
 
     // Add AWs region if CloudWatch is enabled

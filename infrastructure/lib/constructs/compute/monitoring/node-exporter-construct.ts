@@ -80,6 +80,11 @@ export class NodeExporterConstruct extends Construct {
         streamPrefix: "node-exporter",
         logGroup: this.logGroup,
       }),
+      environment: {
+        // Force task definition update on each deployment
+        // This ensures ECS creates a new task definition revision and deploys it
+        DEPLOYMENT_TIMESTAMP: Date.now().toString(),
+      },
       command: [
         "--path.procfs=/host/proc",
         "--path.sysfs=/host/sys",

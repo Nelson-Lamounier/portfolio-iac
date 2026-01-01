@@ -132,6 +132,9 @@ export class PrometheusConstruct extends Construct {
             logGroup: this.logGroup, // Use the log group we created
             environment: {
               ENVIRONMENT: props.envName,
+              // Force task definition update on each deployment
+              // This ensures ECS creates a new task definition revision and deploys it
+              DEPLOYMENT_TIMESTAMP: Date.now().toString(),
             },
             user: "65534:65534", // Run as nobody user (UID:GID 65534:65534) to match file permissions
           },
