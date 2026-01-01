@@ -516,10 +516,25 @@ sudo chmod -R 755 /mnt/efs/config/prometheus
 # Note: Grafana container runs as user "472:0" (grafana user, root group)
 sudo chown -R 472:0 /mnt/efs/grafana-data
 sudo chown -R 472:0 /mnt/efs/config/grafana
-sudo chmod -R 755 /mnt/efs/grafana-data
-sudo chmod -R 755 /mnt/efs/config/grafana
-# Ensure Grafana can write to its data directories
+# CRITICAL: SQLite requires write access to both the database file AND its directory
+# Set directory permissions first (777 allows user 472 to write)
 sudo chmod -R 777 /mnt/efs/grafana-data
+sudo chmod -R 755 /mnt/efs/config/grafana
+
+# CRITICAL: Fix permissions on existing database file and SQLite auxiliary files
+# These files may have been created with wrong permissions in previous deployments
+echo 'Fixing permissions on Grafana database files...'
+for db_file in grafana.db grafana.db-journal grafana.db-wal grafana.db-shm; do
+  if [ -f "/mnt/efs/grafana-data/$db_file" ]; then
+    echo "  Fixing permissions on $db_file..."
+    sudo chown 472:0 "/mnt/efs/grafana-data/$db_file"
+    sudo chmod 664 "/mnt/efs/grafana-data/$db_file"
+  fi
+done
+
+# Ensure the directory itself is writable (SQLite needs this for journal/WAL files)
+sudo chmod 777 /mnt/efs/grafana-data
+echo '✓ Grafana database file permissions fixed'
 
 # ==========================================================================
 # CONFIGURATION FILES FROM SSM
