@@ -69,8 +69,7 @@ export class EcsTaskDefinitionConstruct extends Construct {
           enablePublicEcr: false, // Only enable if needed
           // If all containers use the same log group, pass it for more specific permissions
           // Otherwise, use the default pattern matching
-          logGroupArn:
-            logGroupArns.length === 1 ? logGroupArns[0] : undefined,
+          logGroupArn: logGroupArns.length === 1 ? logGroupArns[0] : undefined,
         }
       );
       executionRole = executionRoleConstruct.role;
@@ -123,21 +122,14 @@ export class EcsTaskDefinitionConstruct extends Construct {
    * Add a container to the task definition
    */
   private addContainer(config: ContainerConfig, _envName: string): void {
-    // Configure logging: use logGroup if provided, otherwise auto-create
+    // Configure logging: Use json-file driver for CloudWatch Agent collection
+    // CloudWatch Agent will collect logs from Docker container log files
+    // This provides better rate limit handling than awslogs driver
     let logging: ecs.LogDriver | undefined;
     if (config.logStreamPrefix) {
-      if (config.logGroup) {
-        // Use specific log group (preferred - ensures logs go to the right place)
-        logging = ecs.LogDrivers.awsLogs({
-          streamPrefix: config.logStreamPrefix,
-          logGroup: config.logGroup,
-        });
-      } else {
-        // Auto-create log group (ECS will create it with default naming)
-        logging = ecs.LogDrivers.awsLogs({
-          streamPrefix: config.logStreamPrefix,
-        });
-      }
+      // Use json-file driver - logs will be written to /var/lib/docker/containers/*/*-json.log
+      // CloudWatch Agent will collect these logs and send them to CloudWatch Logs
+      logging = ecs.LogDrivers.jsonFile();
     }
 
     const container = this.taskDefinition.addContainer(config.name, {

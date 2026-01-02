@@ -165,14 +165,15 @@ export class GrafanaConstruct extends Construct {
     // ========================================================================
     // 1. CREATE TASK DEFINITION USING EcsTaskDefinitionConstruct
     // ========================================================================
-    // Create execution role with permissions for the Grafana log group
+    // Create execution role - CloudWatch Logs permissions not needed
+    // CloudWatch Agent (using instance role) will collect logs from Docker log files
     const executionRoleConstruct = new EcsTaskExecutionRole(
       this,
       "ExecutionRole",
       {
         envName: props.envName,
         enablePublicEcr: true, // Grafana uses public Docker Hub image
-        logGroupArn: this.logGroup.logGroupArn, // Grant permissions to Grafana log group
+        enableCloudWatchLogs: false, // Not needed - CloudWatch Agent handles logging
       }
     );
 
@@ -217,8 +218,9 @@ export class GrafanaConstruct extends Construct {
             // ECS will automatically register the dynamic port with the target group via loadBalancerTarget()
             memoryReservationMiB: props.memoryReservationMiB || 256,
             cpu: props.cpu,
-            logStreamPrefix: "grafana", // Enable CloudWatch Logs
-            logGroup: this.logGroup, // Use the log group we created
+            // Use json-file logging - CloudWatch Agent will collect logs from Docker log files
+            // This provides better rate limit handling than awslogs driver
+            logStreamPrefix: "grafana", // Still set prefix for json-file driver (used in log file path)
             environment: environment,
             user: "472:0", // Run as grafana user (472) with root group (0) for write access
           },
@@ -228,9 +230,8 @@ export class GrafanaConstruct extends Construct {
 
     this.taskDefinition = this.taskDefConstruct.taskDefinition;
 
-    // Grant ECS tasks permission to write to this log group
-    // This helps prevent credential exhaustion by ensuring tasks have explicit permissions
-    this.logGroup.grantWrite(executionRoleConstruct.role);
+    // Note: CloudWatch Agent (using instance role) will write to log groups
+    // Task execution role no longer needs CloudWatch Logs permissions
 
     // ========================================================================
     // 2. ADD MOUNT POINTS TO CONTAINER

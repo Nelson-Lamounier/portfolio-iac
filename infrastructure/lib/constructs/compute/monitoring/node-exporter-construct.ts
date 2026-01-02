@@ -37,20 +37,20 @@ export class NodeExporterConstruct extends Construct {
     });
 
     // Use centralized ECS task execution role construct
+    // CloudWatch Logs permissions not needed - CloudWatch Agent handles logging
     const executionRoleConstruct = new EcsTaskExecutionRole(
       this,
       "ExecutionRole",
       {
         envName: props.envName,
         enablePublicEcr: true, // Node Exporter uses public Docker Hub image
-        logGroupArn: this.logGroup.logGroupArn,
+        enableCloudWatchLogs: false, // Not needed - CloudWatch Agent handles logging
       }
     );
     const executionRole = executionRoleConstruct.role;
 
-    // Grant ECS tasks permission to write to this log group
-    // This helps prevent credential exhaustion by ensuring tasks have explicit permissions
-    this.logGroup.grantWrite(executionRole);
+    // Note: CloudWatch Agent (using instance role) will write to log groups
+    // Task execution role no longer needs CloudWatch Logs permissions
 
     // Create task definition with HOST network mode
     this.taskDefinition = new ecs.Ec2TaskDefinition(this, "TaskDef", {
@@ -76,10 +76,9 @@ export class NodeExporterConstruct extends Construct {
     const container = this.taskDefinition.addContainer("node-exporter", {
       image: ecs.ContainerImage.fromRegistry("prom/node-exporter:latest"),
       memoryReservationMiB: props.memoryReservationMiB || 64,
-      logging: ecs.LogDrivers.awsLogs({
-        streamPrefix: "node-exporter",
-        logGroup: this.logGroup,
-      }),
+      // Use json-file driver - CloudWatch Agent will collect logs from Docker log files
+      // This provides better rate limit handling than awslogs driver
+      logging: ecs.LogDrivers.jsonFile(),
       environment: {
         // Force task definition update on each deployment
         // This ensures ECS creates a new task definition revision and deploys it

@@ -82,14 +82,15 @@ export class PrometheusConstruct extends Construct {
     // ========================================================================
     // 1. CREATE TASK DEFINITION USING EcsTaskDefinitionConstruct
     // ========================================================================
-    // Create execution role with permissions for the Prometheus log group
+    // Create execution role - CloudWatch Logs permissions not needed
+    // CloudWatch Agent (using instance role) will collect logs from Docker log files
     const executionRoleConstruct = new EcsTaskExecutionRole(
       this,
       "ExecutionRole",
       {
         envName: props.envName,
         enablePublicEcr: true, // Prometheus uses public Docker Hub image
-        logGroupArn: this.logGroup.logGroupArn, // Grant permissions to Prometheus log group
+        enableCloudWatchLogs: false, // Not needed - CloudWatch Agent handles logging
       }
     );
 
@@ -128,8 +129,9 @@ export class PrometheusConstruct extends Construct {
             memoryReservationMiB: props.memoryReservationMiB || 256,
             cpu: props.cpu,
             command: prometheusCommand,
-            logStreamPrefix: "prometheus",
-            logGroup: this.logGroup, // Use the log group we created
+            // Use json-file logging - CloudWatch Agent will collect logs from Docker log files
+            // This provides better rate limit handling than awslogs driver
+            logStreamPrefix: "prometheus", // Still set prefix for json-file driver (used in log file path)
             environment: {
               ENVIRONMENT: props.envName,
               // Force task definition update on each deployment
@@ -144,9 +146,8 @@ export class PrometheusConstruct extends Construct {
 
     this.taskDefinition = this.taskDefConstruct.taskDefinition;
 
-    // Grant ECS tasks permission to write to this log group
-    // This helps prevent credential exhaustion by ensuring tasks have explicit permissions
-    this.logGroup.grantWrite(executionRoleConstruct.role);
+    // Note: CloudWatch Agent (using instance role) will write to log groups
+    // Task execution role no longer needs CloudWatch Logs permissions
 
     // ========================================================================
     // 2. ADD MOUNT POINTS TO CONTAINER
