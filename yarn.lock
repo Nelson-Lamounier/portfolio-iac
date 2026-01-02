@@ -11502,6 +11502,7 @@ __metadata:
   resolution: "portfolio-monorepo@workspace:."
   dependencies:
     "@eslint/js": "npm:^9.39.2"
+    "@jest/test-sequencer": "npm:^30.2.0"
     eslint: "npm:^9.39.2"
     quokka-treasure-chest: "npm:^1.0.3"
     turbo: "npm:^2.6.1"
