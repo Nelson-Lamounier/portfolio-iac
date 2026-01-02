@@ -506,7 +506,7 @@ describe("Comprehensive Monitoring Infrastructure Tests", () => {
       });
     });
 
-    test("configures Prometheus container with CloudWatch logging", () => {
+    test("configures Prometheus container with json-file logging", () => {
       const result = createTestMonitoringServiceStack({
         envName: "pipeline",
       });
@@ -517,21 +517,14 @@ describe("Comprehensive Monitoring Infrastructure Tests", () => {
           Match.objectLike({
             Name: "prometheus",
             LogConfiguration: {
-              LogDriver: "awslogs",
-              Options: {
-                "awslogs-group": Match.objectLike({
-                  Ref: Match.stringLikeRegexp(".*Prometheus.*LogGroup.*"),
-                }),
-                "awslogs-region": "eu-west-1",
-                "awslogs-stream-prefix": "prometheus",
-              },
+              LogDriver: "json-file",
             },
           }),
         ]),
       });
     });
 
-    test("configures Grafana container with CloudWatch logging", () => {
+    test("configures Grafana container with json-file logging", () => {
       const result = createTestMonitoringServiceStack({
         envName: "pipeline",
       });
@@ -542,21 +535,14 @@ describe("Comprehensive Monitoring Infrastructure Tests", () => {
           Match.objectLike({
             Name: "grafana",
             LogConfiguration: {
-              LogDriver: "awslogs",
-              Options: {
-                "awslogs-group": Match.objectLike({
-                  Ref: Match.stringLikeRegexp(".*Grafana.*LogGroup.*"),
-                }),
-                "awslogs-region": "eu-west-1",
-                "awslogs-stream-prefix": "grafana",
-              },
+              LogDriver: "json-file",
             },
           }),
         ]),
       });
     });
 
-    test("configures Node Exporter container with CloudWatch logging", () => {
+    test("configures Node Exporter container with json-file logging", () => {
       const result = createTestMonitoringServiceStack({
         envName: "pipeline",
       });
@@ -567,14 +553,7 @@ describe("Comprehensive Monitoring Infrastructure Tests", () => {
           Match.objectLike({
             Name: "node-exporter",
             LogConfiguration: {
-              LogDriver: "awslogs",
-              Options: {
-                "awslogs-group": Match.objectLike({
-                  Ref: Match.stringLikeRegexp(".*NodeExporter.*LogGroup.*"),
-                }),
-                "awslogs-region": "eu-west-1",
-                "awslogs-stream-prefix": "node-exporter",
-              },
+              LogDriver: "json-file",
             },
           }),
         ]),

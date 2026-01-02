@@ -208,8 +208,18 @@ export function createTestMonitoringInfraStack(
     {
       vpc,
       description: "Test EFS Security Group",
+      allowAllOutbound: false,
     }
   );
+  
+  // Add ingress rule for NFS from VPC CIDR (matches actual EFS stack behavior)
+  // This avoids needing to reference the launch template security group, which would create a cycle
+  efsSecurityGroup.addIngressRule(
+    ec2.Peer.ipv4(vpc.vpcCidrBlock),
+    ec2.Port.tcp(2049),
+    "Allow NFS traffic from VPC CIDR"
+  );
+  
   const efsInitializationComplete = new cdk.CustomResource(
     vpcStack,
     "TestEfsInit",
