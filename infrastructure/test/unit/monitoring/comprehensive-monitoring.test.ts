@@ -399,10 +399,12 @@ describe("Comprehensive Monitoring Infrastructure Tests", () => {
       });
 
       // Should have security groups configured for monitoring
+      // At least: Launch template SG, ALB SG (EFS SG is in separate stack)
       const securityGroups = result.template.findResources(
         "AWS::EC2::SecurityGroup"
       );
-      expect(Object.keys(securityGroups).length).toBeGreaterThan(0);
+      expect(Object.keys(securityGroups).length).toBeGreaterThanOrEqual(2);
+      expect(Object.keys(securityGroups).length).toBeLessThanOrEqual(10);
     });
 
     test("creates proper networking configuration", () => {

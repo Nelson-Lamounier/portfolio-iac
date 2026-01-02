@@ -19,6 +19,7 @@ import { MinimalUserDataConstruct } from "../../constructs/compute/user-data/min
 import { ApplicationSetupLambdaConstruct } from "../../constructs/monitoring/application-setup-lambda-construct";
 import { EcsClusterConstruct } from "../../constructs/compute/ecs";
 import { LaunchTemplateConstruct } from "../../constructs/compute/launch-template";
+import { SsmStateManagerConstruct } from "../../constructs/compute/ssm/ssm-state-manager-construct";
 import {
   ApplicationLoadBalancerConstruct,
   AlbListenerConstruct,
@@ -261,6 +262,26 @@ export class MonitoringInfraStack extends cdk.Stack {
     });
 
     this.cluster = ecsClusterConstruct.cluster;
+
+    // ========================================================================
+    // SSM STATE MANAGER ASSOCIATIONS
+    // ========================================================================
+    // Create SSM State Manager associations to handle ECS agent and CloudWatch Agent setup
+    // This replaces the complex UserData script with manageable, updatable associations
+    // Benefits:
+    // - Can be updated without recreating instances
+    // - Can run on a schedule for maintenance
+    // - Better error handling and retry logic
+    // - Centralized management via SSM console
+    const ssmStateManager = new SsmStateManagerConstruct(
+      this,
+      "SsmStateManager",
+      {
+        envName,
+        clusterName,
+        instanceRole: ltConstruct.role,
+      }
+    );
 
     // ========================================================================
     // AUTO SCALING GROUP

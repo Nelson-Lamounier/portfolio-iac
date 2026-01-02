@@ -75,6 +75,22 @@ describe("Monitoring Stack Integration", () => {
         1
       );
     });
+
+    test("creates SSM State Manager resources", () => {
+      // SSM Documents for ECS and CloudWatch Agent configuration
+      const documentCount = Object.keys(
+        testSetup.template.findResources("AWS::SSM::Document")
+      ).length;
+      expect(documentCount).toBeGreaterThanOrEqual(2); // At least 2 custom documents
+      expect(documentCount).toBeLessThanOrEqual(5); // Not too many
+
+      // SSM Associations for ECS and CloudWatch Agent setup
+      const associationCount = Object.keys(
+        testSetup.template.findResources("AWS::SSM::Association")
+      ).length;
+      expect(associationCount).toBeGreaterThanOrEqual(4); // At least 4 associations
+      expect(associationCount).toBeLessThanOrEqual(10); // Not too many
+    });
   });
 
   // ---------------------------------------------------------------------------

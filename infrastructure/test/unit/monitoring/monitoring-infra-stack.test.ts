@@ -324,27 +324,29 @@ describe("MonitoringInfraStack", () => {
       });
     });
 
-    test("grants SSM permissions to ASG role", () => {
+    test("grants SSM permissions to instance role", () => {
       const testSetup = createTestMonitoringInfraStack({
         envName: "pipeline",
         account: "123456789012",
         region: "eu-west-1",
       });
 
-      testSetup.template.hasResourceProperties("AWS::IAM::Policy", {
-        PolicyDocument: {
-          Statement: Match.arrayWith([
-            Match.objectLike({
-              Effect: "Allow",
-              Action: Match.arrayWith([
-                "ssm:GetParameter",
-                "ssm:GetParameters",
-                "ssm:GetParametersByPath",
-              ]),
-            }),
-          ]),
-        },
+      // Check that the instance role has SSM permissions for State Manager
+      // This includes permissions for associations, documents, and commands
+      const policies = testSetup.template.findResources("AWS::IAM::Policy");
+      const hasSsmStateManagerPermissions = Object.values(policies).some((policy: any) => {
+        const statements = policy.Properties?.PolicyDocument?.Statement || [];
+        return statements.some((stmt: any) => {
+          const actions = Array.isArray(stmt.Action) ? stmt.Action : [stmt.Action];
+          return actions.some((action: string) => 
+            action.includes("ssm:DescribeInstanceInformation") ||
+            action.includes("ssm:ListAssociations") ||
+            action.includes("ssm:UpdateInstanceInformation") ||
+            action.includes("ssm:SendCommand")
+          );
+        });
       });
+      expect(hasSsmStateManagerPermissions).toBe(true);
     });
   });
 
@@ -367,17 +369,120 @@ describe("MonitoringInfraStack", () => {
       });
     });
 
-    test("user data is minimal (infrastructure registration only)", () => {
+    test("user data is minimal (SSM agent only)", () => {
       const testSetup = createTestMonitoringInfraStack({
         envName: "pipeline",
         account: "123456789012",
         region: "eu-west-1",
       });
 
-      // User data should be present but minimal (SSM + ECS only)
-      // Application setup is handled by Lambda, not user data
+      // User data should be present but minimal (SSM agent only)
+      // ECS agent and CloudWatch Agent setup is handled by SSM State Manager
       const launchTemplates = testSetup.template.findResources("AWS::EC2::LaunchTemplate");
       expect(Object.keys(launchTemplates).length).toBeGreaterThan(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // SSM State Manager Tests
+  // ---------------------------------------------------------------------------
+  describe("SSM State Manager Configuration", () => {
+    test("creates SSM documents for ECS agent configuration", () => {
+      const testSetup = createTestMonitoringInfraStack({
+        envName: "pipeline",
+        account: "123456789012",
+        region: "eu-west-1",
+      });
+
+      // Verify SSM document exists for ECS agent config
+      testSetup.template.hasResourceProperties("AWS::SSM::Document", {
+        DocumentType: "Command",
+        DocumentFormat: "YAML",
+        Name: Match.stringLikeRegexp(".*ecs-agent-config"),
+      });
+    });
+
+    test("creates SSM documents for CloudWatch Agent configuration", () => {
+      const testSetup = createTestMonitoringInfraStack({
+        envName: "pipeline",
+        account: "123456789012",
+        region: "eu-west-1",
+      });
+
+      // Verify SSM document exists for CloudWatch Agent config
+      testSetup.template.hasResourceProperties("AWS::SSM::Document", {
+        DocumentType: "Command",
+        DocumentFormat: "YAML",
+        Name: Match.stringLikeRegexp(".*cloudwatch-agent-config"),
+      });
+    });
+
+    test("creates SSM associations for ECS agent setup", () => {
+      const testSetup = createTestMonitoringInfraStack({
+        envName: "pipeline",
+        account: "123456789012",
+        region: "eu-west-1",
+      });
+
+      // Verify SSM associations exist for ECS agent
+      const associations = testSetup.template.findResources("AWS::SSM::Association");
+      const ecsAssociations = Object.values(associations).filter((assoc: any) => {
+        const name = assoc.Properties?.AssociationName || "";
+        return name.includes("ecs-agent");
+      });
+      expect(ecsAssociations.length).toBeGreaterThan(0);
+    });
+
+    test("creates SSM associations for CloudWatch Agent setup", () => {
+      const testSetup = createTestMonitoringInfraStack({
+        envName: "pipeline",
+        account: "123456789012",
+        region: "eu-west-1",
+      });
+
+      // Verify SSM associations exist for CloudWatch Agent
+      const associations = testSetup.template.findResources("AWS::SSM::Association");
+      const cwAssociations = Object.values(associations).filter((assoc: any) => {
+        const name = assoc.Properties?.AssociationName || "";
+        return name.includes("cloudwatch-agent");
+      });
+      expect(cwAssociations.length).toBeGreaterThan(0);
+    });
+
+    test("SSM associations target instances by tags", () => {
+      const testSetup = createTestMonitoringInfraStack({
+        envName: "pipeline",
+        account: "123456789012",
+        region: "eu-west-1",
+      });
+
+      // Verify associations have target tags
+      testSetup.template.hasResourceProperties("AWS::SSM::Association", {
+        Targets: Match.arrayWith([
+          Match.objectLike({
+            Key: "tag:Environment",
+            Values: ["pipeline"],
+          }),
+          Match.objectLike({
+            Key: "tag:Service",
+            Values: ["monitoring"],
+          }),
+        ]),
+      });
+    });
+
+    test("SSM associations have scheduled maintenance", () => {
+      const testSetup = createTestMonitoringInfraStack({
+        envName: "pipeline",
+        account: "123456789012",
+        region: "eu-west-1",
+      });
+
+      // Verify associations have schedule expression
+      testSetup.template.hasResourceProperties("AWS::SSM::Association", {
+        ScheduleExpression: Match.stringLikeRegexp("rate\\(.*\\)"),
+        ApplyOnlyAtCronInterval: false, // Also run on new instances
+      });
     });
   });
 
