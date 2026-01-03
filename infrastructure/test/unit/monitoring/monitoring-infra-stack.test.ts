@@ -387,18 +387,17 @@ describe("MonitoringInfraStack", () => {
   // SSM State Manager Tests
   // ---------------------------------------------------------------------------
   describe("SSM State Manager Configuration", () => {
-    test("creates SSM documents for ECS agent configuration", () => {
+    test("creates SSM association for ECS agent configuration using AWS-RunShellScript", () => {
       const testSetup = createTestMonitoringInfraStack({
         envName: "pipeline",
         account: "123456789012",
         region: "eu-west-1",
       });
 
-      // Verify SSM document exists for ECS agent config
-      testSetup.template.hasResourceProperties("AWS::SSM::Document", {
-        DocumentType: "Command",
-        DocumentFormat: "YAML",
-        Name: Match.stringLikeRegexp(".*ecs-agent-config"),
+      // Verify SSM association exists for ECS agent config using AWS managed document
+      testSetup.template.hasResourceProperties("AWS::SSM::Association", {
+        Name: "AWS-RunShellScript", // AWS managed document
+        AssociationName: Match.stringLikeRegexp(".*ecs-agent-config"),
       });
     });
 
