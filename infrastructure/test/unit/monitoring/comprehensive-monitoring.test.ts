@@ -508,7 +508,7 @@ describe("Comprehensive Monitoring Infrastructure Tests", () => {
       });
     });
 
-    test("configures Prometheus container with json-file logging", () => {
+    test("configures Prometheus container with awslogs logging", () => {
       const result = createTestMonitoringServiceStack({
         envName: "pipeline",
       });
@@ -518,15 +518,20 @@ describe("Comprehensive Monitoring Infrastructure Tests", () => {
         ContainerDefinitions: Match.arrayWith([
           Match.objectLike({
             Name: "prometheus",
-            LogConfiguration: {
-              LogDriver: "json-file",
-            },
+            LogConfiguration: Match.objectLike({
+              LogDriver: "awslogs",
+              Options: {
+                "awslogs-group": Match.anyValue(), // May be CloudFormation reference
+                "awslogs-stream-prefix": "prometheus",
+                "awslogs-region": Match.anyValue(),
+              },
+            }),
           }),
         ]),
       });
     });
 
-    test("configures Grafana container with json-file logging", () => {
+    test("configures Grafana container with awslogs logging", () => {
       const result = createTestMonitoringServiceStack({
         envName: "pipeline",
       });
@@ -536,15 +541,20 @@ describe("Comprehensive Monitoring Infrastructure Tests", () => {
         ContainerDefinitions: Match.arrayWith([
           Match.objectLike({
             Name: "grafana",
-            LogConfiguration: {
-              LogDriver: "json-file",
-            },
+            LogConfiguration: Match.objectLike({
+              LogDriver: "awslogs",
+              Options: {
+                "awslogs-group": Match.anyValue(), // May be CloudFormation reference
+                "awslogs-stream-prefix": "grafana",
+                "awslogs-region": Match.anyValue(),
+              },
+            }),
           }),
         ]),
       });
     });
 
-    test("configures Node Exporter container with json-file logging", () => {
+    test("configures Node Exporter container with awslogs logging", () => {
       const result = createTestMonitoringServiceStack({
         envName: "pipeline",
       });
@@ -554,9 +564,14 @@ describe("Comprehensive Monitoring Infrastructure Tests", () => {
         ContainerDefinitions: Match.arrayWith([
           Match.objectLike({
             Name: "node-exporter",
-            LogConfiguration: {
-              LogDriver: "json-file",
-            },
+            LogConfiguration: Match.objectLike({
+              LogDriver: "awslogs",
+              Options: {
+                "awslogs-group": Match.anyValue(), // May be CloudFormation reference
+                "awslogs-stream-prefix": "node-exporter",
+                "awslogs-region": Match.anyValue(),
+              },
+            }),
           }),
         ]),
       });

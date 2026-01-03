@@ -329,40 +329,55 @@ describe("MonitoringServiceStack", () => {
       });
     });
 
-    test("should configure Prometheus container with json-file logging", () => {
+    test("should configure Prometheus container with awslogs logging", () => {
       template.hasResourceProperties("AWS::ECS::TaskDefinition", {
         ContainerDefinitions: Match.arrayWith([
           Match.objectLike({
             Name: "prometheus",
-            LogConfiguration: {
-              LogDriver: "json-file",
-            },
+            LogConfiguration: Match.objectLike({
+              LogDriver: "awslogs",
+              Options: {
+                "awslogs-group": Match.anyValue(), // May be CloudFormation reference
+                "awslogs-stream-prefix": "prometheus",
+                "awslogs-region": Match.anyValue(), // Region may vary
+              },
+            }),
           }),
         ]),
       });
     });
 
-    test("should configure Grafana container with json-file logging", () => {
+    test("should configure Grafana container with awslogs logging", () => {
       template.hasResourceProperties("AWS::ECS::TaskDefinition", {
         ContainerDefinitions: Match.arrayWith([
           Match.objectLike({
             Name: "grafana",
-            LogConfiguration: {
-              LogDriver: "json-file",
-            },
+            LogConfiguration: Match.objectLike({
+              LogDriver: "awslogs",
+              Options: {
+                "awslogs-group": Match.anyValue(), // May be CloudFormation reference
+                "awslogs-stream-prefix": "grafana",
+                "awslogs-region": Match.anyValue(), // Region may vary
+              },
+            }),
           }),
         ]),
       });
     });
 
-    test("should configure Node Exporter container with json-file logging", () => {
+    test("should configure Node Exporter container with awslogs logging", () => {
       template.hasResourceProperties("AWS::ECS::TaskDefinition", {
         ContainerDefinitions: Match.arrayWith([
           Match.objectLike({
             Name: "node-exporter",
-            LogConfiguration: {
-              LogDriver: "json-file",
-            },
+            LogConfiguration: Match.objectLike({
+              LogDriver: "awslogs",
+              Options: {
+                "awslogs-group": Match.anyValue(), // May be CloudFormation reference
+                "awslogs-stream-prefix": "node-exporter",
+                "awslogs-region": Match.anyValue(), // Region may vary
+              },
+            }),
           }),
         ]),
       });

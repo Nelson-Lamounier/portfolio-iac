@@ -13,17 +13,19 @@
  * @format
  */
 
+import * as https from "https";
+import * as url from "url";
+
 import {
   CloudFormationCustomResourceEvent,
   CloudFormationCustomResourceResponse,
   Context,
 } from "aws-lambda";
-import * as https from "https";
-import * as url from "url";
 import {
   SSMClient,
   GetParameterCommand,
   PutParameterCommand,
+  ParameterNotFound,
 } from "@aws-sdk/client-ssm";
 
 const ssmClient = new SSMClient({ region: process.env.AWS_REGION });
@@ -55,11 +57,16 @@ export const handler = async (
     return response;
   } catch (error) {
     console.error("Error in handler:", error);
+    // PhysicalResourceId only exists on Update/Delete events, not Create
+    const physicalResourceId =
+      "PhysicalResourceId" in event
+        ? event.PhysicalResourceId
+        : "efs-init-failed";
+
     const failureResponse: CloudFormationCustomResourceResponse = {
       Status: "FAILED",
       Reason: error instanceof Error ? error.message : String(error),
-      PhysicalResourceId:
-        (event as any).PhysicalResourceId || "efs-init-failed",
+      PhysicalResourceId: physicalResourceId,
       StackId: event.StackId,
       RequestId: event.RequestId,
       LogicalResourceId: event.LogicalResourceId,
@@ -70,17 +77,32 @@ export const handler = async (
   }
 };
 
+interface EfsInitializationProperties {
+  FileSystemId: string;
+  AccessPointId: string;
+  Environment: string;
+}
+
 async function initializeEfs(
   event: CloudFormationCustomResourceEvent,
   _context: Context
 ): Promise<CloudFormationCustomResourceResponse> {
   // Align with properties sent by the stack (FileSystemId, AccessPointId, Environment)
-  const {
-    FileSystemId,
-    AccessPointId,
-    Environment: envName,
-  } = event.ResourceProperties as any;
-  const region = process.env.AWS_REGION!;
+  const props =
+    event.ResourceProperties as unknown as EfsInitializationProperties;
+  const { FileSystemId, AccessPointId, Environment: envName } = props;
+  const region = process.env.AWS_REGION;
+
+  // Validate required properties
+  if (!FileSystemId || !AccessPointId || !envName) {
+    throw new Error(
+      `Missing required properties: FileSystemId=${FileSystemId}, AccessPointId=${AccessPointId}, Environment=${envName}`
+    );
+  }
+
+  if (!region) {
+    throw new Error("AWS_REGION environment variable is not set");
+  }
 
   console.log(
     `Initializing EFS configuration for ${FileSystemId} with access point ${AccessPointId} in env ${envName}`
@@ -114,9 +136,15 @@ async function cleanupEfs(
 ): Promise<CloudFormationCustomResourceResponse> {
   console.log("EFS cleanup - no action needed (data preserved)");
 
+  // PhysicalResourceId exists on Delete events
+  const physicalResourceId =
+    "PhysicalResourceId" in event
+      ? event.PhysicalResourceId
+      : "efs-init-cleanup";
+
   return {
     Status: "SUCCESS",
-    PhysicalResourceId: (event as any).PhysicalResourceId || "efs-init-cleanup",
+    PhysicalResourceId: physicalResourceId,
     StackId: event.StackId,
     RequestId: event.RequestId,
     LogicalResourceId: event.LogicalResourceId,
@@ -143,22 +171,58 @@ async function createEnhancedConfigurationFiles(
       region
     );
 
+    // Validate that we got valid JSON
+    if (!prometheusConfig || !grafanaDsConfig || !grafanaDbConfig) {
+      throw new Error(
+        "One or more SSM parameters are missing or empty. Ensure MonitoringEfsStack creates these parameters before EFS initialization runs."
+      );
+    }
+
+    // Parse and convert to YAML
+    let prometheusYaml: string;
+    let grafanaDsYaml: string;
+    let grafanaDbYaml: string;
+
+    try {
+      prometheusYaml = dictToYaml(JSON.parse(prometheusConfig));
+    } catch (error) {
+      throw new Error(
+        `Failed to parse Prometheus config JSON: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+
+    try {
+      grafanaDsYaml = dictToYaml(JSON.parse(grafanaDsConfig));
+    } catch (error) {
+      throw new Error(
+        `Failed to parse Grafana datasource config JSON: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+
+    try {
+      grafanaDbYaml = dictToYaml(JSON.parse(grafanaDbConfig));
+    } catch (error) {
+      throw new Error(
+        `Failed to parse Grafana dashboard config JSON: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+
     // Store enhanced YAML configurations for EC2 instances to use
     await putSSMParameter(
       `/monitoring/${envName}/prometheus-config-yaml`,
-      dictToYaml(JSON.parse(prometheusConfig)),
+      prometheusYaml,
       region
     );
 
     await putSSMParameter(
       `/monitoring/${envName}/grafana-datasource-config-yaml`,
-      dictToYaml(JSON.parse(grafanaDsConfig)),
+      grafanaDsYaml,
       region
     );
 
     await putSSMParameter(
       `/monitoring/${envName}/grafana-dashboard-config-yaml`,
-      dictToYaml(JSON.parse(grafanaDbConfig)),
+      grafanaDbYaml,
       region
     );
 
@@ -240,8 +304,22 @@ async function getSSMParameter(
   try {
     const command = new GetParameterCommand({ Name: parameterName });
     const response = await ssmClient.send(command);
-    return response.Parameter?.Value || "";
+    const value = response.Parameter?.Value;
+
+    if (!value) {
+      throw new Error(`SSM parameter ${parameterName} exists but has no value`);
+    }
+
+    return value;
   } catch (error) {
+    if (
+      error instanceof ParameterNotFound ||
+      (error as any).name === "ParameterNotFound"
+    ) {
+      throw new Error(
+        `SSM parameter ${parameterName} not found. Ensure MonitoringEfsStack creates this parameter before EFS initialization runs.`
+      );
+    }
     console.error(`Failed to get SSM parameter ${parameterName}:`, error);
     throw error;
   }
@@ -272,38 +350,100 @@ function dictToYaml(data: any, indent: number = 0): string {
   const yamlLines: string[] = [];
   const indentStr = "  ".repeat(indent);
 
-  if (typeof data === "object" && data !== null && !Array.isArray(data)) {
-    for (const [key, value] of Object.entries(data)) {
-      if (
-        typeof value === "object" &&
-        value !== null &&
-        !Array.isArray(value)
-      ) {
-        yamlLines.push(`${indentStr}${key}:`);
-        yamlLines.push(dictToYaml(value, indent + 1));
-      } else if (Array.isArray(value)) {
-        yamlLines.push(`${indentStr}${key}:`);
-        for (const item of value) {
-          if (typeof item === "object" && item !== null) {
-            yamlLines.push(`${indentStr}- `);
-            const itemYaml = dictToYaml(item, indent + 1);
-            yamlLines.push(
-              itemYaml.replace(
-                new RegExp(`^${indentStr}  `, "gm"),
-                `${indentStr}  `
-              )
-            );
-          } else {
-            yamlLines.push(`${indentStr}- ${item}`);
+  if (data === null || data === undefined) {
+    return `${indentStr}null`;
+  }
+
+  if (typeof data === "string") {
+    // Escape special characters and quote if needed
+    if (
+      data.includes(":") ||
+      data.includes("\n") ||
+      data.includes("'") ||
+      data.includes('"')
+    ) {
+      return `"${data.replace(/"/g, '\\"')}"`;
+    }
+    return data;
+  }
+
+  if (typeof data === "number") {
+    return String(data);
+  }
+
+  if (typeof data === "boolean") {
+    return data ? "true" : "false";
+  }
+
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      if (typeof item === "object" && item !== null) {
+        yamlLines.push(`${indentStr}-`);
+        const itemYaml = dictToYaml(item, indent + 1);
+        // Add proper indentation for nested objects in arrays
+        const itemLines = itemYaml.split("\n");
+        for (const line of itemLines) {
+          if (line.trim()) {
+            yamlLines.push(`${indentStr}  ${line.trimStart()}`);
           }
         }
       } else {
-        yamlLines.push(`${indentStr}${key}: ${value}`);
+        const value = formatYamlValue(item);
+        yamlLines.push(`${indentStr}- ${value}`);
+      }
+    }
+    return yamlLines.join("\n");
+  }
+
+  if (typeof data === "object" && data !== null) {
+    for (const [key, value] of Object.entries(data)) {
+      if (value === null || value === undefined) {
+        yamlLines.push(`${indentStr}${key}: null`);
+      } else if (typeof value === "object" && !Array.isArray(value)) {
+        yamlLines.push(`${indentStr}${key}:`);
+        yamlLines.push(dictToYaml(value, indent + 1));
+      } else if (Array.isArray(value)) {
+        if (value.length === 0) {
+          yamlLines.push(`${indentStr}${key}: []`);
+        } else {
+          yamlLines.push(`${indentStr}${key}:`);
+          const arrayYaml = dictToYaml(value, indent + 1);
+          yamlLines.push(arrayYaml);
+        }
+      } else {
+        const formattedValue = formatYamlValue(value);
+        yamlLines.push(`${indentStr}${key}: ${formattedValue}`);
       }
     }
   }
 
   return yamlLines.join("\n");
+}
+
+function formatYamlValue(value: any): string {
+  if (value === null || value === undefined) {
+    return "null";
+  }
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+  if (typeof value === "number") {
+    return String(value);
+  }
+  if (typeof value === "string") {
+    // Quote strings that contain special characters
+    if (
+      value.includes(":") ||
+      value.includes("\n") ||
+      value.includes("'") ||
+      value.includes('"') ||
+      value.includes("#")
+    ) {
+      return `"${value.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"`;
+    }
+    return value;
+  }
+  return String(value);
 }
 
 async function sendResponse(
