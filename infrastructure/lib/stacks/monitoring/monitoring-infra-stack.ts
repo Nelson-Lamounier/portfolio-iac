@@ -264,6 +264,20 @@ export class MonitoringInfraStack extends cdk.Stack {
     this.cluster = ecsClusterConstruct.cluster;
 
     // ========================================================================
+    // VPC ENDPOINT FOR CLOUDWATCH LOGS
+    // ========================================================================
+    // Add VPC endpoint for CloudWatch Logs to ensure awslogs driver works
+    // even if instances are in private subnets or internet gateway is unavailable
+    // This is a best practice for reliability and security
+    vpc.addInterfaceEndpoint("CloudWatchLogsEndpoint", {
+      service: ec2.InterfaceVpcEndpointAwsService.CLOUDWATCH_LOGS,
+      subnets: {
+        subnetType: ec2.SubnetType.PUBLIC, // Use public subnets to match instance placement
+      },
+      privateDnsEnabled: true,
+    });
+
+    // ========================================================================
     // SSM STATE MANAGER ASSOCIATIONS
     // ========================================================================
     // Create SSM State Manager associations to handle ECS agent and CloudWatch Agent setup

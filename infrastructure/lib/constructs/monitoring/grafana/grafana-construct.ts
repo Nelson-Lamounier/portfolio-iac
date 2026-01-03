@@ -318,6 +318,11 @@ export class GrafanaConstruct extends Construct {
       GF_PATHS_PLUGINS: "/var/lib/grafana/plugins",
       GF_PATHS_LOGS: "/var/log/grafana",
 
+      // Logging configuration - CRITICAL for awslogs driver
+      // Output logs to STDOUT/STDERR so awslogs driver can capture them
+      GF_LOG_MODE: "console", // Output logs to console (STDOUT/STDERR)
+      GF_LOG_LEVEL: "info", // Set log level (debug, info, warn, error)
+
       // Plugins - CloudWatch plugin is built-in, no need to install
       // GF_INSTALL_PLUGINS: props.installPlugins || "",
 

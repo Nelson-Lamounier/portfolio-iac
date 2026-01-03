@@ -134,6 +134,10 @@ export class PrometheusConstruct extends Construct {
             logStreamPrefix: "prometheus", // Log stream prefix for CloudWatch Logs
             environment: {
               ENVIRONMENT: props.envName,
+              // Logging configuration - CRITICAL for awslogs driver
+              // Prometheus outputs to STDOUT/STDERR by default, but we can set log level
+              // The awslogs driver captures STDOUT/STDERR automatically
+              // No additional configuration needed - Prometheus logs to console by default
               // Force task definition update on each deployment
               // This ensures ECS creates a new task definition revision and deploys it
               DEPLOYMENT_TIMESTAMP: Date.now().toString(),

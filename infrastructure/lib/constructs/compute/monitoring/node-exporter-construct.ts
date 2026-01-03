@@ -79,6 +79,10 @@ export class NodeExporterConstruct extends Construct {
         streamPrefix: "node-exporter",
       }),
       environment: {
+        // Logging configuration - CRITICAL for awslogs driver
+        // Node Exporter outputs to STDOUT/STDERR by default
+        // The awslogs driver captures STDOUT/STDERR automatically
+        // No additional configuration needed - Node Exporter logs to console by default
         // Force task definition update on each deployment
         // This ensures ECS creates a new task definition revision and deploys it
         DEPLOYMENT_TIMESTAMP: Date.now().toString(),
