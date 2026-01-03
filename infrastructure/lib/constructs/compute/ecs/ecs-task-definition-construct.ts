@@ -121,15 +121,37 @@ export class EcsTaskDefinitionConstruct extends Construct {
   /**
    * Add a container to the task definition
    */
-  private addContainer(config: ContainerConfig, _envName: string): void {
-    // Configure logging: Use json-file driver for CloudWatch Agent collection
-    // CloudWatch Agent will collect logs from Docker container log files
-    // This provides better rate limit handling than awslogs driver
+  private addContainer(config: ContainerConfig, envName: string): void {
+    // Configure logging: Use awslogs driver for ECS console integration
+    // The awslogs driver automatically captures stdout/stderr from container processes
+    // and sends them to CloudWatch Logs, enabling the ECS console "Logs" tab
     let logging: ecs.LogDriver | undefined;
-    if (config.logStreamPrefix) {
-      // Use json-file driver - logs will be written to /var/lib/docker/containers/*/*-json.log
-      // CloudWatch Agent will collect these logs and send them to CloudWatch Logs
-      logging = ecs.LogDrivers.jsonFile();
+    if (config.logStreamPrefix && config.logGroup) {
+      // Use awslogs driver with explicit log group - enables ECS console "Logs" tab
+      // Logs are sent directly to CloudWatch Logs via the awslogs driver
+      // This captures stdout/stderr from the container process
+      logging = ecs.LogDrivers.awsLogs({
+        logGroup: config.logGroup,
+        streamPrefix: config.logStreamPrefix,
+      });
+    } else if (config.logStreamPrefix) {
+      // Fallback: Use awslogs with auto-created log group if logGroup not provided
+      // Still captures stdout/stderr and enables ECS console integration
+      logging = ecs.LogDrivers.awsLogs({
+        streamPrefix: config.logStreamPrefix,
+      });
+    } else if (config.logGroup) {
+      // If logGroup is provided but no prefix, use container name as prefix
+      logging = ecs.LogDrivers.awsLogs({
+        logGroup: config.logGroup,
+        streamPrefix: config.name,
+      });
+    } else {
+      // Default: Auto-create log group with container name as prefix
+      // Ensures all containers have logging configured to capture stdout/stderr
+      logging = ecs.LogDrivers.awsLogs({
+        streamPrefix: config.name,
+      });
     }
 
     const container = this.taskDefinition.addContainer(config.name, {

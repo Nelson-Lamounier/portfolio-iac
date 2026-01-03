@@ -36,21 +36,18 @@ export class NodeExporterConstruct extends Construct {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    // Use centralized ECS task execution role construct
-    // CloudWatch Logs permissions not needed - CloudWatch Agent handles logging
+    // Use centralized ECS task execution role construct with CloudWatch Logs permissions
     const executionRoleConstruct = new EcsTaskExecutionRole(
       this,
       "ExecutionRole",
       {
         envName: props.envName,
         enablePublicEcr: true, // Node Exporter uses public Docker Hub image
-        enableCloudWatchLogs: false, // Not needed - CloudWatch Agent handles logging
+        enableCloudWatchLogs: true, // Required for awslogs driver
+        logGroupArn: this.logGroup.logGroupArn, // Grant permissions to specific log group
       }
     );
     const executionRole = executionRoleConstruct.role;
-
-    // Note: CloudWatch Agent (using instance role) will write to log groups
-    // Task execution role no longer needs CloudWatch Logs permissions
 
     // Create task definition with HOST network mode
     this.taskDefinition = new ecs.Ec2TaskDefinition(this, "TaskDef", {
@@ -76,9 +73,11 @@ export class NodeExporterConstruct extends Construct {
     const container = this.taskDefinition.addContainer("node-exporter", {
       image: ecs.ContainerImage.fromRegistry("prom/node-exporter:latest"),
       memoryReservationMiB: props.memoryReservationMiB || 64,
-      // Use json-file driver - CloudWatch Agent will collect logs from Docker log files
-      // This provides better rate limit handling than awslogs driver
-      logging: ecs.LogDrivers.jsonFile(),
+      // Use awslogs driver - enables ECS console "Logs" tab
+      logging: ecs.LogDrivers.awsLogs({
+        logGroup: this.logGroup,
+        streamPrefix: "node-exporter",
+      }),
       environment: {
         // Force task definition update on each deployment
         // This ensures ECS creates a new task definition revision and deploys it
@@ -136,6 +135,10 @@ export class NodeExporterConstruct extends Construct {
       minHealthyPercent: 0, // Allow stopping all tasks during deployment
       maxHealthyPercent: 100, // Only one task per instance
     });
+
+    // Grant CloudWatch Logs write permissions to execution role
+    // This is required for the awslogs driver to create log streams and put log events
+    this.logGroup.grantWrite(executionRole);
 
     // Tag resources
     Tags.of(this.service).add("Environment", props.envName);
