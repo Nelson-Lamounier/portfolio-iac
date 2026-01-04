@@ -646,9 +646,31 @@ async function waitForCommand(
       invocation.Status === CommandStatus.CANCELLED ||
       invocation.Status === CommandStatus.TIMED_OUT
     ) {
-      throw new Error(
+      // Get the actual error output before throwing
+      const errorOutput =
+        invocation.StandardErrorContent || "No error output available";
+      const standardOutput =
+        invocation.StandardOutputContent || "No output available";
+
+      // Log detailed error information
+      console.error(
         `Command ${commandId} failed with status: ${invocation.Status}`
       );
+      console.error("Standard Error Output:", errorOutput);
+      console.error("Standard Output:", standardOutput);
+
+      // Include both outputs in the error message for CloudFormation visibility
+      const errorMessage = [
+        `Command ${commandId} failed with status: ${invocation.Status}`,
+        "",
+        "Standard Error Output:",
+        errorOutput,
+        "",
+        "Standard Output:",
+        standardOutput,
+      ].join("\n");
+
+      throw new Error(errorMessage);
     }
 
     // Still in progress, continue waiting
