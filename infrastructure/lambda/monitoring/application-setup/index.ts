@@ -564,8 +564,35 @@ EOF
   sudo chown 65534:65534 /mnt/efs/config/prometheus/prometheus.yml
 fi
 
-# Grafana configs are managed by EFS initialization Lambda
-echo 'ℹ Grafana configuration managed by EFS Lambda'
+# Download Grafana datasource config from SSM and replace HOST_IP_PLACEHOLDER
+echo 'Downloading Grafana datasource configuration from SSM...'
+HOST_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
+echo "Host Private IP: $HOST_IP"
+
+if aws ssm get-parameter --region ${config.region} --name "/monitoring/${config.envName}/grafana-datasource-config-yaml" --query "Parameter.Value" --output text > /tmp/grafana-datasource.yml 2>/dev/null; then
+  echo '✓ Grafana datasource config downloaded from SSM'
+  # Replace HOST_IP_PLACEHOLDER with actual host IP
+  sed "s/HOST_IP_PLACEHOLDER/$HOST_IP/g" /tmp/grafana-datasource.yml > /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml
+  sudo chown 472:0 /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml
+  sudo chmod 644 /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml
+  echo '✓ Grafana datasource config updated with host IP'
+else
+  echo 'ℹ Creating default Grafana datasource config (SSM not available)'
+  cat > /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml << EOF
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://${HOST_IP}:9090/prometheus
+    isDefault: true
+    editable: true
+EOF
+  sudo chown 472:0 /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml
+  sudo chmod 644 /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml
+  echo '✓ Default Grafana datasource config created'
+fi
 
 # ==========================================================================
 # CREATE SYMLINKS
