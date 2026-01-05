@@ -16,7 +16,7 @@ import { Construct } from "constructs";
 import { SuppressionManager } from "../../cdk-nag";
 import { MonitoringConfigBucketConstruct } from "../../constructs/monitoring";
 import { MinimalUserDataConstruct } from "../../constructs/compute/user-data/minimal-user-data-construct";
-import { ApplicationSetupLambdaConstruct } from "../../constructs/monitoring/application-setup-lambda-construct";
+import { ApplicationSetupSsmAssociationConstruct } from "../../constructs/monitoring/application-setup-ssm-construct";
 import { EcsClusterConstruct } from "../../constructs/compute/ecs";
 import { LaunchTemplateConstruct } from "../../constructs/compute/launch-template";
 import { SsmStateManagerConstruct } from "../../constructs/compute/ssm/ssm-state-manager-construct";
@@ -102,7 +102,7 @@ export class MonitoringInfraStack extends cdk.Stack {
     // ========================================================================
     // Phase 1: Minimal user data that only handles SSM + ECS registration
     // Goal: Get instance into ECS cluster ASAP (~2-3KB, well under 16KB limit)
-    // Phase 2: Application setup (EFS, Prometheus, Grafana) handled by Lambda
+    // Phase 2: Application setup (EFS, Prometheus, Grafana) handled by SSM State Manager
     // ========================================================================
     const clusterName = `${envName}-monitoring-cluster`;
     const userDataConstruct = new MinimalUserDataConstruct(
@@ -371,20 +371,25 @@ export class MonitoringInfraStack extends cdk.Stack {
     );
 
     // ========================================================================
-    // APPLICATION SETUP LAMBDA (Phase 2: Application Setup)
+    // APPLICATION SETUP - SSM STATE MANAGER (Phase 2: Application Setup)
     // ========================================================================
     // Handles EFS mounting, Prometheus, Grafana configuration after instance registers
-    // Triggered by EventBridge rule when container instance registers with ECS
+    // Runs automatically on instance launch (via tags) and on schedule (self-healing)
+    // Benefits over Lambda:
+    // - No Lambda or VPC configuration needed
+    // - Automatic execution on instance launch
+    // - Self-healing (runs on schedule)
+    // - Better observability via SSM Compliance dashboard
     // ========================================================================
-    const applicationSetupLambda = new ApplicationSetupLambdaConstruct(
+    const applicationSetupSsm = new ApplicationSetupSsmAssociationConstruct(
       this,
-      "ApplicationSetupLambda",
+      "ApplicationSetupSsm",
       {
-        clusterName: this.cluster.clusterName,
-        fileSystemId: fileSystem.fileSystemId,
-        efsStackName,
-        region: cdk.Stack.of(this).region,
         envName,
+        fileSystemId: fileSystem.fileSystemId,
+        region: cdk.Stack.of(this).region,
+        // Runs every hour for self-healing (can be customized)
+        scheduleExpression: "rate(1 hour)",
       }
     );
 

@@ -19,3 +19,7 @@ export * from "./monitoring-config-bucket-construct";
 
 // Cross-account monitoring access
 export * from "./cross-account-access-construct";
+
+// Application setup SSM State Manager (replaces Lambda)
+export * from "./application-setup-ssm-construct";
+export * from "./application-setup-script";

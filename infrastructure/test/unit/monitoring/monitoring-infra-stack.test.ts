@@ -616,32 +616,22 @@ describe("MonitoringInfraStack", () => {
         region: "eu-west-1",
       });
 
-      // Verify Custom Resource exists (created by CustomResource construct)
-      // Note: CDK Custom Resources are created as AWS::CloudFormation::CustomResource
-      const customResources = testSetup.template.findResources("AWS::CloudFormation::CustomResource");
-      const applicationSetupCustomResource = Object.entries(customResources).find(
+      // Verify SSM Association exists (replaces Lambda + Custom Resource)
+      // SSM State Manager Association runs application setup automatically
+      const ssmAssociations = testSetup.template.findResources("AWS::SSM::Association");
+      const applicationSetupAssociation = Object.entries(ssmAssociations).find(
         ([logicalId, resource]: [string, any]) => 
-          resource.Properties?.ServiceToken && 
-          (logicalId.includes("ApplicationSetup") || logicalId.includes("Trigger"))
+          resource.Properties?.AssociationName?.includes("application-setup") ||
+          logicalId.includes("ApplicationSetup")
       );
       
-      expect(applicationSetupCustomResource).toBeDefined();
-      if (applicationSetupCustomResource) {
-        const [, resource] = applicationSetupCustomResource;
-        expect(resource.Properties?.ServiceToken).toBeDefined();
+      expect(applicationSetupAssociation).toBeDefined();
+      if (applicationSetupAssociation) {
+        const [, resource] = applicationSetupAssociation;
+        expect(resource.Properties?.Name).toBe("AWS-RunShellScript");
+        expect(resource.Properties?.Targets).toBeDefined();
+        expect(resource.Properties?.Parameters).toBeDefined();
       }
-
-      // Verify Custom Resource Provider Lambda exists
-      // The Provider creates a Lambda function with onEvent handler
-      const providerLambdas = testSetup.template.findResources("AWS::Lambda::Function");
-      const providerLambda = Object.entries(providerLambdas).find(
-        ([logicalId, lambda]: [string, any]) => 
-          lambda.Properties?.Handler?.includes("onEvent") ||
-          logicalId.includes("ApplicationSetupProvider") ||
-          logicalId.includes("framework-onEvent")
-      );
-      
-      expect(providerLambda).toBeDefined();
     });
 
     test("Lambda SSM permissions use envName path", () => {
