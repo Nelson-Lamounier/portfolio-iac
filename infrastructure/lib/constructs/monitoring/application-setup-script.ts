@@ -180,7 +180,7 @@ datasources:
     type: prometheus
     uid: prometheus
     access: proxy
-    url: http://${HOST_IP}:9090/prometheus
+    url: http://\${HOST_IP}:9090/prometheus
     isDefault: true
     editable: true
 EOF

@@ -77,18 +77,18 @@ describe("Monitoring Stack Integration", () => {
     });
 
     test("creates SSM State Manager resources", () => {
-      // SSM Documents: Only CloudWatch Agent config (ECS agent uses AWS-RunShellScript)
+      // SSM Documents: Only CloudWatch Agent config (ECS agent and application setup use AWS-RunShellScript)
       const documentCount = Object.keys(
         testSetup.template.findResources("AWS::SSM::Document")
       ).length;
       expect(documentCount).toBeGreaterThanOrEqual(1); // At least 1 custom document (CloudWatch Agent)
       expect(documentCount).toBeLessThanOrEqual(5); // Not too many
 
-      // SSM Associations: ECS agent (AWS-RunShellScript) + CloudWatch Agent (install + config)
+      // SSM Associations: ECS agent (AWS-RunShellScript) + CloudWatch Agent (install + config) + Application Setup (AWS-RunShellScript)
       const associationCount = Object.keys(
         testSetup.template.findResources("AWS::SSM::Association")
       ).length;
-      expect(associationCount).toBeGreaterThanOrEqual(3); // At least 3 associations (ECS config + CW install + CW config)
+      expect(associationCount).toBeGreaterThanOrEqual(4); // At least 4 associations (ECS config + CW install + CW config + Application Setup)
       expect(associationCount).toBeLessThanOrEqual(10); // Not too many
     });
   });

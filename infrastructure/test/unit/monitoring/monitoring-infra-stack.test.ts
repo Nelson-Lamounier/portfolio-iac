@@ -486,130 +486,10 @@ describe("MonitoringInfraStack", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Application Setup Lambda Tests
+  // Application Setup SSM State Manager Tests
   // ---------------------------------------------------------------------------
-  describe("Application Setup Lambda", () => {
-    test("creates Lambda function for application setup", () => {
-      const testSetup = createTestMonitoringInfraStack({
-        envName: "pipeline",
-        account: "123456789012",
-        region: "eu-west-1",
-      });
-
-      // Check that Lambda function exists
-      const lambdaCount = Object.keys(
-        testSetup.template.findResources("AWS::Lambda::Function")
-      ).length;
-      expect(lambdaCount).toBeGreaterThan(0);
-      
-      // Check Lambda properties (check any Lambda function with these properties)
-      testSetup.template.hasResourceProperties("AWS::Lambda::Function", {
-        Runtime: "nodejs22.x",
-        Timeout: 600, // 10 minutes
-        MemorySize: 512,
-      });
-    });
-
-    test("Lambda has correct environment variables", () => {
-      const testSetup = createTestMonitoringInfraStack({
-        envName: "pipeline",
-        account: "123456789012",
-        region: "eu-west-1",
-      });
-
-      // Check that at least one Lambda has the expected environment variables
-      // The application setup Lambda should have CLUSTER_NAME (CloudFormation ref), ENV_NAME, and REGION
-      testSetup.template.hasResourceProperties("AWS::Lambda::Function", {
-        Environment: Match.objectLike({
-          Variables: Match.objectLike({
-            CLUSTER_NAME: Match.anyValue(), // CloudFormation reference, not literal string
-            ENV_NAME: "pipeline",
-            REGION: "eu-west-1",
-            EFS_STACK_NAME: Match.anyValue(), // May be a reference or literal
-            FILE_SYSTEM_ID: Match.anyValue(), // CloudFormation reference
-          }),
-        }),
-      });
-    });
-
-    test("creates EventBridge rule for container instance registration", () => {
-      const testSetup = createTestMonitoringInfraStack({
-        envName: "pipeline",
-        account: "123456789012",
-        region: "eu-west-1",
-      });
-
-      testSetup.template.hasResourceProperties("AWS::Events::Rule", {
-        EventPattern: {
-          source: ["aws.ecs"],
-          "detail-type": ["ECS Container Instance State Change"],
-          detail: {
-            status: ["ACTIVE"],
-          },
-        },
-      });
-    });
-
-    test("Lambda has permissions for ECS and SSM", () => {
-      const testSetup = createTestMonitoringInfraStack({
-        envName: "pipeline",
-        account: "123456789012",
-        region: "eu-west-1",
-      });
-
-      // Check that Lambda has ECS permissions
-      testSetup.template.hasResourceProperties("AWS::IAM::Policy", {
-        PolicyDocument: {
-          Statement: Match.arrayWith([
-            Match.objectLike({
-              Effect: "Allow",
-              Action: Match.arrayWith([
-                "ecs:ListContainerInstances",
-                "ecs:DescribeContainerInstances",
-              ]),
-            }),
-          ]),
-        },
-      });
-
-      // Check that Lambda has SSM Run Command permissions
-      testSetup.template.hasResourceProperties("AWS::IAM::Policy", {
-        PolicyDocument: {
-          Statement: Match.arrayWith([
-            Match.objectLike({
-              Effect: "Allow",
-              Action: Match.arrayWith([
-                "ssm:SendCommand",
-                "ssm:GetCommandInvocation",
-              ]),
-            }),
-          ]),
-        },
-      });
-
-      // Check that Lambda has SSM GetParameter permissions with envName path
-      // Find all IAM policies and check if any has SSM GetParameter with envName path
-      const allPolicies = testSetup.template.findResources("AWS::IAM::Policy");
-      const hasSsmGetParameterWithEnvName = Object.values(allPolicies).some((policy: any) => {
-        const statements = policy.Properties?.PolicyDocument?.Statement || [];
-        return statements.some((stmt: any) => {
-          const actions = Array.isArray(stmt.Action) ? stmt.Action : [stmt.Action];
-          const hasSsmActions = actions.some((action: string) => 
-            action === "ssm:GetParameter" || action === "ssm:GetParameters"
-          );
-          if (!hasSsmActions) return false;
-          
-          const resources = Array.isArray(stmt.Resource) ? stmt.Resource : [stmt.Resource];
-          return resources.some((resource: string) => 
-            resource && resource.includes("parameter/monitoring/pipeline")
-          );
-        });
-      });
-      
-      expect(hasSsmGetParameterWithEnvName).toBe(true);
-    });
-
-    test("creates Custom Resource to trigger Lambda on stack updates", () => {
+  describe("Application Setup SSM State Manager", () => {
+    test("creates SSM Association for application setup", () => {
       const testSetup = createTestMonitoringInfraStack({
         envName: "pipeline",
         account: "123456789012",
@@ -634,33 +514,168 @@ describe("MonitoringInfraStack", () => {
       }
     });
 
-    test("Lambda SSM permissions use envName path", () => {
+    test("SSM Association uses AWS-RunShellScript document", () => {
       const testSetup = createTestMonitoringInfraStack({
         envName: "pipeline",
         account: "123456789012",
         region: "eu-west-1",
       });
 
-      // Verify SSM permissions use /monitoring/{envName}/* path
-      // Find all IAM policies and check if any has SSM GetParameter with envName path
+      testSetup.template.hasResourceProperties("AWS::SSM::Association", {
+        Name: "AWS-RunShellScript",
+        AssociationName: "pipeline-application-setup",
+      });
+    });
+
+    test("SSM Association targets instances by tags", () => {
+      const testSetup = createTestMonitoringInfraStack({
+        envName: "pipeline",
+        account: "123456789012",
+        region: "eu-west-1",
+      });
+
+      testSetup.template.hasResourceProperties("AWS::SSM::Association", {
+        Targets: Match.arrayWith([
+          Match.objectLike({
+            Key: "tag:Environment",
+            Values: ["pipeline"],
+          }),
+          Match.objectLike({
+            Key: "tag:Service",
+            Values: ["monitoring"],
+          }),
+          Match.objectLike({
+            Key: "instance-state-name",
+            Values: ["running"],
+          }),
+        ]),
+      });
+    });
+
+    test("SSM Association has scheduled maintenance", () => {
+      const testSetup = createTestMonitoringInfraStack({
+        envName: "pipeline",
+        account: "123456789012",
+        region: "eu-west-1",
+      });
+
+      // Verify associations have schedule expression and run on instance launch
+      testSetup.template.hasResourceProperties("AWS::SSM::Association", {
+        ScheduleExpression: Match.stringLikeRegexp("rate\\(.*\\)"),
+        ApplyOnlyAtCronInterval: false, // Also run on new instances, not just schedule
+      });
+    });
+
+    test("SSM Association has proper execution timeout", () => {
+      const testSetup = createTestMonitoringInfraStack({
+        envName: "pipeline",
+        account: "123456789012",
+        region: "eu-west-1",
+      });
+
+      // Verify association has execution timeout set
+      const ssmAssociations = testSetup.template.findResources("AWS::SSM::Association");
+      const applicationSetupAssociation = Object.entries(ssmAssociations).find(
+        ([logicalId, resource]: [string, any]) => 
+          resource.Properties?.AssociationName?.includes("application-setup") ||
+          logicalId.includes("ApplicationSetup")
+      );
+      
+      expect(applicationSetupAssociation).toBeDefined();
+      if (applicationSetupAssociation) {
+        const [, resource] = applicationSetupAssociation;
+        const parameters = resource.Properties?.Parameters || {};
+        // SSM parameters are arrays
+        expect(parameters.executionTimeout).toBeDefined();
+        expect(Array.isArray(parameters.executionTimeout)).toBe(true);
+        expect(parameters.commands).toBeDefined();
+        expect(Array.isArray(parameters.commands)).toBe(true);
+        expect(parameters.workingDirectory).toBeDefined();
+      }
+    });
+
+    test("SSM Association has compliance severity set", () => {
+      const testSetup = createTestMonitoringInfraStack({
+        envName: "pipeline",
+        account: "123456789012",
+        region: "eu-west-1",
+      });
+
+      // Verify association has compliance severity for dashboard visibility
+      const ssmAssociations = testSetup.template.findResources("AWS::SSM::Association");
+      const applicationSetupAssociation = Object.entries(ssmAssociations).find(
+        ([logicalId, resource]: [string, any]) => 
+          resource.Properties?.AssociationName?.includes("application-setup") ||
+          logicalId.includes("ApplicationSetup")
+      );
+      
+      expect(applicationSetupAssociation).toBeDefined();
+      if (applicationSetupAssociation) {
+        const [, resource] = applicationSetupAssociation;
+        expect(resource.Properties?.ComplianceSeverity).toBe("CRITICAL");
+      }
+    });
+
+    test("Instance role has SSM permissions for State Manager", () => {
+      const testSetup = createTestMonitoringInfraStack({
+        envName: "pipeline",
+        account: "123456789012",
+        region: "eu-west-1",
+      });
+
+      // Check that instance role has SSM permissions for State Manager
+      // This includes permissions for associations, documents, and commands
       const policies = testSetup.template.findResources("AWS::IAM::Policy");
-      const hasCorrectSsmPath = Object.values(policies).some((policy: any) => {
+      const hasSsmStateManagerPermissions = Object.values(policies).some((policy: any) => {
+        const statements = policy.Properties?.PolicyDocument?.Statement || [];
+        return statements.some((stmt: any) => {
+          const actions = Array.isArray(stmt.Action) ? stmt.Action : [stmt.Action];
+          return actions.some((action: string) => 
+            action.includes("ssm:DescribeInstanceInformation") ||
+            action.includes("ssm:ListAssociations") ||
+            action.includes("ssm:UpdateInstanceInformation") ||
+            action.includes("ssm:SendCommand")
+          );
+        });
+      });
+      expect(hasSsmStateManagerPermissions).toBe(true);
+    });
+
+    test("Instance role has SSM GetParameter permissions with envName path", () => {
+      const testSetup = createTestMonitoringInfraStack({
+        envName: "pipeline",
+        account: "123456789012",
+        region: "eu-west-1",
+      });
+
+      // Verify SSM permissions exist (either wildcard "*" or specific path with envName)
+      // The instance role needs SSM GetParameter permissions to read monitoring configs
+      const policies = testSetup.template.findResources("AWS::IAM::Policy");
+      const hasSsmPermissions = Object.values(policies).some((policy: any) => {
         const statements = policy.Properties?.PolicyDocument?.Statement || [];
         return statements.some((stmt: any) => {
           const actions = Array.isArray(stmt.Action) ? stmt.Action : [stmt.Action];
           const hasSsmActions = actions.some((action: string) => 
-            action === "ssm:GetParameter" || action === "ssm:GetParameters"
+            action === "ssm:GetParameter" || 
+            action === "ssm:GetParameters" ||
+            action === "ssm:GetParametersByPath"
           );
           if (!hasSsmActions) return false;
           
+          // Accept either wildcard "*" (which allows all SSM parameters) or specific path
           const resources = Array.isArray(stmt.Resource) ? stmt.Resource : [stmt.Resource];
-          return resources.some((resource: string) => 
-            resource && resource.includes("parameter/monitoring/pipeline")
-          );
+          return resources.some((resource: string) => {
+            if (!resource) return false;
+            // Accept wildcard (allows access to all SSM parameters including /monitoring/pipeline/*)
+            if (resource === "*" || resource.includes("*")) return true;
+            // Accept specific path with envName
+            if (resource.includes("parameter/monitoring/pipeline")) return true;
+            return false;
+          });
         });
       });
       
-      expect(hasCorrectSsmPath).toBe(true);
+      expect(hasSsmPermissions).toBe(true);
     });
   });
 

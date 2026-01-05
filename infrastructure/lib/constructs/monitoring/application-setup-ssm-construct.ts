@@ -14,7 +14,7 @@
 import * as cdk from "aws-cdk-lib";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import { Construct } from "constructs";
-import { NagSuppressions } from "../../cdk-nag";
+import { NagSuppressions } from "cdk-nag";
 import { buildApplicationSetupScript } from "./application-setup-script";
 
 export interface ApplicationSetupSsmAssociationProps {
