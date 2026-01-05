@@ -184,24 +184,43 @@ async function createEnhancedConfigurationFiles(
     let grafanaDbYaml: string;
 
     try {
-      prometheusYaml = dictToYaml(JSON.parse(prometheusConfig));
+      const parsedConfig = JSON.parse(prometheusConfig);
+      prometheusYaml = dictToYaml(parsedConfig);
+      // Validate YAML is not empty
+      if (!prometheusYaml || prometheusYaml.trim().length === 0) {
+        throw new Error("Generated Prometheus YAML is empty");
+      }
+      console.log(`Generated Prometheus YAML (${prometheusYaml.length} chars)`);
     } catch (error) {
+      console.error("Error generating Prometheus YAML:", error);
       throw new Error(
         `Failed to parse Prometheus config JSON: ${error instanceof Error ? error.message : String(error)}`
       );
     }
 
     try {
-      grafanaDsYaml = dictToYaml(JSON.parse(grafanaDsConfig));
+      const parsedConfig = JSON.parse(grafanaDsConfig);
+      grafanaDsYaml = dictToYaml(parsedConfig);
+      if (!grafanaDsYaml || grafanaDsYaml.trim().length === 0) {
+        throw new Error("Generated Grafana datasource YAML is empty");
+      }
+      console.log(`Generated Grafana datasource YAML (${grafanaDsYaml.length} chars)`);
     } catch (error) {
+      console.error("Error generating Grafana datasource YAML:", error);
       throw new Error(
         `Failed to parse Grafana datasource config JSON: ${error instanceof Error ? error.message : String(error)}`
       );
     }
 
     try {
-      grafanaDbYaml = dictToYaml(JSON.parse(grafanaDbConfig));
+      const parsedConfig = JSON.parse(grafanaDbConfig);
+      grafanaDbYaml = dictToYaml(parsedConfig);
+      if (!grafanaDbYaml || grafanaDbYaml.trim().length === 0) {
+        throw new Error("Generated Grafana dashboard YAML is empty");
+      }
+      console.log(`Generated Grafana dashboard YAML (${grafanaDbYaml.length} chars)`);
     } catch (error) {
+      console.error("Error generating Grafana dashboard YAML:", error);
       throw new Error(
         `Failed to parse Grafana dashboard config JSON: ${error instanceof Error ? error.message : String(error)}`
       );
@@ -386,10 +405,13 @@ function dictToYaml(data: any, indent: number = 0): string {
           // Process first key on same line as dash
           const firstKey = itemKeys[0];
           const firstValue = item[firstKey];
-          
+
           if (firstValue === null || firstValue === undefined) {
             yamlLines.push(`${indentStr}- ${firstKey}: null`);
-          } else if (typeof firstValue === "object" && !Array.isArray(firstValue)) {
+          } else if (
+            typeof firstValue === "object" &&
+            !Array.isArray(firstValue)
+          ) {
             yamlLines.push(`${indentStr}- ${firstKey}:`);
             // For nested objects, use indent + 1 (relative to current level)
             const nestedYaml = dictToYaml(firstValue, indent + 1);
@@ -400,7 +422,7 @@ function dictToYaml(data: any, indent: number = 0): string {
                 const lineIndent = line.match(/^(\s*)/)?.[1]?.length || 0;
                 const baseIndent = (indent + 1) * 2; // Base indent from recursive call
                 const targetIndent = indentStr.length + 2; // 2 spaces after dash
-                const adjustedIndent = targetIndent + (lineIndent - baseIndent);
+                const adjustedIndent = Math.max(0, targetIndent + (lineIndent - baseIndent));
                 yamlLines.push(" ".repeat(adjustedIndent) + line.trimStart());
               }
             }
@@ -413,7 +435,7 @@ function dictToYaml(data: any, indent: number = 0): string {
                 const lineIndent = line.match(/^(\s*)/)?.[1]?.length || 0;
                 const baseIndent = (indent + 1) * 2;
                 const targetIndent = indentStr.length + 2;
-                const adjustedIndent = targetIndent + (lineIndent - baseIndent);
+                const adjustedIndent = Math.max(0, targetIndent + (lineIndent - baseIndent));
                 yamlLines.push(" ".repeat(adjustedIndent) + line.trimStart());
               }
             }
@@ -421,12 +443,12 @@ function dictToYaml(data: any, indent: number = 0): string {
             const formattedValue = formatYamlValue(firstValue);
             yamlLines.push(`${indentStr}- ${firstKey}: ${formattedValue}`);
           }
-          
+
           // Process remaining keys with proper indentation (2 spaces after dash)
           for (let i = 1; i < itemKeys.length; i++) {
             const key = itemKeys[i];
             const value = item[key];
-            
+
             if (value === null || value === undefined) {
               yamlLines.push(`${indentStr}  ${key}: null`);
             } else if (typeof value === "object" && !Array.isArray(value)) {
@@ -438,7 +460,7 @@ function dictToYaml(data: any, indent: number = 0): string {
                   const lineIndent = line.match(/^(\s*)/)?.[1]?.length || 0;
                   const baseIndent = (indent + 1) * 2;
                   const targetIndent = indentStr.length + 2; // 2 spaces for key after dash
-                  const adjustedIndent = targetIndent + (lineIndent - baseIndent);
+                  const adjustedIndent = Math.max(0, targetIndent + (lineIndent - baseIndent));
                   yamlLines.push(" ".repeat(adjustedIndent) + line.trimStart());
                 }
               }
@@ -451,7 +473,7 @@ function dictToYaml(data: any, indent: number = 0): string {
                   const lineIndent = line.match(/^(\s*)/)?.[1]?.length || 0;
                   const baseIndent = (indent + 1) * 2;
                   const targetIndent = indentStr.length + 2;
-                  const adjustedIndent = targetIndent + (lineIndent - baseIndent);
+                  const adjustedIndent = Math.max(0, targetIndent + (lineIndent - baseIndent));
                   yamlLines.push(" ".repeat(adjustedIndent) + line.trimStart());
                 }
               }

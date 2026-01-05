@@ -55,11 +55,12 @@ export class MonitoringEfsStack extends cdk.Stack {
       lifecyclePolicy = efs.LifecyclePolicy.AFTER_30_DAYS,
     } = props;
 
-    // Use a single public subnet in the first AZ to align mount targets
-    const publicAz0Subnets = vpc.selectSubnets({
+    // Select all public subnets (one per AZ) to match where EC2 instances can be placed
+    // This ensures EFS mount targets are available in the same subnets as the instances
+    // Using dynamic subnet selection (not hardcoded) to avoid errors on redeployment
+    const publicSubnets = vpc.selectSubnets({
       subnetType: ec2.SubnetType.PUBLIC,
-      availabilityZones: [vpc.availabilityZones[0]],
-      onePerAz: true,
+      onePerAz: true, // One subnet per availability zone
     });
 
     // ========================================================================
@@ -81,6 +82,8 @@ export class MonitoringEfsStack extends cdk.Stack {
     // ========================================================================
     // EFS FILE SYSTEM
     // ========================================================================
+    // Use all public subnets (one per AZ) for mount targets to match instance placement
+    // This ensures instances in any AZ can access EFS
     const efsFileSystemConstruct = new EfsFileSystemConstruct(
       this,
       "EfsFileSystem",
@@ -91,7 +94,7 @@ export class MonitoringEfsStack extends cdk.Stack {
         lifecyclePolicy,
         securityGroup: this.mountTargetSecurityGroup,
         removalPolicy: cdk.RemovalPolicy.RETAIN,
-        mountTargetSubnetSelection: { subnets: publicAz0Subnets.subnets },
+        mountTargetSubnetSelection: { subnets: publicSubnets.subnets },
       }
     );
 

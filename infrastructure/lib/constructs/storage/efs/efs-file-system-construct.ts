@@ -116,14 +116,24 @@ export class EfsFileSystemConstruct extends Construct {
     this.availabilityZone =
       selectedSubnets?.availabilityZones?.[0] ?? vpc.availabilityZones[0];
 
-    // Configure backup policy and pin to a single AZ (One Zone EFS)
+    // Configure backup policy
     const cfnFileSystem = this.fileSystem.node
       .defaultChild as efs.CfnFileSystem;
     cfnFileSystem.backupPolicy = {
       status: "ENABLED",
     };
-    // Setting availabilityZoneName makes this a One Zone file system
-    cfnFileSystem.availabilityZoneName = this.availabilityZone;
+    
+    // Only use One Zone EFS if a single subnet is provided
+    // If multiple subnets are provided, use standard multi-AZ EFS to allow
+    // mount targets in all AZs where instances can be placed
+    const isSingleSubnet = selectedSubnets?.subnets.length === 1;
+    if (isSingleSubnet) {
+      // Setting availabilityZoneName makes this a One Zone file system
+      // This is more cost-effective when instances are constrained to a single AZ
+      cfnFileSystem.availabilityZoneName = this.availabilityZone;
+    }
+    // If multiple subnets, don't set availabilityZoneName - this creates a standard
+    // multi-AZ EFS with mount targets in all provided subnets/AZs
 
     // Add tags
     cdk.Tags.of(this.fileSystem).add("Name", `${envName}-monitoring-efs`);
