@@ -433,6 +433,268 @@ else
 fi
 
 # ------------------------------------------------------------------------------
+# 4.1. Grafana to Prometheus Connectivity Check
+# ------------------------------------------------------------------------------
+echo ""
+echo "4.1. Grafana to Prometheus Connectivity"
+echo "----------------------------------------"
+
+# Get EC2 instance private IP for verification
+INSTANCE_ID=""
+EC2_PRIVATE_IP=""
+
+if [ -n "$PIPELINE_EC2_IP" ] && [ "$PIPELINE_EC2_IP" != "None" ] && [ "$PIPELINE_EC2_IP" != "" ]; then
+  # Check if PIPELINE_EC2_IP is an IP address (contains dots) or ALB DNS
+  if [[ "$PIPELINE_EC2_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    # PIPELINE_EC2_IP is already an IP address
+    EC2_PRIVATE_IP="$PIPELINE_EC2_IP"
+    # Still try to get instance ID for config file check
+    INSTANCE_ID=$(aws ec2 describe-instances \
+      --region "$AWS_REGION" \
+      --filters "Name=private-ip-address,Values=$EC2_PRIVATE_IP" "Name=instance-state-name,Values=running" \
+      --query 'Reservations[0].Instances[0].InstanceId' \
+      --output text 2>/dev/null || echo "")
+  else
+    # PIPELINE_EC2_IP is ALB DNS, need to get actual EC2 IP
+    INSTANCE_ID=$(aws ec2 describe-instances \
+      --region "$AWS_REGION" \
+      --filters "Name=tag:Environment,Values=$ENVIRONMENT" "Name=tag:Service,Values=monitoring" "Name=instance-state-name,Values=running" \
+      --query 'Reservations[0].Instances[0].InstanceId' \
+      --output text 2>/dev/null || echo "")
+    
+    if [ -n "$INSTANCE_ID" ] && [ "$INSTANCE_ID" != "None" ]; then
+      EC2_PRIVATE_IP=$(aws ec2 describe-instances \
+        --region "$AWS_REGION" \
+        --instance-ids "$INSTANCE_ID" \
+        --query 'Reservations[0].Instances[0].PrivateIpAddress' \
+        --output text 2>/dev/null || echo "")
+    fi
+  fi
+fi
+
+if [ -n "$EC2_PRIVATE_IP" ] && [ "$EC2_PRIVATE_IP" != "None" ] && [ "$EC2_PRIVATE_IP" != "" ]; then
+  log_info "EC2 Instance Private IP: $EC2_PRIVATE_IP"
+  
+  # Check if Grafana datasource config exists and has correct IP
+  if [ -n "$INSTANCE_ID" ] && [ "$INSTANCE_ID" != "None" ]; then
+    # Get datasource config from EC2 instance via SSM
+    DATASOURCE_CONFIG=$(aws ssm send-command \
+      --instance-ids "$INSTANCE_ID" \
+      --document-name "AWS-RunShellScript" \
+      --parameters "commands=[\"cat /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml 2>/dev/null || echo 'FILE_NOT_FOUND'\"]" \
+      --region "$AWS_REGION" \
+      --query 'Command.CommandId' \
+      --output text 2>/dev/null || echo "")
+    
+    if [ -n "$DATASOURCE_CONFIG" ]; then
+      # Wait for command to complete
+      sleep 3
+      COMMAND_OUTPUT=$(aws ssm get-command-invocation \
+        --command-id "$DATASOURCE_CONFIG" \
+        --instance-id "$INSTANCE_ID" \
+        --region "$AWS_REGION" \
+        --query 'StandardOutputContent' \
+        --output text 2>/dev/null || echo "")
+      
+      if echo "$COMMAND_OUTPUT" | grep -q "FILE_NOT_FOUND"; then
+        log_warning "Grafana datasource config file not found on instance"
+      elif echo "$COMMAND_OUTPUT" | grep -q "HOST_IP_PLACEHOLDER"; then
+        log_failure "Grafana datasource config still contains HOST_IP_PLACEHOLDER (not replaced)"
+      elif echo "$COMMAND_OUTPUT" | grep -q "localhost"; then
+        log_failure "Grafana datasource config uses localhost (should use EC2 private IP: $EC2_PRIVATE_IP)"
+      elif echo "$COMMAND_OUTPUT" | grep -q "$EC2_PRIVATE_IP"; then
+        log_success "Grafana datasource config uses correct EC2 private IP: $EC2_PRIVATE_IP"
+      else
+        log_warning "Could not verify Grafana datasource config IP address"
+      fi
+    else
+      log_warning "Could not retrieve datasource config from instance (SSM command failed)"
+    fi
+  fi
+  
+  # Test Grafana datasource connectivity via API
+  if [ "$GRAFANA_HEALTH" == "200" ]; then
+    # Get Grafana datasources
+    DATASOURCES_JSON=$(curl -s -u admin:admin "$GRAFANA_URL/api/datasources" 2>/dev/null || echo "[]")
+    PROMETHEUS_DS=$(echo "$DATASOURCES_JSON" | jq -r '.[] | select(.type=="prometheus") | .uid // .id' 2>/dev/null | head -1)
+    
+    if [ -n "$PROMETHEUS_DS" ] && [ "$PROMETHEUS_DS" != "null" ]; then
+      log_success "Prometheus datasource found in Grafana (UID: $PROMETHEUS_DS)"
+      
+      # Get datasource ID (may be different from UID)
+      DS_ID=$(echo "$DATASOURCES_JSON" | jq -r '.[] | select(.type=="prometheus") | .id' 2>/dev/null | head -1)
+      DS_URL=$(echo "$DATASOURCES_JSON" | jq -r '.[] | select(.type=="prometheus") | .url' 2>/dev/null | head -1)
+      
+      if [ -n "$DS_URL" ] && [ "$DS_URL" != "null" ]; then
+        log_info "Datasource URL: $DS_URL"
+        
+        # Verify URL contains EC2 IP (not localhost or placeholder)
+        if echo "$DS_URL" | grep -q "localhost"; then
+          log_failure "Datasource URL uses localhost (should use EC2 private IP)"
+        elif echo "$DS_URL" | grep -q "HOST_IP_PLACEHOLDER"; then
+          log_failure "Datasource URL contains HOST_IP_PLACEHOLDER (not replaced)"
+        elif echo "$DS_URL" | grep -q "$EC2_PRIVATE_IP"; then
+          log_success "Datasource URL correctly uses EC2 private IP"
+        else
+          log_warning "Datasource URL does not match expected EC2 IP pattern"
+        fi
+      fi
+      
+      # Test datasource connectivity by querying Prometheus through Grafana
+      if [ -n "$DS_ID" ] && [ "$DS_ID" != "null" ]; then
+        QUERY_TEST=$(curl -s -u admin:admin "$GRAFANA_URL/api/datasources/proxy/$DS_ID/api/v1/query?query=up" 2>/dev/null || echo '{"status":"error"}')
+        
+        if echo "$QUERY_TEST" | jq -e '.status == "success"' >/dev/null 2>&1; then
+          log_success "Grafana can successfully query Prometheus (connectivity test passed)"
+          
+          # Verify we got actual data
+          RESULT_COUNT=$(echo "$QUERY_TEST" | jq -r '.data.result | length' 2>/dev/null || echo "0")
+          if [ "$RESULT_COUNT" -gt 0 ]; then
+            log_success "Prometheus query returned $RESULT_COUNT result(s)"
+          else
+            log_warning "Prometheus query succeeded but returned no results"
+          fi
+        else
+          ERROR_MSG=$(echo "$QUERY_TEST" | jq -r '.error // .message // "Unknown error"' 2>/dev/null || echo "Connection failed")
+          log_failure "Grafana cannot query Prometheus: $ERROR_MSG"
+          log_info "Check: Datasource URL, network connectivity, Prometheus availability"
+        fi
+      else
+        log_warning "Could not determine datasource ID for connectivity test"
+      fi
+    else
+      log_failure "Prometheus datasource not found in Grafana"
+      log_info "Check: Datasource provisioning, Grafana logs, EFS mount"
+    fi
+  else
+    log_warning "Skipping datasource connectivity test (Grafana not healthy)"
+  fi
+else
+  log_warning "Could not determine EC2 instance IP - skipping Grafana datasource IP verification"
+fi
+
+# ------------------------------------------------------------------------------
+# 4.2. Development Account Scraping Verification
+# ------------------------------------------------------------------------------
+echo ""
+echo "4.2. Development Account Scraping"
+echo "----------------------------------"
+
+if [ "$CROSS_ACCOUNT_ENABLED" == "true" ] && [ "$PROM_HEALTH" == "200" ]; then
+  log_info "Verifying Prometheus is scraping development account targets..."
+  
+  # Get all targets from Prometheus
+  TARGETS_JSON=$(curl -s "$PROMETHEUS_URL/api/v1/targets" 2>/dev/null || echo '{"data":{"activeTargets":[]}}')
+  
+  # Check for development account node-exporter
+  DEV_NODE_EXPORTER_TARGETS=$(echo "$TARGETS_JSON" | jq -r '.data.activeTargets[] | select(.labels.job | test("node-exporter.*development|node-exporter.*dev")) | {job: .labels.job, health: .health, instance: .labels.instance, environment: .labels.environment}' 2>/dev/null)
+  
+  if [ -n "$DEV_NODE_EXPORTER_TARGETS" ] && [ "$DEV_NODE_EXPORTER_TARGETS" != "null" ]; then
+    DEV_NODE_EXPORTER_COUNT=$(echo "$DEV_NODE_EXPORTER_TARGETS" | jq -s 'length' 2>/dev/null || echo "0")
+    DEV_NODE_EXPORTER_UP=$(echo "$DEV_NODE_EXPORTER_TARGETS" | jq -s '[.[] | select(.health=="up")] | length' 2>/dev/null || echo "0")
+    
+    if [ "$DEV_NODE_EXPORTER_UP" -gt 0 ]; then
+      log_success "Development account node-exporter: $DEV_NODE_EXPORTER_UP/$DEV_NODE_EXPORTER_COUNT target(s) UP"
+      
+      # Show details of each target
+      echo "$DEV_NODE_EXPORTER_TARGETS" | jq -s -r '.[] | "  - \(.job) [\(.environment // "unknown")]: \(.health) - \(.instance // "unknown")"' 2>/dev/null || true
+      
+      # Verify we can query metrics from development node-exporter
+      DEV_NODE_EXPORTER_METRICS=$(curl -s "$PROMETHEUS_URL/api/v1/query?query=up{environment=\"development\",service=\"node-exporter\"}" 2>/dev/null || echo '{"status":"error"}')
+      if echo "$DEV_NODE_EXPORTER_METRICS" | jq -e '.status == "success"' >/dev/null 2>&1; then
+        METRIC_COUNT=$(echo "$DEV_NODE_EXPORTER_METRICS" | jq -r '.data.result | length' 2>/dev/null || echo "0")
+        if [ "$METRIC_COUNT" -gt 0 ]; then
+          log_success "Development node-exporter metrics are queryable ($METRIC_COUNT metric series found)"
+        else
+          log_warning "Development node-exporter target is UP but no metrics found"
+        fi
+      else
+        log_warning "Could not query development node-exporter metrics"
+      fi
+    else
+      log_failure "Development account node-exporter: $DEV_NODE_EXPORTER_COUNT target(s) found but NONE are UP"
+      # Show error details
+      echo "$DEV_NODE_EXPORTER_TARGETS" | jq -s -r '.[] | select(.health!="up") | "  - \(.job): \(.health) - \(.lastError // "no error details")"' 2>/dev/null || true
+    fi
+  else
+    log_failure "Development account node-exporter targets not found"
+    log_info "Expected job names: node-exporter-development, node-exporter-dev"
+    log_info "Check: EC2 service discovery configuration, IAM roles, VPC peering, security groups"
+  fi
+  
+  # Check for development account Next.js application
+  DEV_NEXTJS_TARGETS=$(echo "$TARGETS_JSON" | jq -r '.data.activeTargets[] | select(.labels.job | test("nextjs.*development|nextjs.*dev|application.*development")) | {job: .labels.job, health: .health, instance: .labels.instance, environment: .labels.environment}' 2>/dev/null)
+  
+  if [ -n "$DEV_NEXTJS_TARGETS" ] && [ "$DEV_NEXTJS_TARGETS" != "null" ]; then
+    DEV_NEXTJS_COUNT=$(echo "$DEV_NEXTJS_TARGETS" | jq -s 'length' 2>/dev/null || echo "0")
+    DEV_NEXTJS_UP=$(echo "$DEV_NEXTJS_TARGETS" | jq -s '[.[] | select(.health=="up")] | length' 2>/dev/null || echo "0")
+    
+    if [ "$DEV_NEXTJS_UP" -gt 0 ]; then
+      log_success "Development account Next.js application: $DEV_NEXTJS_UP/$DEV_NEXTJS_COUNT target(s) UP"
+      
+      # Show details of each target
+      echo "$DEV_NEXTJS_TARGETS" | jq -s -r '.[] | "  - \(.job) [\(.environment // "unknown")]: \(.health) - \(.instance // "unknown")"' 2>/dev/null || true
+      
+      # Verify we can query metrics from development Next.js app
+      DEV_NEXTJS_METRICS=$(curl -s "$PROMETHEUS_URL/api/v1/query?query=up{environment=\"development\",service=\"nextjs\"}" 2>/dev/null || echo '{"status":"error"}')
+      if echo "$DEV_NEXTJS_METRICS" | jq -e '.status == "success"' >/dev/null 2>&1; then
+        METRIC_COUNT=$(echo "$DEV_NEXTJS_METRICS" | jq -r '.data.result | length' 2>/dev/null || echo "0")
+        if [ "$METRIC_COUNT" -gt 0 ]; then
+          log_success "Development Next.js metrics are queryable ($METRIC_COUNT metric series found)"
+          
+          # Check for specific Next.js metrics
+          HTTP_REQUESTS=$(curl -s "$PROMETHEUS_URL/api/v1/query?query=http_requests_total{environment=\"development\"}" 2>/dev/null || echo '{"status":"error"}')
+          if echo "$HTTP_REQUESTS" | jq -e '.status == "success" and (.data.result | length > 0)' >/dev/null 2>&1; then
+            log_success "Development Next.js application metrics are being collected (http_requests_total found)"
+          else
+            log_warning "Development Next.js target is UP but application-specific metrics not found"
+          fi
+        else
+          log_warning "Development Next.js target is UP but no metrics found"
+        fi
+      else
+        log_warning "Could not query development Next.js metrics"
+      fi
+    else
+      log_failure "Development account Next.js application: $DEV_NEXTJS_COUNT target(s) found but NONE are UP"
+      # Show error details
+      echo "$DEV_NEXTJS_TARGETS" | jq -s -r '.[] | select(.health!="up") | "  - \(.job): \(.health) - \(.lastError // "no error details")"' 2>/dev/null || true
+    fi
+  else
+    log_failure "Development account Next.js application targets not found"
+    log_info "Expected job names: nextjs-development, nextjs-dev, application-development"
+    log_info "Check: EC2 service discovery configuration, IAM roles, application metrics endpoint"
+  fi
+  
+  # Summary of development account scraping
+  echo ""
+  echo "   Development Account Scraping Summary:"
+  DEV_TOTAL_TARGETS=$(echo "$TARGETS_JSON" | jq -r '.data.activeTargets[] | select(.labels.environment=="development") | .labels.job' 2>/dev/null | sort -u | wc -l | tr -d ' ')
+  DEV_UP_TARGETS=$(echo "$TARGETS_JSON" | jq -r '.data.activeTargets[] | select(.labels.environment=="development" and .health=="up") | .labels.job' 2>/dev/null | sort -u | wc -l | tr -d ' ')
+  
+  if [ "$DEV_TOTAL_TARGETS" -gt 0 ]; then
+    if [ "$DEV_UP_TARGETS" -eq "$DEV_TOTAL_TARGETS" ]; then
+      log_success "All development account scrape jobs are UP ($DEV_UP_TARGETS/$DEV_TOTAL_TARGETS)"
+    else
+      log_warning "Some development account scrape jobs are down ($DEV_UP_TARGETS/$DEV_TOTAL_TARGETS UP)"
+    fi
+    
+    # List all development targets
+    echo "$TARGETS_JSON" | jq -r '.data.activeTargets[] | select(.labels.environment=="development") | "  - \(.labels.job): \(.health) (\(.labels.instance // "unknown"))"' 2>/dev/null | sort -u || true
+  else
+    log_failure "No development account targets configured or discovered"
+    log_info "Verify: Cross-account EC2 service discovery is enabled and configured"
+    log_info "Check: IAM roles, VPC peering, security groups, EC2 instance tags"
+  fi
+else
+  if [ "$CROSS_ACCOUNT_ENABLED" != "true" ]; then
+    log_warning "Skipping development account checks (cross-account not enabled or dev IP not available)"
+  else
+    log_warning "Skipping development account checks (Prometheus not healthy)"
+  fi
+fi
+
+# ------------------------------------------------------------------------------
 # 5. ECS Services
 # ------------------------------------------------------------------------------
 echo ""
