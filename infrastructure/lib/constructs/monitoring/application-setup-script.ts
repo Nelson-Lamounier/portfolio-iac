@@ -161,16 +161,80 @@ fi
 
 # Download Grafana datasource config from SSM and replace HOST_IP_PLACEHOLDER
 echo 'Downloading Grafana datasource configuration from SSM...'
-HOST_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
+
+# Get EC2 instance private IP with retry logic and validation
+HOST_IP=""
+MAX_RETRIES=5
+RETRY_COUNT=0
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ -z "$HOST_IP" ]; do
+  RETRY_COUNT=$((RETRY_COUNT + 1))
+  echo "Attempting to retrieve EC2 private IP (attempt $RETRY_COUNT/$MAX_RETRIES)..."
+  
+  # Try to get IP from instance metadata service
+  HOST_IP=$(curl -s --connect-timeout 2 --max-time 5 http://169.254.169.254/latest/meta-data/local-ipv4 2>/dev/null || echo "")
+  
+  # Validate IP format (basic check: should contain dots and be non-empty)
+  if [ -n "$HOST_IP" ] && echo "$HOST_IP" | grep -qE '^[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}$'; then
+    echo "✓ Successfully retrieved EC2 private IP: $HOST_IP"
+    break
+  else
+    echo "⚠ IP retrieval failed or invalid format, waiting 2 seconds before retry..."
+    sleep 2
+    HOST_IP=""
+  fi
+done
+
+# If still empty, try alternative method (using AWS CLI)
+if [ -z "$HOST_IP" ]; then
+  echo "⚠ Instance metadata service unavailable, trying AWS CLI..."
+  INSTANCE_ID=$(curl -s --connect-timeout 2 --max-time 5 http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || echo "")
+  if [ -n "$INSTANCE_ID" ]; then
+    HOST_IP=$(aws ec2 describe-instances \
+      --instance-ids "$INSTANCE_ID" \
+      --region ${config.region} \
+      --query 'Reservations[0].Instances[0].PrivateIpAddress' \
+      --output text 2>/dev/null || echo "")
+    
+    if [ -n "$HOST_IP" ] && [ "$HOST_IP" != "None" ]; then
+      echo "✓ Retrieved EC2 private IP via AWS CLI: $HOST_IP"
+    fi
+  fi
+fi
+
+# Final validation - fail if IP is still empty
+if [ -z "$HOST_IP" ] || [ "$HOST_IP" = "None" ]; then
+  echo "ERROR: Failed to retrieve EC2 instance private IP after $MAX_RETRIES attempts"
+  echo "This is required for Grafana to connect to Prometheus"
+  echo "Troubleshooting:"
+  echo "  1. Check if instance metadata service is enabled (IMDSv2)"
+  echo "  2. Verify IAM role has ec2:DescribeInstances permission"
+  echo "  3. Check network connectivity to instance metadata service"
+  exit 1
+fi
+
 echo "Host Private IP: $HOST_IP"
 
 if aws ssm get-parameter --region ${config.region} --name "/monitoring/${config.envName}/grafana-datasource-config-yaml" --query "Parameter.Value" --output text > /tmp/grafana-datasource.yml 2>/dev/null; then
   echo '✓ Grafana datasource config downloaded from SSM'
   # Replace HOST_IP_PLACEHOLDER with actual host IP
-  sed "s/HOST_IP_PLACEHOLDER/$HOST_IP/g" /tmp/grafana-datasource.yml > /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml
-  sudo chown 472:0 /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml
-  sudo chmod 644 /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml
-  echo '✓ Grafana datasource config updated with host IP'
+  # Use sed with proper escaping and validation
+  if sed "s|HOST_IP_PLACEHOLDER|$HOST_IP|g" /tmp/grafana-datasource.yml > /tmp/grafana-datasource-updated.yml 2>/dev/null; then
+    # Validate that replacement occurred
+    if grep -q "$HOST_IP" /tmp/grafana-datasource-updated.yml && ! grep -q "HOST_IP_PLACEHOLDER" /tmp/grafana-datasource-updated.yml; then
+      mv /tmp/grafana-datasource-updated.yml /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml
+      sudo chown 472:0 /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml
+      sudo chmod 644 /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml
+      echo "✓ Grafana datasource config updated with host IP: $HOST_IP"
+    else
+      echo "ERROR: Failed to replace HOST_IP_PLACEHOLDER in Grafana datasource config"
+      echo "Config file may be corrupted or placeholder format is incorrect"
+      exit 1
+    fi
+  else
+    echo "ERROR: Failed to process Grafana datasource config file"
+    exit 1
+  fi
 else
   echo 'ℹ Creating default Grafana datasource config (SSM not available)'
   cat > /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml << EOF
@@ -186,7 +250,41 @@ datasources:
 EOF
   sudo chown 472:0 /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml
   sudo chmod 644 /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml
-  echo '✓ Default Grafana datasource config created'
+  
+  # Verify the config file was created correctly
+  if grep -q "$HOST_IP" /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml && ! grep -qE "http://:[0-9]+" /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml; then
+    echo "✓ Default Grafana datasource config created with IP: $HOST_IP"
+  else
+    echo "ERROR: Failed to create Grafana datasource config with valid IP"
+    echo "Config file contents:"
+    cat /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml || echo "(file not found)"
+    exit 1
+  fi
+fi
+
+# Final verification: Ensure datasource config has valid IP
+echo "Verifying Grafana datasource configuration..."
+if [ -f /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml ]; then
+  if grep -qE "http://:[0-9]+" /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml; then
+    echo "ERROR: Grafana datasource config has empty host IP"
+    echo "This indicates HOST_IP was not retrieved correctly"
+    echo "Config file:"
+    cat /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml
+    exit 1
+  elif grep -q "HOST_IP_PLACEHOLDER" /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml; then
+    echo "ERROR: Grafana datasource config still contains HOST_IP_PLACEHOLDER"
+    echo "The replacement did not occur"
+    exit 1
+  elif grep -q "$HOST_IP" /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml; then
+    echo "✓ Grafana datasource config verified - contains valid IP: $HOST_IP"
+  else
+    echo "⚠ Warning: Could not verify IP in Grafana datasource config"
+    echo "Config file:"
+    cat /mnt/efs/config/grafana/provisioning/datasources/prometheus.yml
+  fi
+else
+  echo "ERROR: Grafana datasource config file not found"
+  exit 1
 fi
 
 # ==========================================================================

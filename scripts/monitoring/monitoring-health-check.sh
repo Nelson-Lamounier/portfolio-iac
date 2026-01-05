@@ -528,15 +528,26 @@ if [ -n "$EC2_PRIVATE_IP" ] && [ "$EC2_PRIVATE_IP" != "None" ] && [ "$EC2_PRIVAT
       if [ -n "$DS_URL" ] && [ "$DS_URL" != "null" ]; then
         log_info "Datasource URL: $DS_URL"
         
+        # Check for empty host in URL (http://:9090 pattern)
+        if echo "$DS_URL" | grep -qE "http://:[0-9]+" || echo "$DS_URL" | grep -qE "http:///"; then
+          log_failure "Datasource URL has empty host (http://:9090) - HOST_IP_PLACEHOLDER was replaced with empty string"
+          log_info "This indicates the application setup script failed to retrieve EC2 private IP"
+          log_info "Troubleshooting:"
+          log_info "  1. Check application setup logs: /var/log/application-setup.log"
+          log_info "  2. Verify instance metadata service is accessible"
+          log_info "  3. Check SSM State Manager association execution status"
+          log_info "  4. Manually run application setup script to fix the datasource config"
         # Verify URL contains EC2 IP (not localhost or placeholder)
-        if echo "$DS_URL" | grep -q "localhost"; then
-          log_failure "Datasource URL uses localhost (should use EC2 private IP)"
+        elif echo "$DS_URL" | grep -q "localhost"; then
+          log_failure "Datasource URL uses localhost (should use EC2 private IP: $EC2_PRIVATE_IP)"
         elif echo "$DS_URL" | grep -q "HOST_IP_PLACEHOLDER"; then
           log_failure "Datasource URL contains HOST_IP_PLACEHOLDER (not replaced)"
         elif echo "$DS_URL" | grep -q "$EC2_PRIVATE_IP"; then
-          log_success "Datasource URL correctly uses EC2 private IP"
+          log_success "Datasource URL correctly uses EC2 private IP: $EC2_PRIVATE_IP"
         else
           log_warning "Datasource URL does not match expected EC2 IP pattern"
+          log_info "Expected IP: $EC2_PRIVATE_IP"
+          log_info "Actual URL: $DS_URL"
         fi
       fi
       
