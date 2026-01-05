@@ -204,7 +204,9 @@ async function createEnhancedConfigurationFiles(
       if (!grafanaDsYaml || grafanaDsYaml.trim().length === 0) {
         throw new Error("Generated Grafana datasource YAML is empty");
       }
-      console.log(`Generated Grafana datasource YAML (${grafanaDsYaml.length} chars)`);
+      console.log(
+        `Generated Grafana datasource YAML (${grafanaDsYaml.length} chars)`
+      );
     } catch (error) {
       console.error("Error generating Grafana datasource YAML:", error);
       throw new Error(
@@ -218,7 +220,9 @@ async function createEnhancedConfigurationFiles(
       if (!grafanaDbYaml || grafanaDbYaml.trim().length === 0) {
         throw new Error("Generated Grafana dashboard YAML is empty");
       }
-      console.log(`Generated Grafana dashboard YAML (${grafanaDbYaml.length} chars)`);
+      console.log(
+        `Generated Grafana dashboard YAML (${grafanaDbYaml.length} chars)`
+      );
     } catch (error) {
       console.error("Error generating Grafana dashboard YAML:", error);
       throw new Error(
@@ -422,7 +426,10 @@ function dictToYaml(data: any, indent: number = 0): string {
                 const lineIndent = line.match(/^(\s*)/)?.[1]?.length || 0;
                 const baseIndent = (indent + 1) * 2; // Base indent from recursive call
                 const targetIndent = indentStr.length + 2; // 2 spaces after dash
-                const adjustedIndent = Math.max(0, targetIndent + (lineIndent - baseIndent));
+                const adjustedIndent = Math.max(
+                  0,
+                  targetIndent + (lineIndent - baseIndent)
+                );
                 yamlLines.push(" ".repeat(adjustedIndent) + line.trimStart());
               }
             }
@@ -435,7 +442,10 @@ function dictToYaml(data: any, indent: number = 0): string {
                 const lineIndent = line.match(/^(\s*)/)?.[1]?.length || 0;
                 const baseIndent = (indent + 1) * 2;
                 const targetIndent = indentStr.length + 2;
-                const adjustedIndent = Math.max(0, targetIndent + (lineIndent - baseIndent));
+                const adjustedIndent = Math.max(
+                  0,
+                  targetIndent + (lineIndent - baseIndent)
+                );
                 yamlLines.push(" ".repeat(adjustedIndent) + line.trimStart());
               }
             }
@@ -460,7 +470,10 @@ function dictToYaml(data: any, indent: number = 0): string {
                   const lineIndent = line.match(/^(\s*)/)?.[1]?.length || 0;
                   const baseIndent = (indent + 1) * 2;
                   const targetIndent = indentStr.length + 2; // 2 spaces for key after dash
-                  const adjustedIndent = Math.max(0, targetIndent + (lineIndent - baseIndent));
+                  const adjustedIndent = Math.max(
+                    0,
+                    targetIndent + (lineIndent - baseIndent)
+                  );
                   yamlLines.push(" ".repeat(adjustedIndent) + line.trimStart());
                 }
               }
@@ -473,7 +486,10 @@ function dictToYaml(data: any, indent: number = 0): string {
                   const lineIndent = line.match(/^(\s*)/)?.[1]?.length || 0;
                   const baseIndent = (indent + 1) * 2;
                   const targetIndent = indentStr.length + 2;
-                  const adjustedIndent = Math.max(0, targetIndent + (lineIndent - baseIndent));
+                  const adjustedIndent = Math.max(
+                    0,
+                    targetIndent + (lineIndent - baseIndent)
+                  );
                   yamlLines.push(" ".repeat(adjustedIndent) + line.trimStart());
                 }
               }
