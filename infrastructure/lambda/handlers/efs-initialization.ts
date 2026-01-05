@@ -378,13 +378,87 @@ function dictToYaml(data: any, indent: number = 0): string {
   if (Array.isArray(data)) {
     for (const item of data) {
       if (typeof item === "object" && item !== null) {
-        yamlLines.push(`${indentStr}-`);
-        const itemYaml = dictToYaml(item, indent + 1);
-        // Add proper indentation for nested objects in arrays
-        const itemLines = itemYaml.split("\n");
-        for (const line of itemLines) {
-          if (line.trim()) {
-            yamlLines.push(`${indentStr}  ${line.trimStart()}`);
+        // For objects in arrays, process keys directly to ensure proper formatting
+        const itemKeys = Object.keys(item);
+        if (itemKeys.length === 0) {
+          yamlLines.push(`${indentStr}- {}`);
+        } else {
+          // Process first key on same line as dash
+          const firstKey = itemKeys[0];
+          const firstValue = item[firstKey];
+          
+          if (firstValue === null || firstValue === undefined) {
+            yamlLines.push(`${indentStr}- ${firstKey}: null`);
+          } else if (typeof firstValue === "object" && !Array.isArray(firstValue)) {
+            yamlLines.push(`${indentStr}- ${firstKey}:`);
+            // For nested objects, use indent + 1 (relative to current level)
+            const nestedYaml = dictToYaml(firstValue, indent + 1);
+            const nestedLines = nestedYaml.split("\n");
+            for (const line of nestedLines) {
+              if (line.trim()) {
+                // Adjust indentation: remove the base indent and add proper relative indent
+                const lineIndent = line.match(/^(\s*)/)?.[1]?.length || 0;
+                const baseIndent = (indent + 1) * 2; // Base indent from recursive call
+                const targetIndent = indentStr.length + 2; // 2 spaces after dash
+                const adjustedIndent = targetIndent + (lineIndent - baseIndent);
+                yamlLines.push(" ".repeat(adjustedIndent) + line.trimStart());
+              }
+            }
+          } else if (Array.isArray(firstValue)) {
+            yamlLines.push(`${indentStr}- ${firstKey}:`);
+            const arrayYaml = dictToYaml(firstValue, indent + 1);
+            const arrayLines = arrayYaml.split("\n");
+            for (const line of arrayLines) {
+              if (line.trim()) {
+                const lineIndent = line.match(/^(\s*)/)?.[1]?.length || 0;
+                const baseIndent = (indent + 1) * 2;
+                const targetIndent = indentStr.length + 2;
+                const adjustedIndent = targetIndent + (lineIndent - baseIndent);
+                yamlLines.push(" ".repeat(adjustedIndent) + line.trimStart());
+              }
+            }
+          } else {
+            const formattedValue = formatYamlValue(firstValue);
+            yamlLines.push(`${indentStr}- ${firstKey}: ${formattedValue}`);
+          }
+          
+          // Process remaining keys with proper indentation (2 spaces after dash)
+          for (let i = 1; i < itemKeys.length; i++) {
+            const key = itemKeys[i];
+            const value = item[key];
+            
+            if (value === null || value === undefined) {
+              yamlLines.push(`${indentStr}  ${key}: null`);
+            } else if (typeof value === "object" && !Array.isArray(value)) {
+              yamlLines.push(`${indentStr}  ${key}:`);
+              const nestedYaml = dictToYaml(value, indent + 1);
+              const nestedLines = nestedYaml.split("\n");
+              for (const line of nestedLines) {
+                if (line.trim()) {
+                  const lineIndent = line.match(/^(\s*)/)?.[1]?.length || 0;
+                  const baseIndent = (indent + 1) * 2;
+                  const targetIndent = indentStr.length + 2; // 2 spaces for key after dash
+                  const adjustedIndent = targetIndent + (lineIndent - baseIndent);
+                  yamlLines.push(" ".repeat(adjustedIndent) + line.trimStart());
+                }
+              }
+            } else if (Array.isArray(value)) {
+              yamlLines.push(`${indentStr}  ${key}:`);
+              const arrayYaml = dictToYaml(value, indent + 1);
+              const arrayLines = arrayYaml.split("\n");
+              for (const line of arrayLines) {
+                if (line.trim()) {
+                  const lineIndent = line.match(/^(\s*)/)?.[1]?.length || 0;
+                  const baseIndent = (indent + 1) * 2;
+                  const targetIndent = indentStr.length + 2;
+                  const adjustedIndent = targetIndent + (lineIndent - baseIndent);
+                  yamlLines.push(" ".repeat(adjustedIndent) + line.trimStart());
+                }
+              }
+            } else {
+              const formattedValue = formatYamlValue(value);
+              yamlLines.push(`${indentStr}  ${key}: ${formattedValue}`);
+            }
           }
         }
       } else {
