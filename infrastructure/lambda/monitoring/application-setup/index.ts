@@ -595,6 +595,41 @@ EOF
 fi
 
 # ==========================================================================
+# CRITICAL: FIX GRAFANA DATABASE PERMISSIONS AFTER CONFIG UPDATE
+# ==========================================================================
+# When datasource config is updated, Grafana may try to write to the database
+# SQLite requires write access to both the database file AND its directory
+echo 'Fixing Grafana database permissions after config update...'
+
+# Ensure the Grafana data directory is writable by UID 472
+sudo chown -R 472:0 /mnt/efs/grafana-data
+sudo chmod -R 777 /mnt/efs/grafana-data
+
+# Fix permissions on existing database files (if any)
+for db_file in grafana.db grafana.db-journal grafana.db-wal grafana.db-shm; do
+  if [ -f "/mnt/efs/grafana-data/$db_file" ]; then
+    echo "  Fixing permissions on $db_file..."
+    sudo chown 472:0 "/mnt/efs/grafana-data/$db_file"
+    sudo chmod 664 "/mnt/efs/grafana-data/$db_file"
+  fi
+done
+
+# Ensure parent directories are also writable (SQLite creates temp files)
+# Use find to fix permissions on all directories and database files
+sudo find /mnt/efs/grafana-data -type d -exec chmod 777 {} \\;
+sudo find /mnt/efs/grafana-data -type f -name "*.db*" -exec chown 472:0 {} \\;
+sudo find /mnt/efs/grafana-data -type f -name "*.db*" -exec chmod 664 {} \\;
+
+# Final verification: ensure the directory itself is definitely writable
+sudo chmod 777 /mnt/efs/grafana-data
+
+# List current permissions for debugging
+echo 'Current Grafana data directory permissions:'
+ls -la /mnt/efs/grafana-data/ | head -10 || true
+
+echo '✓ Grafana database permissions fixed'
+
+# ==========================================================================
 # CREATE SYMLINKS
 # ==========================================================================
 echo 'Creating symlinks...'
