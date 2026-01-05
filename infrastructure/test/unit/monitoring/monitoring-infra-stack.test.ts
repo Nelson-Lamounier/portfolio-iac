@@ -544,10 +544,6 @@ describe("MonitoringInfraStack", () => {
             Key: "tag:Service",
             Values: ["monitoring"],
           }),
-          Match.objectLike({
-            Key: "instance-state-name",
-            Values: ["running"],
-          }),
         ]),
       });
     });

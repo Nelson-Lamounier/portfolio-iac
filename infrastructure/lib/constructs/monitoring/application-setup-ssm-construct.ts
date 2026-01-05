@@ -92,6 +92,8 @@ export class ApplicationSetupSsmAssociationConstruct extends Construct {
     });
 
     // Default targets: All instances with Environment and Service tags
+    // Note: SSM Associations automatically only run on running instances,
+    // so we don't need to filter by instance-state-name (which is not a valid target key)
     const defaultTargets: ssm.CfnAssociation.TargetProperty[] = [
       {
         key: "tag:Environment",
@@ -100,10 +102,6 @@ export class ApplicationSetupSsmAssociationConstruct extends Construct {
       {
         key: "tag:Service",
         values: ["monitoring"],
-      },
-      {
-        key: "instance-state-name",
-        values: ["running"],
       },
     ];
 
