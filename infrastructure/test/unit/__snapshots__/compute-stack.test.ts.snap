@@ -180,6 +180,10 @@ exports[`ComputeStack Test Suite Snapshots ComputeStack matches snapshot 1`] = `
           "reason": "Environment variables like NODE_ENV, PORT, and service configuration are non-sensitive values. Sensitive values (API keys, passwords, tokens) must use AWS Secrets Manager or SSM Parameter Store with SecureString. These basic config values are safe as environment variables.",
         },
         {
+          "id": "AwsSolutions-ECS7",
+          "reason": "Container logging is intentionally disabled for certain containers to reduce costs in development environments. For production, enable CloudWatch Logs with proper IAM permissions.",
+        },
+        {
           "applies_to": [
             "Resource::*",
           ],

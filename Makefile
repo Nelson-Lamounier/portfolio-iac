@@ -46,6 +46,11 @@ help:
 	@echo "  sync-monitoring-config          - Sync config from Git to EFS (no CDK deploy!)"
 	@echo "  check-monitoring-layered        - Check layered monitoring status"
 	@echo "  destroy-monitoring-layered      - Destroy layered monitoring stacks"
+	@echo "  recover-monitoring-stacks       - Recover failed monitoring stacks (pipeline account)"
+	@echo "  force-deploy-networking         - Force deploy networking stack (for UPDATE_ROLLBACK_COMPLETE)"
+	@echo "  cleanup-alb-resources           - Clean up orphaned ALB resources (pipeline account)"
+	@echo "  force-redeploy-monitoring-infra - Delete and recreate MonitoringInfraStack (for resource mismatches)"
+	@echo "  deploy-vpc-peering-manual       - Manually deploy VPC Peering (if workflow skipped it)"
 	@echo ""
 	@echo "Centralized Monitoring (Pipeline Account - Legacy):"
 	@echo "  deploy-monitoring-centralized   - Deploy centralized monitoring (embedded)"
@@ -96,6 +101,14 @@ test-frontend:
 test-infrastructure:
 	@echo "Running infrastructure tests..."
 	yarn turbo run test --filter=infrastructure -- --ci --coverage
+
+test-vpc-peering:
+	@echo "Running VPC peering stack tests..."
+	cd infrastructure && yarn test test/unit/monitoring/vpc-peering-stack.test.ts --verbose
+
+test-monitoring-unit:
+	@echo "Running monitoring unit tests..."
+	cd infrastructure && yarn test test/unit/monitoring/ --verbose
 
 test-monitoring-e2e:
 	@echo "Running monitoring E2E tests..."
@@ -163,6 +176,11 @@ fetch-monitoring-info:
 	@echo "Fetching monitoring info (VPC ID, EC2 IP) for environment: $(ENV_FULL)"
 	@chmod +x ./scripts/aws/fetch-monitoring-info.sh
 	@ENVIRONMENT=$(ENV_FULL) ./scripts/aws/fetch-monitoring-info.sh
+
+update-prometheus-targets:
+	@echo "Updating Prometheus targets with current IPs..."
+	@chmod +x ./scripts/monitoring/update-prometheus-targets.sh
+	@./scripts/monitoring/update-prometheus-targets.sh
 
 fetch-aws-accounts:
 	@echo "Fetching AWS account IDs..."
@@ -253,24 +271,20 @@ logs-monitoring-ecs:
 .PHONY: sync-monitoring-config init-monitoring-config destroy-monitoring-layered
 
 # Deploy full layered monitoring stack (uses script)
+# Pipeline account ALWAYS uses layered architecture (no --layered flag needed)
 deploy-monitoring-layered:
 	@chmod +x ./scripts/deploy/pipeline-monitoring.sh
-	@./scripts/deploy/pipeline-monitoring.sh deploy-all --layered
-
-# Deploy full monitoring stack with embedded architecture (legacy)
-deploy-monitoring-embedded:
-	@chmod +x ./scripts/deploy/pipeline-monitoring.sh
-	@./scripts/deploy/pipeline-monitoring.sh deploy-all --embedded
+	@./scripts/deploy/pipeline-monitoring.sh deploy-all
 
 # Deploy only Layer 1: Infrastructure
 deploy-monitoring-infra:
 	@chmod +x ./scripts/deploy/pipeline-monitoring.sh
-	@./scripts/deploy/pipeline-monitoring.sh deploy-infra --layered
+	@./scripts/deploy/pipeline-monitoring.sh deploy-infra
 
 # Deploy only Layer 2: Services
 deploy-monitoring-services:
 	@chmod +x ./scripts/deploy/pipeline-monitoring.sh
-	@./scripts/deploy/pipeline-monitoring.sh deploy-services --layered
+	@./scripts/deploy/pipeline-monitoring.sh deploy-services
 
 # Initialize config on EFS (run once after infra deploy)
 init-monitoring-config:
@@ -306,12 +320,81 @@ check-monitoring-layered:
 		--query 'Stacks[0].Outputs[?OutputKey==`GrafanaUrl` || OutputKey==`PrometheusUrl`].{Service:OutputKey,URL:OutputValue}' \
 		--output table 2>/dev/null || echo "No outputs found"
 
+# Diagnose Grafana datasource issues
+diagnose-grafana-datasource:
+	@echo "Diagnosing Grafana datasource connectivity..."
+	@chmod +x ./scripts/monitoring/diagnose-grafana-datasource.sh
+	@./scripts/monitoring/diagnose-grafana-datasource.sh
+
+# Fix Grafana datasource configuration
+fix-grafana-datasource:
+	@echo "Fixing Grafana datasource configuration..."
+	@chmod +x ./scripts/monitoring/fix-grafana-datasource.sh
+	@./scripts/monitoring/fix-grafana-datasource.sh
+
+# Setup VPC peering between pipeline and dev accounts
+setup-vpc-peering:
+	@echo "Setting up VPC peering..."
+	@chmod +x ./scripts/monitoring/setup-vpc-peering.sh
+	@./scripts/monitoring/setup-vpc-peering.sh
+
+# Note: deploy-vpc-peering is defined below (line ~433)
+	@echo "Verify peering connection:"
+	@aws ec2 describe-vpc-peering-connections \
+		--filters "Name=status-code,Values=active,pending-acceptance" \
+		--query 'VpcPeeringConnections[*].{ID:VpcPeeringConnectionId,Status:Status.Code,Requester:RequesterVpcInfo.VpcId,Accepter:AccepterVpcInfo.VpcId}' \
+		--output table || echo "No peering connections found"
+
 # Destroy layered monitoring
 destroy-monitoring-layered:
 	@echo "Destroying layered monitoring stacks..."
 	@cd infrastructure && ENVIRONMENT=pipeline yarn cdk destroy MonitoringServiceStack-pipeline --force 2>/dev/null || true
 	@cd infrastructure && ENVIRONMENT=pipeline yarn cdk destroy MonitoringInfraStack-pipeline --force 2>/dev/null || true
 	@echo "✓ Layered monitoring destroyed"
+
+# Recover failed monitoring stacks
+recover-monitoring-stacks:
+	@echo "🔧 Recovering failed monitoring stacks..."
+	@chmod +x ./scripts/monitoring/recover-failed-stacks.sh
+	@ENVIRONMENT=pipeline ./scripts/monitoring/recover-failed-stacks.sh
+
+# Force deploy networking stack (for UPDATE_ROLLBACK_COMPLETE state)
+force-deploy-networking:
+	@echo "🚀 Force deploying NetworkingStack-pipeline..."
+	@echo "This will deploy the networking stack even if it's in UPDATE_ROLLBACK_COMPLETE state"
+	@cd infrastructure && ENVIRONMENT=pipeline yarn cdk deploy NetworkingStack-pipeline --require-approval never --exclusively
+
+# Clean up orphaned ALB resources
+cleanup-alb-resources:
+	@echo "🧹 Cleaning up orphaned ALB resources..."
+	@chmod +x ./scripts/monitoring/cleanup-alb-resources.sh
+	@ENVIRONMENT=pipeline ./scripts/monitoring/cleanup-alb-resources.sh
+
+# Force redeploy MonitoringInfraStack (delete and recreate)
+force-redeploy-monitoring-infra:
+	@echo "🔄 Force redeploying MonitoringInfraStack-pipeline..."
+	@echo "This will delete and recreate the infrastructure stack"
+	@echo "⚠️  This will cause temporary downtime for monitoring services"
+	@cd infrastructure && ENVIRONMENT=pipeline yarn cdk destroy MonitoringInfraStack-pipeline --force 2>/dev/null || true
+	@echo "Waiting for stack deletion to complete..."
+	@sleep 30
+	@cd infrastructure && ENVIRONMENT=pipeline yarn cdk deploy MonitoringInfraStack-pipeline --require-approval never
+
+# Deploy VPC Peering manually
+deploy-vpc-peering-manual:
+	@echo "🔗 Manually deploying VPC Peering..."
+	@echo "Fetching dev VPC ID from SSM..."
+	@DEV_VPC_ID=$$(aws ssm get-parameter --name "/networking/development/vpc-id" --query 'Parameter.Value' --output text 2>/dev/null || echo "NOT_FOUND"); \
+	if [ "$$DEV_VPC_ID" != "NOT_FOUND" ] && [ -n "$$DEV_VPC_ID" ]; then \
+		echo "✅ Found Dev VPC ID: $$DEV_VPC_ID"; \
+		export DEV_VPC_ID="$$DEV_VPC_ID"; \
+		export AWS_ACCOUNT_ID_DEV=$(AWS_ACCOUNT_ID_DEV); \
+		cd infrastructure && ENVIRONMENT=pipeline yarn cdk deploy VpcPeeringStack-pipeline --require-approval never; \
+		echo "✅ VPC Peering deployed successfully"; \
+	else \
+		echo "❌ Could not find dev VPC ID in SSM"; \
+		echo "Make sure development infrastructure is deployed first"; \
+	fi
 
 ##############################################################################
 # CENTRALIZED MONITORING (Pipeline Account) - Legacy Embedded
@@ -419,7 +502,16 @@ deploy-vpc-peering:
 	fi
 	@echo ""
 	@echo "Deploying VPC peering stack..."
-	@cd infrastructure && ENVIRONMENT=pipeline yarn cdk deploy VpcPeeringStack-pipeline --require-approval never
+	@echo "Environment variables:"
+	@echo "  AWS_PIPELINE_ACCOUNT_ID: $(AWS_PIPELINE_ACCOUNT_ID)"
+	@echo "  AWS_ACCOUNT_ID_DEV: $(AWS_ACCOUNT_ID_DEV)"
+	@echo "  DEV_VPC_ID: $(DEV_VPC_ID)"
+	@cd infrastructure && \
+		ENVIRONMENT=pipeline \
+		AWS_PIPELINE_ACCOUNT_ID=$(AWS_PIPELINE_ACCOUNT_ID) \
+		AWS_ACCOUNT_ID_DEV=$(AWS_ACCOUNT_ID_DEV) \
+		DEV_VPC_ID=$(DEV_VPC_ID) \
+		yarn cdk deploy VpcPeeringStack-pipeline --require-approval never
 	@echo ""
 	@echo "✓ VPC peering deployed!"
 	@echo ""

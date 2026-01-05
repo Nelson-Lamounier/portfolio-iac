@@ -1,0 +1,12 @@
+# @format
+apiVersion: 1
+datasources:
+- name: CloudWatch
+  type: cloudwatch
+  uid: cloudwatch
+  access: proxy
+  jsonData:
+    authType: default
+    defaultRegion: eu-west-1
+  isDefault: false
+  editable: true

@@ -6,8 +6,10 @@ on:
   push:
     branches:
       - main
+      - feature/monitoring/
     paths:
       - "monitoring/**"
+      - ".github/workflows/sync-monitoring-config.yml"
   workflow_dispatch:
     inputs:
       environment:
@@ -26,11 +28,12 @@ permissions:
   contents: read
 
 env:
-  AWS_REGION: eu-west-1
+  NODE_VERSION: "22"
+  AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
 
 jobs:
   sync-config:
-    name: Sync to EFS
+    name: Sync Config to ${{ github.event.inputs.environment || 'pipeline' }}
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'pipeline' }}
 
@@ -41,186 +44,88 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Get ECS Instance ID
-        id: get-instance
+      - name: Get Config Bucket Name
+        id: get-bucket
         run: |
           ENVIRONMENT="${{ github.event.inputs.environment || 'pipeline' }}"
-          CLUSTER_NAME="${ENVIRONMENT}-monitoring-cluster"
 
-          echo "Looking for cluster: $CLUSTER_NAME"
-
-          # Get container instance ARN
-          CONTAINER_INSTANCE_ARN=$(aws ecs list-container-instances \
-            --cluster "$CLUSTER_NAME" \
-            --query 'containerInstanceArns[0]' \
+          # Get bucket name from CloudFormation exports
+          BUCKET_NAME=$(aws cloudformation list-exports \
+            --query "Exports[?Name=='${ENVIRONMENT}-monitoring-config-bucket'].Value" \
             --output text)
 
-          if [ "$CONTAINER_INSTANCE_ARN" == "None" ] || [ -z "$CONTAINER_INSTANCE_ARN" ]; then
-            echo "Error: No container instances found in cluster $CLUSTER_NAME"
+          if [ -z "$BUCKET_NAME" ] || [ "$BUCKET_NAME" == "None" ]; then
+            echo "Error: Config bucket not found for environment: $ENVIRONMENT"
+            echo "Make sure MonitoringInfraStack is deployed with config bucket"
             exit 1
           fi
 
-          # Get EC2 instance ID
-          EC2_INSTANCE_ID=$(aws ecs describe-container-instances \
-            --cluster "$CLUSTER_NAME" \
-            --container-instances "$CONTAINER_INSTANCE_ARN" \
-            --query 'containerInstances[0].ec2InstanceId' \
-            --output text)
+          echo "bucket_name=$BUCKET_NAME" >> $GITHUB_OUTPUT
+          echo "Found config bucket: $BUCKET_NAME"
 
-          echo "instance_id=$EC2_INSTANCE_ID" >> $GITHUB_OUTPUT
-          echo "Found EC2 instance: $EC2_INSTANCE_ID"
-
-      - name: Sync Prometheus Config
+      - name: Upload Configs to S3
         run: |
-          INSTANCE_ID="${{ steps.get-instance.outputs.instance_id }}"
+          BUCKET="${{ steps.get-bucket.outputs.bucket_name }}"
 
-          # Sync prometheus.yml
-          if [ -f "monitoring/prometheus/prometheus.yml" ]; then
-            echo "Syncing prometheus.yml..."
-            CONTENT=$(base64 -w 0 monitoring/prometheus/prometheus.yml)
+          echo "Uploading monitoring configs to S3..."
+
+          # Upload Prometheus configs
+          aws s3 cp monitoring/prometheus/prometheus.yml "s3://${BUCKET}/prometheus/prometheus.yml"
+          aws s3 cp monitoring/prometheus/alerts.yml "s3://${BUCKET}/prometheus/alerts.yml"
+
+          # Upload Grafana provisioning configs
+          aws s3 sync monitoring/grafana/provisioning/ "s3://${BUCKET}/grafana/provisioning/" \
+            --exclude "*" --include "*.yml"
+
+          # Upload Grafana dashboards
+          aws s3 sync monitoring/grafana/dashboards/ "s3://${BUCKET}/grafana/dashboards/" \
+            --exclude "*" --include "*.json"
+
+          echo "✓ All configs uploaded to S3"
+
+      - name: Trigger Lambda to Sync to EFS
+        run: |
+          ENVIRONMENT="${{ github.event.inputs.environment || 'pipeline' }}"
+
+          # Get Lambda function name
+          FUNCTION_NAME=$(aws lambda list-functions \
+            --query "Functions[?starts_with(FunctionName, '${ENVIRONMENT}')  && contains(FunctionName, 'PrometheusAutoUpdate')].FunctionName" \
+            --output text | head -n1)
+
+          if [ -z "$FUNCTION_NAME" ]; then
+            echo "Warning: Lambda function not found, falling back to direct sync"
+            chmod +x ./scripts/monitoring/sync-config.sh
+            ./scripts/monitoring/sync-config.sh --env "$ENVIRONMENT"
+          else
+            echo "Invoking Lambda: $FUNCTION_NAME"
+            aws lambda invoke \
+              --function-name "$FUNCTION_NAME" \
+              --payload '{"source":"manual"}' \
+              /tmp/lambda-response.json
             
-            aws ssm send-command \
-              --instance-ids "$INSTANCE_ID" \
-              --document-name "AWS-RunShellScript" \
-              --parameters "commands=[
-                \"echo '$CONTENT' | base64 -d > /mnt/efs/config/prometheus/prometheus.yml\",
-                \"chown 65534:65534 /mnt/efs/config/prometheus/prometheus.yml\",
-                \"chmod 644 /mnt/efs/config/prometheus/prometheus.yml\"
-              ]" \
-              --output text
-            
-            echo "✓ prometheus.yml synced"
+            cat /tmp/lambda-response.json
+            echo "✓ Lambda invoked successfully"
           fi
 
-          # Sync alerts.yml
-          if [ -f "monitoring/prometheus/alerts.yml" ]; then
-            echo "Syncing alerts.yml..."
-            CONTENT=$(base64 -w 0 monitoring/prometheus/alerts.yml)
-            
-            aws ssm send-command \
-              --instance-ids "$INSTANCE_ID" \
-              --document-name "AWS-RunShellScript" \
-              --parameters "commands=[
-                \"echo '$CONTENT' | base64 -d > /mnt/efs/config/prometheus/alerts.yml\",
-                \"chown 65534:65534 /mnt/efs/config/prometheus/alerts.yml\",
-                \"chmod 644 /mnt/efs/config/prometheus/alerts.yml\"
-              ]" \
-              --output text
-            
-            echo "✓ alerts.yml synced"
-          fi
-
-      - name: Sync Grafana Dashboards
+      - name: Generate Summary
+        if: always()
         run: |
-          INSTANCE_ID="${{ steps.get-instance.outputs.instance_id }}"
+          ENVIRONMENT="${{ github.event.inputs.environment || 'pipeline' }}"
 
-          # Sync all dashboard JSON files
-          for file in monitoring/grafana/dashboards/*.json; do
-            if [ -f "$file" ]; then
-              filename=$(basename "$file")
-              echo "Syncing dashboard: $filename..."
-              
-              CONTENT=$(base64 -w 0 "$file")
-              
-              aws ssm send-command \
-                --instance-ids "$INSTANCE_ID" \
-                --document-name "AWS-RunShellScript" \
-                --parameters "commands=[
-                  \"echo '$CONTENT' | base64 -d > /mnt/efs/config/grafana/dashboards/$filename\",
-                  \"chown 472:472 /mnt/efs/config/grafana/dashboards/$filename\",
-                  \"chmod 644 /mnt/efs/config/grafana/dashboards/$filename\"
-                ]" \
-                --output text
-              
-              echo "✓ $filename synced"
-            fi
-          done
-
-      - name: Sync Grafana Provisioning
-        run: |
-          INSTANCE_ID="${{ steps.get-instance.outputs.instance_id }}"
-
-          # Sync datasource configs
-          for file in monitoring/grafana/provisioning/datasources/*.yml; do
-            if [ -f "$file" ]; then
-              filename=$(basename "$file")
-              echo "Syncing datasource: $filename..."
-              
-              CONTENT=$(base64 -w 0 "$file")
-              
-              aws ssm send-command \
-                --instance-ids "$INSTANCE_ID" \
-                --document-name "AWS-RunShellScript" \
-                --parameters "commands=[
-                  \"echo '$CONTENT' | base64 -d > /mnt/efs/config/grafana/provisioning/datasources/$filename\",
-                  \"chown 472:472 /mnt/efs/config/grafana/provisioning/datasources/$filename\",
-                  \"chmod 644 /mnt/efs/config/grafana/provisioning/datasources/$filename\"
-                ]" \
-                --output text
-              
-              echo "✓ $filename synced"
-            fi
-          done
-
-          # Sync dashboard provisioning configs
-          for file in monitoring/grafana/provisioning/dashboards/*.yml; do
-            if [ -f "$file" ]; then
-              filename=$(basename "$file")
-              echo "Syncing dashboard config: $filename..."
-              
-              CONTENT=$(base64 -w 0 "$file")
-              
-              aws ssm send-command \
-                --instance-ids "$INSTANCE_ID" \
-                --document-name "AWS-RunShellScript" \
-                --parameters "commands=[
-                  \"echo '$CONTENT' | base64 -d > /mnt/efs/config/grafana/provisioning/dashboards/$filename\",
-                  \"chown 472:472 /mnt/efs/config/grafana/provisioning/dashboards/$filename\",
-                  \"chmod 644 /mnt/efs/config/grafana/provisioning/dashboards/$filename\"
-                ]" \
-                --output text
-              
-              echo "✓ $filename synced"
-            fi
-          done
-
-      - name: Reload Prometheus
-        run: |
-          INSTANCE_ID="${{ steps.get-instance.outputs.instance_id }}"
-
-          echo "Triggering Prometheus config reload..."
-
-          COMMAND_ID=$(aws ssm send-command \
-            --instance-ids "$INSTANCE_ID" \
-            --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["curl -s -X POST http://localhost:9090/prometheus/-/reload || echo \"Prometheus reload requested\""]' \
-            --query 'Command.CommandId' \
-            --output text)
-
-          # Wait for command to complete
-          sleep 5
-
-          # Get result
-          aws ssm get-command-invocation \
-            --command-id "$COMMAND_ID" \
-            --instance-id "$INSTANCE_ID" \
-            --query 'StandardOutputContent' \
-            --output text || echo "Reload command sent"
-
-          echo "✓ Prometheus reload triggered"
-
-      - name: Summary
-        run: |
-          echo "## Monitoring Config Sync Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "## ✅ Monitoring Config Synced" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Synced Files:" >> $GITHUB_STEP_SUMMARY
-          echo "- Prometheus config: \`monitoring/prometheus/\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Grafana dashboards: \`monitoring/grafana/dashboards/\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Grafana provisioning: \`monitoring/grafana/provisioning/\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** $ENVIRONMENT" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Notes:" >> $GITHUB_STEP_SUMMARY
+          echo "### Synced Configuration:" >> $GITHUB_STEP_SUMMARY
+          echo "- ✓ Prometheus config (\`monitoring/prometheus/\`)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✓ Grafana dashboards (\`monitoring/grafana/dashboards/\`)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✓ Grafana provisioning (\`monitoring/grafana/provisioning/\`)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps:" >> $GITHUB_STEP_SUMMARY
           echo "- Prometheus config reloaded automatically" >> $GITHUB_STEP_SUMMARY
-          echo "- Grafana dashboards refresh every 10 seconds" >> $GITHUB_STEP_SUMMARY
+          echo "- Grafana dashboards will refresh within 10 seconds" >> $GITHUB_STEP_SUMMARY
+          echo "- Check targets: \`http://<alb-dns>/prometheus/targets\`" >> $GITHUB_STEP_SUMMARY

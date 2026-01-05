@@ -3,6 +3,7 @@
 import * as cdk from "aws-cdk-lib";
 import * as iam from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
+
 import { LambdaFunctionConstruct } from "../../constructs/compute/lambda";
 
 export interface LambdaStackProps extends cdk.StackProps {

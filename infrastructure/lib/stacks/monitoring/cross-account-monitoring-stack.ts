@@ -2,6 +2,7 @@
 
 import * as cdk from "aws-cdk-lib";
 import { Construct } from "constructs";
+
 import { CrossAccountMonitoringAccessConstruct } from "../../constructs";
 
 export interface CrossAccountMonitoringStackProps extends cdk.StackProps {

@@ -2,6 +2,7 @@
 
 import { App } from "aws-cdk-lib";
 import { Template, Match, Capture } from "aws-cdk-lib/assertions";
+
 import { NetworkingStack } from "../../lib/stacks/networking/networking-stack";
 
 describe("NetworkingStack Test Suite", () => {
@@ -174,18 +175,12 @@ describe("NetworkingStack Test Suite", () => {
     test("exports VPC ID", () => {
       template.hasOutput("VpcId", {
         Description: "VPC ID",
-        Export: {
-          Name: "test-vpc-id",
-        },
       });
     });
 
     test("exports VPC CIDR", () => {
       template.hasOutput("VpcCidr", {
         Description: "VPC CIDR Block",
-        Export: {
-          Name: "test-vpc-cidr",
-        },
       });
     });
 
@@ -216,7 +211,7 @@ describe("NetworkingStack Test Suite", () => {
 
   describe("Resource Counts", () => {
     test("has correct total resource count", () => {
-      const resources = template.findResources("*");
+      // const resources = template.findResources("*"); // Unused variable
       const templateJson = template.toJSON();
       const resourceCount = Object.keys(templateJson.Resources || {}).length;
 

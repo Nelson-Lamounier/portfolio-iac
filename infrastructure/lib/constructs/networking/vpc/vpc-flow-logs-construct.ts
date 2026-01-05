@@ -2,7 +2,6 @@
 
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as logs from "aws-cdk-lib/aws-logs";
-import * as iam from "aws-cdk-lib/aws-iam";
 import * as cdk from "aws-cdk-lib";
 import { Construct } from "constructs";
 
@@ -40,7 +39,6 @@ export class VpcFlowLogsConstruct extends Construct {
       envName,
       trafficType = ec2.FlowLogTrafficType.ALL,
       logRetention = logs.RetentionDays.ONE_WEEK,
-      logFormat,
     } = props;
 
     // Create CloudWatch Log Group

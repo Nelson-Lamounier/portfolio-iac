@@ -4,6 +4,7 @@ import * as cdk from "aws-cdk-lib";
 import * as events from "aws-cdk-lib/aws-events";
 import * as iam from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
+
 import { CrossAccountMonitoringRole } from "../iam";
 
 export interface CrossAccountMonitoringAccessProps {

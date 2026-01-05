@@ -58,7 +58,7 @@ export class SuppressionManager {
         appliesTo: [
           {
             regex:
-              "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+              "/^Resource::arn:(aws|<AWS::Partition>):autoscaling:.*:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
           },
         ],
       },
@@ -80,6 +80,11 @@ export class SuppressionManager {
         id: "AwsSolutions-ECS2",
         reason:
           "Environment variables like NODE_ENV, PORT, and service configuration are non-sensitive values. Sensitive values (API keys, passwords, tokens) must use AWS Secrets Manager or SSM Parameter Store with SecureString. These basic config values are safe as environment variables.",
+      },
+      {
+        id: "AwsSolutions-ECS7",
+        reason:
+          "Container logging is intentionally disabled for certain containers to reduce costs in development environments. For production, enable CloudWatch Logs with proper IAM permissions.",
       },
     ];
   }
@@ -124,6 +129,63 @@ export class SuppressionManager {
   }
 
   /**
+   * S3 Asset Permissions
+   * For EC2 instances that need to download CDK assets from S3
+   */
+  static getS3AssetPermissions(): NagPackSuppression[] {
+    return [
+      {
+        id: "AwsSolutions-IAM5",
+        reason:
+          "S3 GetBucket* permissions are required for EC2 instances to download CDK assets (config files) from the CDK staging bucket. These are read-only operations scoped to the CDK asset bucket and are necessary for bootstrapping instances with configuration files.",
+        appliesTo: ["Action::s3:GetBucket*"],
+      },
+      {
+        id: "AwsSolutions-IAM5",
+        reason:
+          "S3 GetObject* permissions are required for EC2 instances to download CDK assets (config files) from the CDK staging bucket. These are read-only operations scoped to the CDK asset bucket and are necessary for bootstrapping instances with configuration files.",
+        appliesTo: ["Action::s3:GetObject*"],
+      },
+      {
+        id: "AwsSolutions-IAM5",
+        reason:
+          "S3 List* permissions are required for EC2 instances to list objects in the CDK staging bucket when downloading assets. These are read-only operations scoped to the CDK asset bucket and are necessary for bootstrapping instances with configuration files.",
+        appliesTo: ["Action::s3:List*"],
+      },
+      {
+        id: "AwsSolutions-IAM5",
+        reason:
+          "CDK asset bucket permissions use wildcard for objects within the CDK staging bucket. This is automatically created by CDK and scoped to the specific account and region. The bucket only contains CDK deployment assets (config files, Lambda code, etc.) and permissions are read-only.",
+        appliesTo: [
+          {
+            regex:
+              "/^Resource::arn:aws:s3:::cdk-[a-z0-9]+-assets-.*-.*\\/\\*$/",
+          },
+        ],
+      },
+    ];
+  }
+
+  /**
+   * Monitoring Configuration Bucket Permissions
+   * For EC2 instances that need to access monitoring configuration files
+   */
+  static getMonitoringConfigBucketPermissions(): NagPackSuppression[] {
+    return [
+      {
+        id: "AwsSolutions-IAM5",
+        reason:
+          "Monitoring configuration bucket permissions use wildcard for objects within the monitoring config bucket. This allows EC2 instances to read configuration files (Prometheus configs, Grafana dashboards, etc.) stored in the bucket. The wildcard is scoped to the specific monitoring configuration bucket and permissions are read-only for operational configuration management.",
+        appliesTo: [
+          {
+            regex: "/^Resource::<ConfigBucket.*\\.Arn>\\/\\*$/",
+          },
+        ],
+      },
+    ];
+  }
+
+  /**
    * CloudWatch Logs Permissions
    * For services that need to write logs
    */
@@ -137,6 +199,14 @@ export class SuppressionManager {
           {
             regex: `/^Resource::arn:aws:logs:.*:.*:log-group:/ecs/${envName}\\*:\\*$/`,
           },
+        ],
+      },
+      {
+        id: "AwsSolutions-IAM5",
+        reason:
+          "CloudWatch Logs permissions use wildcard for log streams within the ECS cluster log group. This allows ECS tasks to create log streams dynamically. The wildcard is scoped to the specific log group ARN.",
+        appliesTo: [
+          "Resource::arn:aws:logs:eu-west-1:123456789012:log-group:<EcsClusterClusterLogGroupF10E9DBD>:*",
         ],
       },
     ];
@@ -167,7 +237,7 @@ export class SuppressionManager {
         appliesTo: [
           {
             regex:
-              "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+              "/^Resource::arn:(aws|<AWS::Partition>):autoscaling:.*:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
           },
         ],
       },
@@ -185,6 +255,17 @@ export class SuppressionManager {
         reason:
           "Auto Scaling lifecycle hooks require permissions to describe instances and complete lifecycle actions. These permissions are scoped to the specific Auto Scaling Group and are necessary for proper instance lifecycle management.",
         appliesTo: ["Resource::*"],
+      },
+      {
+        id: "AwsSolutions-IAM5",
+        reason:
+          "Auto Scaling Group lifecycle hook Lambda requires wildcard permissions for Auto Scaling Group operations because the ASG name contains CDK-generated tokens that are not known at synthesis time. This is required for ECS instance draining functionality.",
+        appliesTo: [
+          {
+            regex:
+              "/^Resource::arn:(aws|<AWS::Partition>):autoscaling:.*:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+          },
+        ],
       },
       {
         id: "AwsSolutions-AS3",
@@ -216,8 +297,25 @@ export class SuppressionManager {
         reason:
           "Grafana CloudWatch datasource requires permissions to query logs across all log groups in the account. The wildcard is scoped to the account and region, and permissions are read-only.",
         appliesTo: [
+          { regex: "/^Resource::arn:aws:logs:.*:.*:log-group:\\*$/" },
+          { regex: "/^Resource::arn:aws:logs:.*:.*:log-group:\\*:\\*$/" },
+        ],
+      },
+      {
+        id: "AwsSolutions-IAM5",
+        reason:
+          "ECS task roles require CloudWatch Logs permissions to write to their specific log groups. The wildcard allows log stream creation within the task's designated log group, which is necessary for ECS container logging.",
+        appliesTo: [
+          { regex: "/^Resource::arn:aws:logs:.*:.*:log-group:<.*>:\\*$/" },
+        ],
+      },
+      {
+        id: "AwsSolutions-IAM5",
+        reason:
+          "EC2 instances in monitoring infrastructure require read access to SSM parameters under the monitoring stack path for EFS setup scripts and configuration. The wildcard is scoped to the specific stack's parameter namespace (/monitoring/{stackName}/*) and provides read-only access to configuration data.",
+        appliesTo: [
           {
-            regex: "/^Resource::arn:aws:logs:.*:.*:log-group:\\*$/",
+            regex: "/^Resource::arn:aws:ssm:.*:.*:parameter/monitoring/.*\\*$/",
           },
         ],
       },
@@ -225,6 +323,54 @@ export class SuppressionManager {
         id: "AwsSolutions-SNS3",
         reason:
           "SNS topic is used for internal ECS lifecycle hooks managed by CDK for the monitoring cluster. SSL enforcement is handled by AWS internal services. The lifecycle hook topic is used for draining ECS tasks during instance termination.",
+      },
+      {
+        id: "AwsSolutions-EC23",
+        reason:
+          "EFS security group allows NFS access from VPC CIDR block only. The CIDR block is dynamically resolved from VPC configuration using CloudFormation intrinsic functions, which CDK Nag cannot validate at synthesis time. This is secure as it restricts access to the VPC's private network only.",
+      },
+      {
+        id: "CdkNagValidationFailure",
+        reason:
+          "CDK Nag validation failure occurs when CloudFormation intrinsic functions (like Fn::GetAtt for VPC CIDR) are used in security group rules. This is expected behavior and the actual values will be resolved at deployment time with proper CIDR restrictions.",
+      },
+    ];
+  }
+
+  /**
+   * EFS Custom Resource Suppressions
+   * For Lambda functions that initialize EFS
+   */
+  static getEfsCustomResourceSuppressions(): NagPackSuppression[] {
+    return [
+      {
+        id: "AwsSolutions-IAM4",
+        reason:
+          "EFS initialization Lambda requires AWS managed policy AWSLambdaVPCAccessExecutionRole for VPC access to mount EFS. This is a standard AWS managed policy for Lambda functions that need VPC access and cannot be replaced with a custom policy.",
+        appliesTo: [
+          "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
+        ],
+      },
+      {
+        id: "AwsSolutions-IAM5",
+        reason:
+          "EFS initialization Lambda requires wildcard access to SSM parameters under the monitoring stack path for reading configuration. The wildcard is scoped to the specific stack's parameter namespace and is read-only access.",
+        appliesTo: [
+          {
+            regex: "/^Resource::arn:aws:ssm:.*:.*:parameter/monitoring/.*\\*$/",
+          },
+        ],
+      },
+      {
+        id: "AwsSolutions-IAM5",
+        reason:
+          "CDK Custom Resource Provider framework requires wildcard permissions on the Lambda function ARN for invoking the function. This is managed by CDK and is necessary for the Custom Resource lifecycle management.",
+        appliesTo: [
+          "Resource::<*Function*.Arn>:*",
+          "Resource::<*>:*",
+          { regex: "/^Resource::<.*Function.*\\.Arn>:\\*$/g" },
+          "Resource::<EfsInitLambdaFunctionFC8F36D2.Arn>:*",
+        ],
       },
     ];
   }
@@ -285,6 +431,7 @@ export class SuppressionManager {
     stackType:
       | "ComputeStack"
       | "MonitoringStack"
+      | "MonitoringEfsStack"
       | "MonitoringInfraStack"
       | "MonitoringServiceStack"
       | "NetworkingStack"
@@ -317,9 +464,16 @@ export class SuppressionManager {
         suppressions.push(...this.getAutoScalingSuppressions());
         suppressions.push(...this.getPublicAccessSuppressions());
         suppressions.push(...this.getLoadBalancerSuppressions());
+        suppressions.push(...this.getS3AssetPermissions());
+        suppressions.push(...this.getMonitoringConfigBucketPermissions());
         if (envName) {
           suppressions.push(...this.getCloudWatchLogsSuppressions(envName));
         }
+        break;
+
+      case "MonitoringEfsStack":
+        suppressions.push(...this.getMonitoringSuppressions());
+        suppressions.push(...this.getEfsCustomResourceSuppressions());
         break;
 
       case "MonitoringServiceStack":

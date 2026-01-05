@@ -23,6 +23,7 @@ node_modules/
 .env
 .env*.local
 .envrc
+.secrets
 
 # OS files
 .DS_Store
@@ -59,6 +60,9 @@ infrastructure/cdk.out
 
 # Documentation (generated/personal notes)
 docs/*
+# Infrastructure-specific documentation
+docs/*
+.github/workflows/monitoring/docs/*
 
 # Playground files (for learning/testing)
 playground/
@@ -73,3 +77,6 @@ monitoring/prometheus-data/
 monitoring/grafana-data/
 
 generated-diagrams/*
+
+# # Helper scripts (local development)
+# scripts/*

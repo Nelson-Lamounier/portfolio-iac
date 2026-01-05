@@ -1,0 +1,5 @@
+# @format
+# Prometheus Alert Rules
+# Add your alert rules here
+
+groups: []

@@ -4,23 +4,111 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**", "cdk.out/**"]
+      "outputs": [
+        ".next/**",
+        "!.next/cache/**",
+        "dist/**",
+        "cdk.out/**",
+        "lib/**"
+      ],
+      "inputs": [
+        "src/**",
+        "lib/**",
+        "bin/**",
+        "*.ts",
+        "*.js",
+        "*.json",
+        "!node_modules/**"
+      ]
     },
     "test": {
       "dependsOn": ["build"],
+      "outputs": ["coverage/**", "test-results/**"],
+      "cache": true,
+      "inputs": ["src/**", "test/**", "*.test.*", "*.spec.*", "jest.config.js"]
+    },
+    "test:monitoring": {
+      "dependsOn": ["build"],
       "outputs": ["coverage/**"],
-      "cache": true
+      "cache": true,
+      "inputs": [
+        "test/unit/monitoring/**",
+        "lib/stacks/monitoring/**",
+        "lib/constructs/monitoring/**"
+      ]
+    },
+    "test:security": {
+      "dependsOn": ["build"],
+      "outputs": ["coverage/**"],
+      "cache": true,
+      "inputs": ["test/unit/monitoring/security.test.ts", "lib/**"]
+    },
+    "test:ci": {
+      "dependsOn": ["build"],
+      "outputs": ["coverage/**", "test-results/**"],
+      "cache": false
     },
     "lint": {
       "outputs": [],
-      "cache": true
+      "cache": true,
+      "inputs": [
+        "src/**",
+        "lib/**",
+        "bin/**",
+        "*.ts",
+        "*.js",
+        "*.tsx",
+        "*.jsx",
+        "eslint.config.js",
+        "eslint.config.mjs",
+        ".eslintrc*",
+        "tsconfig.json",
+        "scripts/**"
+      ]
+    },
+    "lint:monitoring": {
+      "dependsOn": ["lint"],
+      "outputs": [],
+      "cache": true,
+      "inputs": [
+        "lib/stacks/monitoring/**",
+        "lib/constructs/monitoring/**",
+        "scripts/lint-*.js"
+      ]
+    },
+    "lint:security": {
+      "dependsOn": ["lint"],
+      "outputs": [],
+      "cache": true,
+      "inputs": ["lib/**", "scripts/lint-security-config.js"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "outputs": [],
+      "cache": true,
+      "inputs": ["src/**", "lib/**", "bin/**", "*.ts", "tsconfig.json"]
     },
     "dev": {
       "cache": false,
       "persistent": true
     },
     "deploy": {
-      "dependsOn": ["build", "test"],
+      "dependsOn": ["build"],
+      "cache": false,
+      "inputs": ["cdk.out/**", "lib/**"]
+    },
+    "cdk:synth": {
+      "dependsOn": ["build"],
+      "outputs": ["cdk.out/**"],
+      "cache": true,
+      "inputs": ["lib/**", "bin/**", "*.ts", "cdk.json"]
+    },
+    "cdk:diff": {
+      "dependsOn": ["cdk:synth"],
+      "cache": false
+    },
+    "cdk:deploy": {
+      "dependsOn": ["cdk:synth"],
       "cache": false
     }
   }

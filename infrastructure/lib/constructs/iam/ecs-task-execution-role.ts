@@ -99,8 +99,11 @@ export class EcsTaskExecutionRole extends Construct {
 
     // CloudWatch Logs permissions
     if (enableCloudWatchLogs) {
+      // Handle CDK tokens properly - logGroupArn might be a token
+      // When logGroupArn is a token, we can't use string interpolation
+      // Use cdk.Fn.join() to append :* to the ARN token
       const logResource = logGroupArn
-        ? `${logGroupArn}:*`
+        ? cdk.Fn.join("", [logGroupArn, ":*"])
         : `arn:aws:logs:${cdk.Stack.of(this).region}:${
             cdk.Stack.of(this).account
           }:log-group:/ecs/${envName}*:*`;
@@ -109,7 +112,11 @@ export class EcsTaskExecutionRole extends Construct {
         new iam.PolicyStatement({
           sid: "CloudWatchLogsAccess",
           effect: iam.Effect.ALLOW,
-          actions: ["logs:CreateLogStream", "logs:PutLogEvents"],
+          actions: [
+            "logs:CreateLogStream",
+            "logs:PutLogEvents",
+            "logs:DescribeLogStreams", // Required for log stream discovery
+          ],
           resources: [logResource],
         })
       );

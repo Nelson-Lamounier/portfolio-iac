@@ -7,11 +7,14 @@ import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as events_targets from "aws-cdk-lib/aws-events-targets";
+import * as iam from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
+
 import {
   EcsClusterConstruct,
   EcsTaskDefinitionConstruct,
   EcsServiceConstruct,
+  LaunchTemplateConstruct,
   NodeExporterConstruct,
 } from "../../constructs";
 import { SuppressionManager } from "../../cdk-nag";
@@ -27,6 +30,7 @@ export interface ComputeStackProps extends cdk.StackProps {
   memoryReservationMiB?: number;
   memoryLimitMiB?: number;
   cpu?: number;
+  customLaunchTemplate?: ec2.ILaunchTemplate;
 }
 
 /**
@@ -105,15 +109,53 @@ export class ComputeStackRefactored extends cdk.Stack {
     // 3. ECS CLUSTER WITH AUTO SCALING
     // ========================================================================
 
+    // Prefer the “launch template owns the security group” approach.
+    // If a custom launch template is not provided, create one here.
+    const clusterName = `ecs-cluster-${props.envName}`;
+    const launchTemplate =
+      props.customLaunchTemplate ??
+      (() => {
+        const ecsUserData = ec2.UserData.forLinux();
+        ecsUserData.addCommands(
+          "#!/bin/bash",
+          `echo ECS_CLUSTER=${clusterName} >> /etc/ecs/ecs.config`,
+          "echo ECS_ENABLE_CONTAINER_METADATA=true >> /etc/ecs/ecs.config",
+          "echo ECS_ENABLE_TASK_IAM_ROLE=true >> /etc/ecs/ecs.config",
+          "yum update -y",
+          "yum install -y amazon-cloudwatch-agent",
+          "systemctl enable ecs",
+          "systemctl start ecs"
+        );
+
+        const lt = new LaunchTemplateConstruct(this, "ComputeLaunchTemplate", {
+          vpc: props.vpc,
+          envName: props.envName,
+          instanceType: props.instanceType || new ec2.InstanceType("t3.micro"),
+          machineImage: ecs.EcsOptimizedImage.amazonLinux2023(),
+          userData: ecsUserData,
+          associatePublicIpAddress: true,
+        });
+
+        // Required for ECS EC2 container instances
+        lt.role.addManagedPolicy(
+          iam.ManagedPolicy.fromAwsManagedPolicyName(
+            "service-role/AmazonEC2ContainerServiceforEC2Role"
+          )
+        );
+
+        return lt.launchTemplate;
+      })();
+
     this.clusterConstruct = new EcsClusterConstruct(this, "Cluster", {
       vpc: props.vpc,
       envName: props.envName,
-      clusterName: `ecs-cluster-${props.envName}`,
+      clusterName,
       instanceType: props.instanceType || new ec2.InstanceType("t3.micro"),
       minCapacity: props.minCapacity ?? 1,
       maxCapacity: props.maxCapacity ?? 1,
       desiredCapacity: props.desiredCapacity ?? 1,
       usePublicSubnets: true, // No NAT gateway needed
+      customLaunchTemplate: launchTemplate,
     });
 
     this.cluster = this.clusterConstruct.cluster;
@@ -130,15 +172,11 @@ export class ComputeStackRefactored extends cdk.Stack {
 
     // Create the Container Insights log group explicitly to avoid ResourceNotFoundException
     // AWS creates this automatically, but we create it explicitly for better control
-    const containerInsightsLogGroup = new logs.LogGroup(
-      this,
-      "ContainerInsightsLogs",
-      {
-        logGroupName: `/aws/ecs/containerinsights/${this.cluster.clusterName}/performance`,
-        retention: logs.RetentionDays.ONE_DAY, // Container Insights metrics don't need long retention
-        removalPolicy: cdk.RemovalPolicy.DESTROY,
-      }
-    );
+    new logs.LogGroup(this, "ContainerInsightsLogs", {
+      logGroupName: `/aws/ecs/containerinsights/${this.cluster.clusterName}/performance`,
+      retention: logs.RetentionDays.ONE_DAY, // Container Insights metrics don't need long retention
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
 
     // Configure ECS to send events to CloudWatch Logs
     // This captures ECS service events, task state changes, etc.
@@ -242,9 +280,7 @@ export class ComputeStackRefactored extends cdk.Stack {
     // Add CloudFormation rollback triggers based on ECS service health
     // This will automatically rollback the stack if the service fails to stabilize
     if (this.serviceConstruct.cpuAlarm) {
-      const cfnStack = cdk.Stack.of(this);
-      const cfnStackResource = cfnStack.node.defaultChild as cdk.CfnStack;
-
+      // CloudFormation rollback triggers are configured at the stack level
       // Note: Rollback triggers are set at stack level, not resource level
       // They monitor alarms and trigger rollback if alarms go into ALARM state
       // The circuit breaker handles ECS-level rollbacks automatically

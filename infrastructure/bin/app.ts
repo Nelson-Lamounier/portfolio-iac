@@ -9,24 +9,28 @@ import * as cdk from "aws-cdk-lib";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import { Aspects } from "aws-cdk-lib";
 import { AwsSolutionsChecks } from "cdk-nag";
+
 import {
   NetworkingStack,
   ComputeStack,
   MonitoringStack,
-  MonitoringEcsStack,
+  MonitoringEfsStack,
   MonitoringInfraStack,
   MonitoringServiceStack,
   LoadBalancerStack,
   VpcPeeringStack,
 } from "../lib/stacks";
+import { LaunchTemplateStack } from "../lib/stacks/compute/launch-template-stack";
+import { CrossAccountTarget } from "../lib/types";
 import { VpcPeeringAcceptorRole } from "../lib/constructs/iam/vpc-peering-acceptor-role";
+import { CertificateStack } from "../lib/stacks/networking/security/acm-stack";
 import { environments } from "../config/environments";
 
 const app = new cdk.App();
 
 // Domain configuration - can come from environment variables or SSM Parameter Store
 // Priority: Environment variables > SSM Parameter Store
-// For HTTP-only mode, leave these unset
+// For HTTP-only mode, leave these unset //
 let rootDomainName: string | undefined;
 let hostedZoneId: string | undefined;
 
@@ -56,7 +60,7 @@ if (process.env.ROOT_DOMAIN_NAME && process.env.HOSTED_ZONE_ID) {
         rootDomainName = undefined;
         hostedZoneId = undefined;
       }
-    } catch (error) {
+    } catch {
       // Parameters don't exist, continue without HTTPS
       rootDomainName = undefined;
       hostedZoneId = undefined;
@@ -76,6 +80,37 @@ if (!config) {
     ).join(", ")}`
   );
 }
+
+// Validate required configuration
+console.log(`\n🔍 Environment Configuration Validation for: ${envName}`);
+console.log(`  Account: ${config.account || "NOT_SET"}`);
+console.log(`  Region: ${config.region}`);
+
+if (!config.account) {
+  console.error(
+    `\n❌ CRITICAL ERROR: Account ID not set for environment: ${envName}`
+  );
+  console.error(`   Environment variable AWS_PIPELINE_ACCOUNT_ID is required`);
+  console.error(
+    `   This will cause CDK environment specification parsing error`
+  );
+  console.error(`   Expected: aws://123456789012/eu-west-1`);
+  console.error(`   Actual: aws:///eu-west-1`);
+
+  throw new Error(
+    `Account ID not configured for environment: ${envName}. ` +
+      `Set AWS_PIPELINE_ACCOUNT_ID environment variable.`
+  );
+}
+
+if (!config.region) {
+  throw new Error(
+    `Region not configured for environment: ${envName}. ` +
+      `Set AWS_REGION environment variable.`
+  );
+}
+
+console.log(`✅ Configuration validated successfully\n`);
 
 // Common stack properties
 const stackProps: cdk.StackProps = {
@@ -143,26 +178,33 @@ const networkingStack = new NetworkingStack(
 // ========================================
 // 5. Certificate Stack (Optional - for HTTPS)
 // ========================================
-// Certificates are managed manually in the dev account
-// Certificate ARN is stored in SSM Parameter Store in pipeline account: /portfolio/domain/acm-arn
+// Certificates are managed via:
+// 1. CDK-created certificates (if domain is configured)
+// 2. Environment variable CERTIFICATE_ARN (from CI/CD workflow)
+// 3. SSM Parameter Store lookup (for local development)
 //
-// Setup process:
-// 1. Create certificate manually in AWS Console (ACM) in dev account
-// 2. Use DNS validation with Route 53
-// 3. Store ARN in SSM Parameter Store in pipeline account:
-//    aws ssm put-parameter --name "/portfolio/domain/acm-arn" \
-//      --value "arn:aws:acm:eu-west-1:ACCOUNT:certificate/ID" \
-//      --type String --overwrite --profile github-actions
-//
-// The workflow will fetch this parameter from pipeline account and pass as env var
+// Priority: Environment variable > SSM Parameter Store > Create new
 
 let certificateArn: string | undefined;
+let certificateStack: CertificateStack | undefined;
 
 // Check if certificate ARN is provided via environment variable (from workflow)
 if (process.env.CERTIFICATE_ARN) {
   certificateArn = process.env.CERTIFICATE_ARN;
   console.log(`✓ Using certificate ARN from environment variable`);
   console.log(`  Certificate: ${certificateArn}`);
+} else if (rootDomainName && hostedZoneId) {
+  // Create new certificate with DNS validation
+  certificateStack = new CertificateStack(app, `AcmStack-${config.envName}`, {
+    ...stackProps,
+    envName: config.envName,
+    DomainName: rootDomainName,
+    subjectAlternativeNames: [`*.${rootDomainName}`],
+    hostedZoneId: hostedZoneId,
+    storeCertificateArnInSsm: true,
+  });
+  certificateArn = certificateStack.certificateArn;
+  console.log(`✓ Created ACM certificate for ${rootDomainName}`);
 } else if (process.env.SKIP_DOMAIN_LOOKUP !== "true") {
   // Fallback: Try to fetch certificate ARN from SSM Parameter Store
   // This is for local development only - workflow should pass via env var
@@ -182,13 +224,13 @@ if (process.env.CERTIFICATE_ARN) {
       console.log(`✓ Using certificate ARN from SSM Parameter Store`);
       console.log(`  Certificate: ${certificateArn}`);
     }
-  } catch (error) {
+  } catch {
     // Parameter doesn't exist
     certificateArn = undefined;
     console.log("⚠ Certificate ARN not configured - HTTPS will be disabled");
   }
 } else {
-  console.log("⚠ Domain lookup skipped - HTTPS will be disabled");
+  console.log("Domain lookup skipped - HTTPS will be disabled");
 }
 
 // ========================================
@@ -196,7 +238,8 @@ if (process.env.CERTIFICATE_ARN) {
 // ========================================
 // Creates Application Load Balancer
 // Depends on: NetworkingStack (VPC)
-// Uses certificate ARN from SSM Parameter Store (if available)
+// Uses certificate ARN from previous step (if available)
+
 const loadBalancerStack = new LoadBalancerStack(
   app,
   `LoadBalancerStack-${config.envName}`,
@@ -248,6 +291,38 @@ loadBalancerStack.addListenerRule({
 });
 
 // ========================================
+// 7.5. Create Launch Template Stack (Optional)
+// ========================================
+// Create custom launch template for ECS instances
+// This provides more control over instance configuration
+let launchTemplateStack: LaunchTemplateStack | undefined;
+
+// Only create launch template if explicitly enabled
+if (process.env.USE_CUSTOM_LAUNCH_TEMPLATE === "true") {
+  console.log("✓ Creating custom launch template for ECS instances");
+
+  launchTemplateStack = new LaunchTemplateStack(
+    app,
+    `LaunchTemplateStack-${config.envName}`,
+    {
+      ...stackProps,
+      vpc: networkingStack.vpc,
+      envName: config.envName,
+      keyPairName: process.env.EC2_KEY_PAIR_NAME, // Optional SSH key
+    }
+  );
+
+  launchTemplateStack.addDependency(networkingStack);
+  console.log(
+    "  Custom launch template includes Node Exporter and enhanced monitoring"
+  );
+} else {
+  console.log(
+    "⚠ Using default launch template (set USE_CUSTOM_LAUNCH_TEMPLATE=true for custom)"
+  );
+}
+
+// ========================================
 // 8. Create Compute Stack
 // ========================================
 // Now create the ECS service (after target group is ready)
@@ -256,11 +331,15 @@ const computeStack = new ComputeStack(app, `ComputeStack-${config.envName}`, {
   envName: config.envName,
   vpc: networkingStack.vpc,
   targetGroup: ecsTargetGroup, // Attach ECS service to ALB target group
+  customLaunchTemplate: launchTemplateStack?.launchTemplate, // Use custom launch template if available
 });
 
 // Explicit dependencies
 computeStack.addDependency(networkingStack);
 computeStack.addDependency(loadBalancerStack);
+if (launchTemplateStack) {
+  computeStack.addDependency(launchTemplateStack);
+}
 
 // ========================================
 // 9. Configure Security Groups
@@ -276,292 +355,167 @@ if (ecsSecurityGroup) {
 }
 
 // ========================================
-// 10. Monitoring Stacks (Optional)
+// 10. Monitoring Stacks
 // ========================================
-// Creates CloudWatch alarms, dashboards, and Prometheus/Grafana on EC2
+// Production-ready layered monitoring architecture for all environments
 //
-// Three deployment modes:
-// 1. Embedded (legacy): All monitoring in single MonitoringEcsStack (default)
-// 2. Layered (recommended): Separate infra/service stacks for production
-// 3. Centralized: Monitoring deployed in pipeline account for all environments
-//
-// Set USE_LAYERED_MONITORING=true to use the layered architecture
-// For centralized monitoring, deploy with ENVIRONMENT=pipeline
-const useLayeredMonitoring = process.env.USE_LAYERED_MONITORING === "true";
+// ========================================
+// CENTRALIZED MONITORING (Pipeline Account)
+// ========================================
+if (config.isMonitoringAccount) {
+  console.log("\n========================================");
+  console.log("CENTRALIZED MONITORING DEPLOYMENT");
+  console.log("========================================");
+  console.log(`Environment: ${config.envName}`);
+  console.log(`VPC CIDR: ${vpcCidrMap[config.envName]}`);
+  console.log(
+    `Monitoring accounts: ${config.monitoredAccounts?.join(", ") || "none"}\n`
+  );
 
-if (config.enableMonitoring) {
-  // Check if this is the centralized monitoring account
-  if (config.isMonitoringAccount) {
-    console.log("\nDeploying CENTRALIZED monitoring to pipeline account");
-    console.log(
-      `   Monitoring accounts: ${config.monitoredAccounts?.join(", ") || "none"}\n`
-    );
-
-    // For centralized monitoring, we only deploy the monitoring infrastructure
-    // No compute stack needed in pipeline account
-
-    // Create VPC for monitoring infrastructure (if not already created)
-    // Note: networkingStack might not exist in pipeline account, create dedicated one
-    const monitoringVpc =
-      networkingStack ||
-      new NetworkingStack(app, `NetworkingStack-${config.envName}`, {
-        ...stackProps,
-        envName: config.envName,
-        maxAzs: 2,
-        natGateways: 0,
-        enableVpcFlowLogs: true,
-      });
-
-    // CloudWatch Monitoring Stack (receives events from all accounts)
-    const monitoringStack = new MonitoringStack(
-      app,
-      `MonitoringStack-${config.envName}`,
-      {
-        ...stackProps,
-        envName: config.envName,
-        // For centralized monitoring, we'll monitor multiple clusters
-        ecsClusterName: "centralized-monitoring", // Placeholder
-        ecsServiceName: "centralized-monitoring", // Placeholder
-        alertEmail: config.alertEmail,
-        enableDashboard: true, // Always enable dashboard for centralized monitoring
-        enableEventBridge: config.enableEventBridge,
-        pipelineAccountId: config.account, // Pipeline account monitors itself
-      }
-    );
-
-    // Build cross-account targets from environment variables
-    // These are the private IPs of instances in other accounts
-    // Set via: DEV_NODE_EXPORTER_IP, DEV_APP_IP, etc.
-    const crossAccountTargets: Array<{
-      envName: string;
-      privateIp: string;
-      port?: number;
-      targetType?: "node-exporter" | "application";
-      metricsPath?: string;
-    }> = [];
-
-    // Development account targets
-    if (process.env.DEV_NODE_EXPORTER_IP) {
-      // Node Exporter target (host metrics)
-      crossAccountTargets.push({
-        envName: "development",
-        privateIp: process.env.DEV_NODE_EXPORTER_IP,
-        port: 9100,
-        targetType: "node-exporter",
-      });
+  // Certificate configuration (optional)
+  let monitoringCertificateArn: string | undefined;
+  if (process.env.CERTIFICATE_ARN && process.env.ROOT_DOMAIN_NAME) {
+    const certAccountId = process.env.CERTIFICATE_ARN.split(":")[4];
+    if (certAccountId === config.account) {
+      monitoringCertificateArn = process.env.CERTIFICATE_ARN;
       console.log(
-        `   Adding development node-exporter: ${process.env.DEV_NODE_EXPORTER_IP}:9100`
-      );
-
-      // Next.js application target (same IP, different port)
-      // The app runs on port 3000 and exposes metrics at /api/metrics
-      crossAccountTargets.push({
-        envName: "development",
-        privateIp: process.env.DEV_NODE_EXPORTER_IP,
-        port: 3000,
-        targetType: "application",
-        metricsPath: "/api/metrics",
-      });
-      console.log(
-        `   Adding development nextjs app: ${process.env.DEV_NODE_EXPORTER_IP}:3000/api/metrics`
-      );
-    }
-
-    // Staging account targets
-    if (process.env.STAGING_NODE_EXPORTER_IP) {
-      crossAccountTargets.push({
-        envName: "staging",
-        privateIp: process.env.STAGING_NODE_EXPORTER_IP,
-        port: 9100,
-        targetType: "node-exporter",
-      });
-      console.log(
-        `   Adding staging node-exporter: ${process.env.STAGING_NODE_EXPORTER_IP}:9100`
-      );
-
-      crossAccountTargets.push({
-        envName: "staging",
-        privateIp: process.env.STAGING_NODE_EXPORTER_IP,
-        port: 3000,
-        targetType: "application",
-        metricsPath: "/api/metrics",
-      });
-      console.log(
-        `   Adding staging nextjs app: ${process.env.STAGING_NODE_EXPORTER_IP}:3000/api/metrics`
-      );
-    }
-
-    // Production account targets
-    if (process.env.PROD_NODE_EXPORTER_IP) {
-      crossAccountTargets.push({
-        envName: "production",
-        privateIp: process.env.PROD_NODE_EXPORTER_IP,
-        port: 9100,
-        targetType: "node-exporter",
-      });
-      console.log(
-        `   Adding production node-exporter: ${process.env.PROD_NODE_EXPORTER_IP}:9100`
-      );
-
-      crossAccountTargets.push({
-        envName: "production",
-        privateIp: process.env.PROD_NODE_EXPORTER_IP,
-        port: 3000,
-        targetType: "application",
-        metricsPath: "/api/metrics",
-      });
-      console.log(
-        `   Adding production nextjs app: ${process.env.PROD_NODE_EXPORTER_IP}:3000/api/metrics`
-      );
-    }
-
-    // ECS Monitoring Stack (Prometheus + Grafana on ECS)
-    // Choose between embedded (legacy) or layered (recommended) architecture
-    if (useLayeredMonitoring) {
-      console.log("   Using LAYERED monitoring architecture (recommended)\n");
-
-      // Layer 1: Infrastructure (VPC, ECS Cluster, EFS, ALB)
-      const monitoringInfraStack = new MonitoringInfraStack(
-        app,
-        `MonitoringInfraStack-${config.envName}`,
-        {
-          ...stackProps,
-          envName: config.envName,
-          vpc: monitoringVpc.vpc,
-        }
-      );
-
-      if (monitoringVpc !== networkingStack) {
-        monitoringInfraStack.addDependency(monitoringVpc);
-      }
-
-      // Layer 2: Services (ECS Task Definitions, Services)
-      const monitoringServiceStack = new MonitoringServiceStack(
-        app,
-        `MonitoringServiceStack-${config.envName}`,
-        {
-          ...stackProps,
-          envName: config.envName,
-          cluster: monitoringInfraStack.cluster,
-          autoScalingGroup: monitoringInfraStack.autoScalingGroup,
-          loadBalancer: monitoringInfraStack.loadBalancer,
-          listener: monitoringInfraStack.listener,
-        }
-      );
-
-      monitoringServiceStack.addDependency(monitoringInfraStack);
-
-      // Layer 3: Config is managed via EFS and sync-config.sh script
-      console.log(
-        "   Layer 3 (Config): Use ./scripts/monitoring/sync-config.sh to update\n"
+        `✓ HTTPS enabled for monitoring.${process.env.ROOT_DOMAIN_NAME}`
       );
     } else {
-      console.log("   Using EMBEDDED monitoring architecture (legacy)\n");
-
-      const monitoringEcsStack = new MonitoringEcsStack(
-        app,
-        `MonitoringEcsStack-${config.envName}`,
-        {
-          ...stackProps,
-          envName: config.envName,
-          vpc: monitoringVpc.vpc,
-          // Cross-account targets for Prometheus to scrape via VPC peering
-          crossAccountTargets:
-            crossAccountTargets.length > 0 ? crossAccountTargets : undefined,
-          // Enable EFS for persistent storage (data survives instance replacement)
-          enablePersistence: true,
-          // Optional: Restrict access to specific IPs
-          // allowedIpRanges: ['YOUR_IP/32'],
-        }
-      );
-
-      if (monitoringVpc !== networkingStack) {
-        monitoringEcsStack.addDependency(monitoringVpc);
-      }
+      console.log("⚠️ Certificate cross-account - using HTTP only");
     }
   } else {
-    // Local monitoring mode (legacy) - monitoring in same account as application
-    console.log("\nDeploying LOCAL monitoring to application account");
-    console.log(`   Environment: ${config.envName}\n`);
-
-    // CloudWatch Monitoring Stack
-    const monitoringStack = new MonitoringStack(
-      app,
-      `MonitoringStack-${config.envName}`,
-      {
-        ...stackProps,
-        envName: config.envName,
-        ecsClusterName: computeStack.cluster.clusterName,
-        ecsServiceName: computeStack.service.serviceName,
-        alertEmail: config.alertEmail,
-        enableDashboard: config.envName === "production",
-        enableEventBridge: config.enableEventBridge,
-        pipelineAccountId: config.pipelineAccount,
-      }
-    );
-
-    monitoringStack.addDependency(computeStack);
-
-    // ECS Monitoring Stack (Prometheus + Grafana on ECS)
-    // Choose between embedded (legacy) or layered (recommended) architecture
-    if (useLayeredMonitoring) {
-      console.log("   Using LAYERED monitoring architecture (recommended)\n");
-
-      // Layer 1: Infrastructure (VPC, ECS Cluster, EFS, ALB)
-      const monitoringInfraStack = new MonitoringInfraStack(
-        app,
-        `MonitoringInfraStack-${config.envName}`,
-        {
-          ...stackProps,
-          envName: config.envName,
-          vpc: networkingStack.vpc,
-        }
-      );
-
-      monitoringInfraStack.addDependency(networkingStack);
-
-      // Layer 2: Services (ECS Task Definitions, Services)
-      const monitoringServiceStack = new MonitoringServiceStack(
-        app,
-        `MonitoringServiceStack-${config.envName}`,
-        {
-          ...stackProps,
-          envName: config.envName,
-          cluster: monitoringInfraStack.cluster,
-          autoScalingGroup: monitoringInfraStack.autoScalingGroup,
-          loadBalancer: monitoringInfraStack.loadBalancer,
-          listener: monitoringInfraStack.listener,
-        }
-      );
-
-      monitoringServiceStack.addDependency(monitoringInfraStack);
-
-      // Layer 3: Config is managed via EFS and sync-config.sh script
-      console.log(
-        "   Layer 3 (Config): Use ./scripts/monitoring/sync-config.sh to update\n"
-      );
-    } else {
-      console.log("   Using EMBEDDED monitoring architecture (legacy)\n");
-
-      const monitoringEcsStack = new MonitoringEcsStack(
-        app,
-        `MonitoringEcsStack-${config.envName}`,
-        {
-          ...stackProps,
-          envName: config.envName,
-          vpc: networkingStack.vpc,
-          albDnsName: loadBalancerStack.alb.loadBalancer.loadBalancerDnsName,
-          // Enable EFS for persistent storage (data survives instance replacement)
-          enablePersistence: true,
-          // Optional: Restrict access to specific IPs
-          // allowedIpRanges: ['YOUR_IP/32'],
-        }
-      );
-
-      monitoringEcsStack.addDependency(networkingStack);
-      monitoringEcsStack.addDependency(loadBalancerStack);
-    }
+    console.log("⚠️ No certificate - using HTTP only");
   }
+
+  // Layer 0: EFS Storage & Configuration
+  console.log("Layer 0: EFS Storage & Configuration");
+  console.log("  - EFS FileSystem (One Zone - cost optimized)");
+  console.log("  - Lambda-based configuration management");
+  console.log("  - SSM parameter storage");
+  console.log("  - Access points and security groups\n");
+
+  // Configure cross-account monitoring targets (controlled by pipeline)
+  const crossAccountTargets: CrossAccountTarget[] = [];
+
+  // Cross-account targets are configured via CDK context from the pipeline
+  // This allows the pipeline to control monitoring configuration dynamically
+  const crossAccountConfig = app.node.tryGetContext("crossAccountTargets");
+
+  if (crossAccountConfig && Array.isArray(crossAccountConfig)) {
+    console.log("🔗 Cross-account monitoring targets configured by pipeline:");
+    crossAccountConfig.forEach((target: CrossAccountTarget) => {
+      console.log(
+        `   ${target.envName}: ${target.privateIp}:${target.port} (${target.targetType})`
+      );
+      crossAccountTargets.push(target);
+    });
+    console.log("");
+  } else {
+    console.log("ℹ️  Cross-account monitoring: Not configured by pipeline");
+    console.log("   Pipeline can set targets via CDK context\n");
+  }
+
+  const monitoringEfsStack = new MonitoringEfsStack(
+    app,
+    `MonitoringEfsStack-${config.envName}`,
+    {
+      ...stackProps,
+      envName: config.envName,
+      vpc: networkingStack.vpc,
+      crossAccountTargets, // Add cross-account targets
+      enableEncryption: true,
+    }
+  );
+  monitoringEfsStack.addDependency(networkingStack);
+
+  // Layer 1: Infrastructure
+  console.log("Layer 1: Infrastructure Stack");
+  console.log("  - ECS Cluster with EC2 capacity");
+  console.log("  - Auto Scaling Group (constrained to EFS AZ)");
+  console.log("  - Application Load Balancer");
+  console.log("  - Centralized UserData management");
+  console.log("  - CloudWatch Log Groups\n");
+
+  const monitoringInfraStack = new MonitoringInfraStack(
+    app,
+    `MonitoringInfraStack-${config.envName}`,
+    {
+      ...stackProps,
+      envName: config.envName,
+      efsStackName: `MonitoringEfsStack-${config.envName}`,
+      vpc: networkingStack.vpc,
+      certificateArn: monitoringCertificateArn,
+      enableHttps: !!monitoringCertificateArn,
+      // Pass EFS resources from external EFS stack
+      fileSystem: monitoringEfsStack.fileSystem,
+      efsAccessPoint: monitoringEfsStack.accessPoint,
+      efsAvailabilityZone: monitoringEfsStack.efsAvailabilityZone,
+      efsSecurityGroup: monitoringEfsStack.mountTargetSecurityGroup,
+      efsInitializationComplete: monitoringEfsStack.efsInitializationComplete,
+    }
+  );
+  monitoringInfraStack.addDependency(networkingStack);
+  monitoringInfraStack.addDependency(monitoringEfsStack);
+
+  // Add explicit dependency to ensure Infrastructure stack updates when EFS changes
+  monitoringInfraStack.node.addMetadata(
+    "EfsFileSystemId",
+    monitoringEfsStack.fileSystem.fileSystemId
+  );
+
+  // Layer 2: Services
+  console.log("Layer 2: Services Stack");
+  console.log("  - Prometheus (metrics collection & storage)");
+  console.log("  - Grafana (visualization & dashboards)");
+  console.log("  - Node Exporter (host metrics)");
+  console.log("  - Load balancer routing & health checks\n");
+
+  const monitoringServiceStack = new MonitoringServiceStack(
+    app,
+    `MonitoringServiceStack-${config.envName}`,
+    {
+      ...stackProps,
+      envName: config.envName,
+      cluster: monitoringInfraStack.cluster,
+      autoScalingGroup: monitoringInfraStack.autoScalingGroup,
+      loadBalancer: monitoringInfraStack.loadBalancer,
+      listener: monitoringInfraStack.listener,
+    }
+  );
+  monitoringServiceStack.addDependency(monitoringInfraStack);
+
+  console.log("✅ Centralized monitoring stacks configured");
+  console.log("   Deploy order: EFS → Infrastructure → Services\n");
+} else {
+  // ========================================
+  // APPLICATION ACCOUNT MONITORING
+  // ========================================
+  console.log(`\n📊 Application Account Monitoring: ${config.envName}`);
+  console.log(`   Account Type: Application (isMonitoringAccount: false)`);
+  console.log(`   Monitoring Type: CloudWatch + Cross-Account Integration\n`);
+
+  // CloudWatch Monitoring Stack (always deployed in application accounts)
+  const monitoringStack = new MonitoringStack(
+    app,
+    `MonitoringStack-${config.envName}`,
+    {
+      ...stackProps,
+      envName: config.envName,
+      ecsClusterName: computeStack.cluster.clusterName,
+      ecsServiceName: computeStack.service.serviceName,
+      alertEmail: config.alertEmail,
+      enableDashboard: config.envName === "production",
+      enableEventBridge: config.enableEventBridge,
+      pipelineAccountId: config.pipelineAccount,
+    }
+  );
+  monitoringStack.addDependency(computeStack);
+
+  console.log(`✅ CloudWatch monitoring configured for ${config.envName}`);
+  console.log(
+    `   Metrics will be scraped by centralized monitoring via VPC peering\n`
+  );
 }
 
 // ========================================
@@ -626,8 +580,8 @@ if (
   config.monitoredAccounts &&
   config.monitoredAccounts.length > 0
 ) {
-  // Get peer VPC info from environment variables or SSM
-  // These should be set after deploying NetworkingStack in each peer account
+  // Get peer VPC info from environment variables (from workflow) or SSM parameters
+  // Priority: Environment variables (from workflow) > SSM parameters > Skip
   const peerAccounts: Array<{
     envName: string;
     accountId: string;
@@ -637,14 +591,47 @@ if (
   }> = [];
 
   // Check for development account peering config
-  if (process.env.DEV_VPC_ID && process.env.AWS_ACCOUNT_ID_DEV) {
+  let devVpcId = process.env.DEV_VPC_ID;
+  const devAccountId = process.env.AWS_ACCOUNT_ID_DEV;
+
+  // If not provided via environment, try SSM parameter lookup
+  if (!devVpcId && devAccountId && process.env.SKIP_DOMAIN_LOOKUP !== "true") {
+    try {
+      devVpcId = cdk.aws_ssm.StringParameter.valueFromLookup(
+        app,
+        "/networking/development/vpc-id"
+      );
+
+      // Check if we got a dummy value (parameter doesn't exist)
+      if (devVpcId?.includes("dummy-value")) {
+        devVpcId = undefined;
+        console.log("⚠ Dev VPC ID not found in SSM parameter");
+      } else if (devVpcId) {
+        console.log(`✓ Found Dev VPC ID in SSM: ${devVpcId}`);
+      }
+    } catch {
+      console.log("⚠ Could not lookup Dev VPC ID from SSM");
+      devVpcId = undefined;
+    }
+  }
+
+  if (devVpcId && devAccountId && devVpcId !== "NOT_FOUND") {
     peerAccounts.push({
       envName: "development",
-      accountId: process.env.AWS_ACCOUNT_ID_DEV,
-      vpcId: process.env.DEV_VPC_ID,
+      accountId: devAccountId,
+      vpcId: devVpcId,
       vpcCidr: vpcCidrMap["development"] || "10.1.0.0/16",
-      roleArn: `arn:aws:iam::${process.env.AWS_ACCOUNT_ID_DEV}:role/development-VpcPeeringAcceptorRole`,
+      roleArn: `arn:aws:iam::${devAccountId}:role/development-VpcPeeringAcceptorRole`,
     });
+    console.log(`✓ Added development account for VPC peering: ${devVpcId}`);
+  } else {
+    console.log("⚠ Development account VPC peering not configured");
+    console.log(
+      "  Set DEV_VPC_ID and AWS_ACCOUNT_ID_DEV environment variables"
+    );
+    console.log(
+      "  Or ensure /networking/development/vpc-id SSM parameter exists"
+    );
   }
 
   if (peerAccounts.length > 0) {
@@ -653,12 +640,19 @@ if (
       `   Peering to: ${peerAccounts.map((p) => p.envName).join(", ")}\n`
     );
 
-    new VpcPeeringStack(app, `VpcPeeringStack-${config.envName}`, {
-      ...stackProps,
-      vpc: networkingStack.vpc,
-      envName: config.envName,
-      peerAccounts: peerAccounts,
-    });
+    const vpcPeeringStack = new VpcPeeringStack(
+      app,
+      `VpcPeeringStack-${config.envName}`,
+      {
+        ...stackProps,
+        vpc: networkingStack.vpc, // Direct reference - no exports/imports
+        envName: config.envName,
+        peerAccounts: peerAccounts,
+      }
+    );
+
+    // Explicit dependency to ensure proper deployment order
+    vpcPeeringStack.addDependency(networkingStack);
   } else {
     console.log("\n VPC Peering: No peer accounts configured");
     console.log("   Set DEV_VPC_ID and AWS_ACCOUNT_ID_DEV to enable peering\n");

@@ -7,6 +7,7 @@ on:
     branches:
       - main
       - develop
+      - feature/monitoring
   push:
     branches:
       - main
@@ -154,10 +155,184 @@ jobs:
           CDK_DEFAULT_ACCOUNT: ${{ vars.AWS_ACCOUNT_ID_DEV || '123456789012' }}
           CDK_DEFAULT_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
 
+  cdk-nag-security-check:
+    name: CDK Nag Security Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [build-and-validate]
+    if: always()
+
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - run: corepack enable
+
+      - name: Install dependencies
+        run: make install
+
+      - name: Build infrastructure
+        run: make build-infrastructure
+
+      - name: Run CDK Nag checks - Development
+        id: cdk-nag-dev
+        run: |
+          cd infrastructure
+          ENVIRONMENT=development yarn cdk synth --no-staging 2>&1 | tee /tmp/cdk-nag-dev.log
+        continue-on-error: true
+        env:
+          SKIP_DOMAIN_LOOKUP: "true"
+          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV || '123456789012' }}
+          AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          CDK_DEFAULT_ACCOUNT: ${{ vars.AWS_ACCOUNT_ID_DEV || '123456789012' }}
+          CDK_DEFAULT_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
+
+      - name: Run CDK Nag checks - Pipeline
+        id: cdk-nag-pipeline
+        run: |
+          cd infrastructure
+          ENVIRONMENT=pipeline yarn cdk synth --no-staging 2>&1 | tee /tmp/cdk-nag-pipeline.log
+        continue-on-error: true
+        env:
+          SKIP_DOMAIN_LOOKUP: "true"
+          AWS_ACCOUNT_ID_DEV: ${{ vars.AWS_ACCOUNT_ID_DEV || '123456789012' }}
+          AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          CDK_DEFAULT_ACCOUNT: ${{ vars.AWS_ACCOUNT_ID_DEV || '123456789012' }}
+          CDK_DEFAULT_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
+
+      - name: Parse CDK Nag results
+        id: parse-results
+        run: |
+          echo "## CDK Nag Security Check Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Check development environment
+          if grep -q "Error at" /tmp/cdk-nag-dev.log; then
+            echo "### Development Environment - FAILED" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Errors found:**" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep "Error at" /tmp/cdk-nag-dev.log | head -20 >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            DEV_FAILED=true
+          else
+            echo "### Development Environment - PASSED" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            DEV_FAILED=false
+          fi
+
+          # Check pipeline environment
+          if grep -q "Error at" /tmp/cdk-nag-pipeline.log; then
+            echo "### Pipeline Environment - FAILED" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Errors found:**" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep "Error at" /tmp/cdk-nag-pipeline.log | head -20 >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            PIPELINE_FAILED=true
+          else
+            echo "### Pipeline Environment - PASSED" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            PIPELINE_FAILED=false
+          fi
+
+          # Show warnings
+          if grep -q "Warning at" /tmp/cdk-nag-dev.log; then
+            echo "### ⚠️ Development Environment - Warnings" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep "Warning at" /tmp/cdk-nag-dev.log | head -10 >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if grep -q "Warning at" /tmp/cdk-nag-pipeline.log; then
+            echo "### ⚠️ Pipeline Environment - Warnings" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep "Warning at" /tmp/cdk-nag-pipeline.log | head -10 >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Set output for next step
+          echo "dev_failed=$DEV_FAILED" >> $GITHUB_OUTPUT
+          echo "pipeline_failed=$PIPELINE_FAILED" >> $GITHUB_OUTPUT
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const devLog = fs.readFileSync('/tmp/cdk-nag-dev.log', 'utf8');
+            const pipelineLog = fs.readFileSync('/tmp/cdk-nag-pipeline.log', 'utf8');
+
+            let comment = '## 🔒 CDK Nag Security Check\n\n';
+
+            if (devLog.includes('Error at')) {
+              comment += '### ❌ Development Environment\n';
+              comment += 'Security violations found. Please review and fix before merging.\n\n';
+            } else {
+              comment += '### ✅ Development Environment\n';
+              comment += 'All security checks passed.\n\n';
+            }
+
+            if (pipelineLog.includes('Error at')) {
+              comment += '### ❌ Pipeline Environment\n';
+              comment += 'Security violations found. Please review and fix before merging.\n\n';
+            } else {
+              comment += '### ✅ Pipeline Environment\n';
+              comment += 'All security checks passed.\n\n';
+            }
+
+            comment += '**Note:** Run `cd infrastructure && yarn cdk synth --no-staging` locally to see full details.\n';
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+      - name: Fail if errors found
+        if: steps.parse-results.outputs.dev_failed == 'true' || steps.parse-results.outputs.pipeline_failed == 'true'
+        run: |
+          echo "❌ CDK Nag security checks failed"
+          echo ""
+          echo "To fix violations:"
+          echo "1. Review the errors above"
+          echo "2. Update the CDK code to comply with AWS best practices"
+          echo "3. Or add a CDK Nag suppression with evidence if the violation is acceptable"
+          echo ""
+          echo "For more information, see:"
+          echo "- CDK Nag documentation: https://github.com/cdklabs/cdk-nag"
+          echo "- AWS Well-Architected Framework: https://aws.amazon.com/architecture/well-architected/"
+          exit 1
+
   test-summary:
     runs-on: ubuntu-latest
     needs:
-      [lint-and-format, test-infrastructure, test-frontend, build-and-validate]
+      [
+        lint-and-format,
+        test-infrastructure,
+        test-frontend,
+        build-and-validate,
+        cdk-nag-security-check,
+      ]
     if: always()
     steps:
       - name: Check test results
@@ -167,9 +342,10 @@ jobs:
           echo "Infrastructure Tests: ${{ needs.test-infrastructure.result }}"
           echo "Frontend Tests: ${{ needs.test-frontend.result }}"
           echo "Build and Validate: ${{ needs.build-and-validate.result }}"
+          echo "CDK Nag Security Check: ${{ needs.cdk-nag-security-check.result }}"
           echo "::endgroup::"
 
-          if [ "${{ needs.test-infrastructure.result }}" != "success" ] || [ "${{ needs.test-frontend.result }}" != "success" ] || [ "${{ needs.build-and-validate.result }}" != "success" ]; then
+          if [ "${{ needs.test-infrastructure.result }}" != "success" ] || [ "${{ needs.test-frontend.result }}" != "success" ] || [ "${{ needs.build-and-validate.result }}" != "success" ] || [ "${{ needs.cdk-nag-security-check.result }}" != "success" ]; then
             echo "::error::Some tests failed. Please fix before merging."
             exit 1
           fi

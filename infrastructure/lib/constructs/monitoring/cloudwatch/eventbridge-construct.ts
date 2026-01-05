@@ -6,6 +6,7 @@ import * as targets from "aws-cdk-lib/aws-events-targets";
 import * as sns from "aws-cdk-lib/aws-sns";
 import * as logs from "aws-cdk-lib/aws-logs";
 import { Construct } from "constructs";
+
 import { EventBridgeCrossAccountRole } from "../../iam";
 
 export interface EventBridgeConstructProps {
@@ -41,24 +42,20 @@ export class EventBridgeConstruct extends Construct {
 
     // Grant target accounts permission to put events
     if (props.targetAccountIds && props.targetAccountIds.length > 0) {
-      const eventBusPolicy = new events.CfnEventBusPolicy(
-        this,
-        "CrossAccountPolicy",
-        {
-          statementId: "AllowTargetAccountsToPutEvents",
-          eventBusName: eventBus.eventBusName,
-          statement: {
-            Effect: "Allow",
-            Principal: {
-              AWS: props.targetAccountIds.map(
-                (accountId) => `arn:aws:iam::${accountId}:root`
-              ),
-            },
-            Action: "events:PutEvents",
-            Resource: eventBus.eventBusArn,
+      new events.CfnEventBusPolicy(this, "CrossAccountPolicy", {
+        statementId: "AllowTargetAccountsToPutEvents",
+        eventBusName: eventBus.eventBusName,
+        statement: {
+          Effect: "Allow",
+          Principal: {
+            AWS: props.targetAccountIds.map(
+              (accountId) => `arn:aws:iam::${accountId}:root`
+            ),
           },
-        }
-      );
+          Action: "events:PutEvents",
+          Resource: eventBus.eventBusArn,
+        },
+      });
     }
 
     // Create log group for all events

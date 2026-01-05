@@ -4,6 +4,7 @@ import * as cdk from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import { Construct } from "constructs";
+
 import { VpcConstruct } from "../../constructs/networking/vpc/vpc-construct";
 import { VpcFlowLogsConstruct } from "../../constructs/networking/vpc/vpc-flow-logs-construct";
 import { SubnetConfigurationHelper } from "../../constructs/networking/vpc/subnet-construct";
@@ -130,52 +131,55 @@ export class NetworkingStack extends cdk.Stack {
     // ========================================================================
     // 5. CLOUDFORMATION OUTPUTS
     // ========================================================================
+    // Note: Removed exportName to avoid cross-stack dependency issues
+    // Use direct stack references instead of exports/imports for better dependency management
+
     new cdk.CfnOutput(this, "VpcId", {
       value: this.vpc.vpcId,
       description: "VPC ID",
-      exportName: `${envName}-vpc-id`,
+      // exportName removed - use direct stack references instead
     });
 
     new cdk.CfnOutput(this, "VpcCidr", {
       value: this.vpc.vpcCidrBlock,
       description: "VPC CIDR Block",
-      exportName: `${envName}-vpc-cidr`,
+      // exportName removed - use direct stack references instead
     });
 
     new cdk.CfnOutput(this, "AvailabilityZones", {
       value: this.vpc.availabilityZones.join(","),
       description: "Availability Zones",
-      exportName: `${envName}-azs`,
+      // exportName removed - use direct stack references instead
     });
 
-    // Public subnet outputs
+    // Public subnet outputs (for reference only, no exports)
     this.vpcConstruct.publicSubnets.forEach(
       (subnet: ec2.ISubnet, index: number) => {
         new cdk.CfnOutput(this, `PublicSubnet${index + 1}Id`, {
           value: subnet.subnetId,
           description: `Public Subnet ${index + 1} ID`,
-          exportName: `${envName}-public-subnet-${index + 1}-id`,
+          // exportName removed - use direct stack references instead
         });
       }
     );
 
-    // Private subnet outputs
+    // Private subnet outputs (for reference only, no exports)
     this.vpcConstruct.privateSubnets.forEach(
       (subnet: ec2.ISubnet, index: number) => {
         new cdk.CfnOutput(this, `PrivateSubnet${index + 1}Id`, {
           value: subnet.subnetId,
           description: `Private Subnet ${index + 1} ID`,
-          exportName: `${envName}-private-subnet-${index + 1}-id`,
+          // exportName removed - use direct stack references instead
         });
       }
     );
 
-    // Flow logs output
+    // Flow logs output (for reference only, no export)
     if (this.flowLogs) {
       new cdk.CfnOutput(this, "FlowLogsLogGroup", {
         value: this.flowLogs.logGroupName,
         description: "VPC Flow Logs CloudWatch Log Group",
-        exportName: `${envName}-flow-logs-log-group`,
+        // exportName removed - use direct stack references instead
       });
     }
 

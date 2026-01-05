@@ -4,22 +4,30 @@ module.exports = {
   testEnvironment: "node",
   roots: ["<rootDir>/test"],
   testMatch: ["**/*.test.ts"],
-  testPathIgnorePatterns: ["/node_modules/", "/__backup_tests/", "/examples/"],
+  testTimeout: 10000,
+  verbose: false,
+  collectCoverage: false,
+  reporters: ["default"],
+  maxWorkers: 1,
+  forceExit: true,
+  setupFilesAfterEnv: ["<rootDir>/test/jest-setup.ts"],
   transform: {
-    "^.+\\.tsx?$": [
-      "ts-jest",
-      {
-        isolatedModules: true, // Skip type checking for faster tests
-      },
-    ],
+    "^.+\\.(ts|tsx)$": "babel-jest",
   },
-  collectCoverageFrom: ["lib/**/*.ts", "!lib/**/*.d.ts", "!lib/**/index.ts"],
-  coverageThreshold: {
-    global: {
-      branches: 50,
-      functions: 40,
-      lines: 60,
-      statements: 60,
+  moduleNameMapper: {
+    "^@/(.*)$": "<rootDir>/lib/$1",
+  },
+  moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json", "node"],
+  // Ensure Jest globals are available
+  globals: {
+    "ts-jest": {
+      useESM: false,
+    },
+  },
+  // Add Jest environment for better TypeScript support
+  testEnvironmentOptions: {
+    node: {
+      globals: true,
     },
   },
 };

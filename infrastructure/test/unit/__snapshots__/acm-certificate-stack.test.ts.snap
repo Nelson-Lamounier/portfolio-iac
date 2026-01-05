@@ -1,0 +1,247 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`ACM Certificate Stack Test Suite Snapshots SSM parameter resource matches snapshot 1`] = `
+{
+  "CertificateArnParamCF1E7229": {
+    "Properties": {
+      "Description": "ACM Certificate ARN for example.com (test)",
+      "Name": "/portfolio/domain/acm-arn",
+      "Tags": {
+        "Domain": "example.com",
+        "Environment": "test",
+        "ManagedBy": "CDK",
+        "Stack": "ACM",
+      },
+      "Tier": "Standard",
+      "Type": "String",
+      "Value": {
+        "Ref": "CertificateBDDE2430",
+      },
+    },
+    "Type": "AWS::SSM::Parameter",
+  },
+}
+`;
+
+exports[`ACM Certificate Stack Test Suite Snapshots certificate resource matches snapshot 1`] = `
+{
+  "CertificateBDDE2430": {
+    "Properties": {
+      "DomainName": "example.com",
+      "DomainValidationOptions": [
+        {
+          "DomainName": "example.com",
+          "HostedZoneId": "Z1234567890ABC",
+        },
+      ],
+      "Tags": [
+        {
+          "Key": "Domain",
+          "Value": "example.com",
+        },
+        {
+          "Key": "DomainName",
+          "Value": "example.com",
+        },
+        {
+          "Key": "Environment",
+          "Value": "test",
+        },
+        {
+          "Key": "ManagedBy",
+          "Value": "CDK",
+        },
+        {
+          "Key": "Name",
+          "Value": "TestAcmStack/Certificate/Certificate",
+        },
+        {
+          "Key": "Stack",
+          "Value": "ACM",
+        },
+      ],
+      "ValidationMethod": "DNS",
+    },
+    "Type": "AWS::CertificateManager::Certificate",
+  },
+}
+`;
+
+exports[`ACM Certificate Stack Test Suite Snapshots certificate stack matches snapshot 1`] = `
+{
+  "Metadata": {
+    "cdk_nag": {
+      "rules_to_suppress": [
+        {
+          "applies_to": [
+            "Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+          ],
+          "id": "AwsSolutions-IAM4",
+          "reason": "AWS managed policies are used for Lambda functions created by CDK for custom resources (Auto Scaling lifecycle hooks, VPC default security group restriction, EventBridge targets). These are standard CloudFormation custom resource Lambda functions managed by CDK.",
+        },
+        {
+          "applies_to": [
+            "Resource::*",
+          ],
+          "id": "AwsSolutions-IAM5",
+          "reason": "Wildcard permissions are used by CDK-managed custom resource Lambdas for EventBridge to CloudWatch Logs integration and other CDK framework operations. This is required by the CDK framework to manage resource policies and cannot be scoped further. This is standard CDK behavior.",
+        },
+        {
+          "applies_to": [
+            "Action::ecs:Submit*",
+          ],
+          "id": "AwsSolutions-IAM5",
+          "reason": "ECS Container Instance IAM role requires wildcard action permissions (ecs:Submit*) to communicate with ECS control plane. This is a standard permission for ECS EC2 instances as documented in AWS ECS best practices and is created by CDK's Auto Scaling Group construct.",
+        },
+        {
+          "applies_to": [
+            {
+              "regex": "/^Resource::arn:aws:autoscaling:.*:autoScalingGroup:\\*:autoScalingGroupName\\/<.*>$/",
+            },
+          ],
+          "id": "AwsSolutions-IAM5",
+          "reason": "Auto Scaling Group lifecycle hook Lambda (DrainECSHook) requires permissions to manage Auto Scaling lifecycle actions. The wildcard is scoped to the specific Auto Scaling Group name pattern and is necessary for proper instance lifecycle management during ECS task draining. This is a CDK-managed resource.",
+        },
+        {
+          "id": "AwsSolutions-L1",
+          "reason": "Lambda runtime versions are managed by CDK for custom resources. CDK automatically updates these with new releases. Upgrading CDK version will update these runtimes.",
+        },
+      ],
+    },
+  },
+  "Outputs": {
+    "CertificateCertificateArnOutput64B2D1DE": {
+      "Description": "ACM Certificate ARN for example.com",
+      "Export": {
+        "Name": "test-certificate-arn",
+      },
+      "Value": {
+        "Ref": "CertificateBDDE2430",
+      },
+    },
+    "CertificateCertificateDomainNameC1CCAD94": {
+      "Description": "Primary domain name for the certificate",
+      "Export": {
+        "Name": "test-certificate-domain",
+      },
+      "Value": "example.com",
+    },
+    "DomainName": {
+      "Description": "Primary domain name",
+      "Export": {
+        "Name": "test-certificate-domain-name",
+      },
+      "Value": "example.com",
+    },
+    "HostedZoneId": {
+      "Description": "Route 53 Hosted Zone ID",
+      "Export": {
+        "Name": "test-hosted-zone-id",
+      },
+      "Value": "Z1234567890ABC",
+    },
+    "SsmParameterName": {
+      "Description": "SSM Parameter name containing certificate ARN",
+      "Export": {
+        "Name": "test-certificate-ssm-param",
+      },
+      "Value": {
+        "Ref": "CertificateArnParamCF1E7229",
+      },
+    },
+  },
+  "Parameters": {
+    "BootstrapVersion": {
+      "Default": "/cdk-bootstrap/hnb659fds/version",
+      "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+  },
+  "Resources": {
+    "CertificateArnParamCF1E7229": {
+      "Properties": {
+        "Description": "ACM Certificate ARN for example.com (test)",
+        "Name": "/portfolio/domain/acm-arn",
+        "Tags": {
+          "Domain": "example.com",
+          "Environment": "test",
+          "ManagedBy": "CDK",
+          "Stack": "ACM",
+        },
+        "Tier": "Standard",
+        "Type": "String",
+        "Value": {
+          "Ref": "CertificateBDDE2430",
+        },
+      },
+      "Type": "AWS::SSM::Parameter",
+    },
+    "CertificateBDDE2430": {
+      "Properties": {
+        "DomainName": "example.com",
+        "DomainValidationOptions": [
+          {
+            "DomainName": "example.com",
+            "HostedZoneId": "Z1234567890ABC",
+          },
+        ],
+        "Tags": [
+          {
+            "Key": "Domain",
+            "Value": "example.com",
+          },
+          {
+            "Key": "DomainName",
+            "Value": "example.com",
+          },
+          {
+            "Key": "Environment",
+            "Value": "test",
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CDK",
+          },
+          {
+            "Key": "Name",
+            "Value": "TestAcmStack/Certificate/Certificate",
+          },
+          {
+            "Key": "Stack",
+            "Value": "ACM",
+          },
+        ],
+        "ValidationMethod": "DNS",
+      },
+      "Type": "AWS::CertificateManager::Certificate",
+    },
+  },
+  "Rules": {
+    "CheckBootstrapVersion": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Contains": [
+                  [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                  ],
+                  {
+                    "Ref": "BootstrapVersion",
+                  },
+                ],
+              },
+            ],
+          },
+          "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI.",
+        },
+      ],
+    },
+  },
+}
+`;

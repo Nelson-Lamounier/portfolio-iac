@@ -25,7 +25,6 @@ set -e
 
 # Default values
 ACTION="${1:-deploy-all}"
-USE_LAYERED="true"
 SKIP_VPC_PEERING="false"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -34,14 +33,6 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 shift || true
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --layered)
-      USE_LAYERED="true"
-      shift
-      ;;
-    --embedded)
-      USE_LAYERED="false"
-      shift
-      ;;
     --skip-vpc-peering)
       SKIP_VPC_PEERING="true"
       shift
@@ -57,7 +48,7 @@ echo "========================================="
 echo "Pipeline Monitoring Deployment"
 echo "========================================="
 echo "Action: $ACTION"
-echo "Architecture: $([ "$USE_LAYERED" = "true" ] && echo "Layered (recommended)" || echo "Embedded (legacy)")"
+echo "Architecture: Layered (Infrastructure + Services)"
 echo "Skip VPC Peering: $SKIP_VPC_PEERING"
 echo ""
 
@@ -72,25 +63,67 @@ stack_exists() {
 get_dev_info() {
   echo "Checking for dev account configuration..."
   
-  # Try to get dev VPC ID from SSM
-  DEV_VPC_ID=$(aws ssm get-parameter \
-    --name "/networking/development/vpc-id" \
-    --query 'Parameter.Value' --output text 2>/dev/null || echo "")
-  
-  if [ -n "$DEV_VPC_ID" ]; then
-    export DEV_VPC_ID
-    echo "  Found dev VPC: $DEV_VPC_ID"
+  # Check if AWS_ACCOUNT_ID_DEV is set
+  if [ -z "$AWS_ACCOUNT_ID_DEV" ]; then
+    echo "  AWS_ACCOUNT_ID_DEV not set, skipping dev account query"
+    return 0
   fi
   
-  # Try to get dev EC2 private IP
+  echo "  Dev account ID: $AWS_ACCOUNT_ID_DEV"
+  
+  # Save current credentials
+  ORIGINAL_AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID"
+  ORIGINAL_AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
+  ORIGINAL_AWS_SESSION_TOKEN="$AWS_SESSION_TOKEN"
+  
+  # Assume role in dev account
+  echo "  Assuming role in dev account..."
+  CREDS=$(aws sts assume-role \
+    --role-arn "arn:aws:iam::${AWS_ACCOUNT_ID_DEV}:role/GitHubDeploymentRole" \
+    --role-session-name "PipelineMonitoringDeploy" \
+    --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+    --output text 2>/dev/null || echo "")
+  
+  if [ -z "$CREDS" ]; then
+    echo "  Warning: Could not assume role in dev account"
+    echo "  VPC peering will be skipped"
+    return 0
+  fi
+  
+  # Set temporary credentials
+  export AWS_ACCESS_KEY_ID=$(echo "$CREDS" | awk '{print $1}')
+  export AWS_SECRET_ACCESS_KEY=$(echo "$CREDS" | awk '{print $2}')
+  export AWS_SESSION_TOKEN=$(echo "$CREDS" | awk '{print $3}')
+  
+  # Query dev VPC ID
+  DEV_VPC_ID=$(aws ec2 describe-vpcs \
+    --filters "Name=tag:Environment,Values=development" \
+    --query 'Vpcs[0].VpcId' \
+    --output text 2>/dev/null || echo "")
+  
+  if [ -n "$DEV_VPC_ID" ] && [ "$DEV_VPC_ID" != "None" ]; then
+    export DEV_VPC_ID
+    echo "  ✓ Found dev VPC: $DEV_VPC_ID"
+  else
+    echo "  Warning: Dev VPC not found (no VPC tagged with Environment=development)"
+  fi
+  
+  # Try to get dev EC2 private IP from SSM
   DEV_IP=$(aws ssm get-parameter \
     --name "/compute/development/ec2-private-ip" \
     --query 'Parameter.Value' --output text 2>/dev/null || echo "")
   
   if [ -n "$DEV_IP" ]; then
     export DEV_NODE_EXPORTER_IP="$DEV_IP"
-    echo "  Found dev EC2 IP: $DEV_IP"
+    echo "  ✓ Found dev EC2 IP: $DEV_IP"
   fi
+  
+  # Restore original credentials
+  export AWS_ACCESS_KEY_ID="$ORIGINAL_AWS_ACCESS_KEY_ID"
+  export AWS_SECRET_ACCESS_KEY="$ORIGINAL_AWS_SECRET_ACCESS_KEY"
+  export AWS_SESSION_TOKEN="$ORIGINAL_AWS_SESSION_TOKEN"
+  
+  echo "  Switched back to pipeline account"
 }
 
 # Deploy networking
@@ -125,30 +158,26 @@ deploy_vpc_peering() {
 # Deploy monitoring infrastructure (Layer 1)
 deploy_monitoring_infra() {
   echo ""
-  if [ "$USE_LAYERED" = "true" ]; then
-    echo "Deploying MonitoringInfraStack-pipeline (Layer 1)..."
-    cd "$PROJECT_ROOT/infrastructure"
-    USE_LAYERED_MONITORING=true ENVIRONMENT=pipeline \
-      yarn cdk deploy MonitoringInfraStack-pipeline --require-approval never
-  else
-    echo "Deploying MonitoringEcsStack-pipeline (Embedded)..."
-    cd "$PROJECT_ROOT/infrastructure"
-    ENVIRONMENT=pipeline yarn cdk deploy MonitoringEcsStack-pipeline --require-approval never
-  fi
+  echo "Deploying MonitoringInfraStack-pipeline (Layer 1)..."
+  echo "  - ECS Cluster"
+  echo "  - Auto Scaling Group"
+  echo "  - Application Load Balancer"
+  echo "  - EFS for persistent storage"
+  echo ""
+  cd "$PROJECT_ROOT/infrastructure"
+  ENVIRONMENT=pipeline yarn cdk deploy MonitoringInfraStack-pipeline --exclusively --require-approval never
 }
 
 # Deploy monitoring services (Layer 2)
 deploy_monitoring_services() {
-  if [ "$USE_LAYERED" != "true" ]; then
-    echo "Services are included in embedded stack, skipping..."
-    return 0
-  fi
-  
   echo ""
   echo "Deploying MonitoringServiceStack-pipeline (Layer 2)..."
+  echo "  - Prometheus (metrics collection)"
+  echo "  - Grafana (visualization)"
+  echo "  - Node Exporter (host metrics)"
+  echo ""
   cd "$PROJECT_ROOT/infrastructure"
-  USE_LAYERED_MONITORING=true ENVIRONMENT=pipeline \
-    yarn cdk deploy MonitoringServiceStack-pipeline --require-approval never
+  ENVIRONMENT=pipeline yarn cdk deploy MonitoringServiceStack-pipeline --exclusively --require-approval never
 }
 
 # Initialize config on EFS
@@ -203,17 +232,20 @@ destroy_all() {
   echo "Destroying monitoring stacks in reverse dependency order..."
   cd "$PROJECT_ROOT/infrastructure"
   
-  # Destroy layered stacks
+  # Destroy services first (Layer 2)
+  echo "Destroying MonitoringServiceStack-pipeline..."
   ENVIRONMENT=pipeline yarn cdk destroy MonitoringServiceStack-pipeline --force 2>/dev/null || true
+  
+  # Destroy infrastructure (Layer 1)
+  echo "Destroying MonitoringInfraStack-pipeline..."
   ENVIRONMENT=pipeline yarn cdk destroy MonitoringInfraStack-pipeline --force 2>/dev/null || true
   
-  # Destroy embedded stack
-  ENVIRONMENT=pipeline yarn cdk destroy MonitoringEcsStack-pipeline --force 2>/dev/null || true
-  
   # Destroy VPC peering
+  echo "Destroying VpcPeeringStack-pipeline..."
   ENVIRONMENT=pipeline yarn cdk destroy VpcPeeringStack-pipeline --force 2>/dev/null || true
   
   # Destroy networking (last)
+  echo "Destroying NetworkingStack-pipeline..."
   ENVIRONMENT=pipeline yarn cdk destroy NetworkingStack-pipeline --force 2>/dev/null || true
   
   echo ""
@@ -227,11 +259,9 @@ case "$ACTION" in
     deploy_networking
     deploy_vpc_peering
     deploy_monitoring_infra
-    if [ "$USE_LAYERED" = "true" ]; then
-      init_config
-      deploy_monitoring_services
-      sync_config
-    fi
+    init_config
+    deploy_monitoring_services
+    sync_config
     show_urls
     ;;
   deploy-infra)
@@ -239,9 +269,7 @@ case "$ACTION" in
     deploy_networking
     deploy_vpc_peering
     deploy_monitoring_infra
-    if [ "$USE_LAYERED" = "true" ]; then
-      init_config
-    fi
+    init_config
     show_urls
     ;;
   deploy-services)
@@ -261,16 +289,14 @@ case "$ACTION" in
     echo "Usage: $0 [action] [options]"
     echo ""
     echo "Actions:"
-    echo "  deploy-all        - Deploy full stack"
-    echo "  deploy-infra      - Deploy infrastructure only"
-    echo "  deploy-services   - Deploy services only"
-    echo "  sync-config       - Sync config to EFS"
+    echo "  deploy-all        - Deploy full stack (networking + infra + services)"
+    echo "  deploy-infra      - Deploy infrastructure only (Layer 1)"
+    echo "  deploy-services   - Deploy services only (Layer 2)"
+    echo "  sync-config       - Sync config to EFS (Layer 3)"
     echo "  destroy           - Destroy all stacks"
     echo ""
     echo "Options:"
-    echo "  --layered         - Use layered architecture (default)"
-    echo "  --embedded        - Use embedded architecture"
-    echo "  --skip-vpc-peering - Skip VPC peering"
+    echo "  --skip-vpc-peering - Skip VPC peering deployment"
     exit 1
     ;;
 esac

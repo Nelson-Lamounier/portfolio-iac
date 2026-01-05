@@ -3,6 +3,7 @@
 import { App, Stack } from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import { Template, Match, Capture } from "aws-cdk-lib/assertions";
+
 import { LoadBalancerStack } from "../../lib/stacks/load-balancer/load-balancer-stack";
 
 describe("LoadBalancerStack Test Suite", () => {
@@ -243,7 +244,7 @@ describe("LoadBalancerStack Test Suite", () => {
     test("exports access logs bucket name", () => {
       // Access logs bucket name is not exported by default
       const outputs = template.toJSON().Outputs || {};
-      const hasAccessLogsBucket = Object.keys(outputs).some(
+      Object.keys(outputs).some(
         (key) => key.includes("AccessLogs") || key.includes("Bucket")
       );
 

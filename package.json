@@ -4,7 +4,8 @@
   "private": true,
   "workspaces": [
     "frontend",
-    "infrastructure"
+    "infrastructure",
+    "monitoring"
   ],
   "scripts": {
     "build": "turbo run build",
@@ -18,11 +19,23 @@
     "infra:build": "turbo run build --filter=infrastructure",
     "infra:test": "turbo run test --filter=infrastructure",
     "infra:synth": "yarn workspace infrastructure synth",
-    "infra:deploy": "yarn workspace infrastructure deploy"
+    "infra:deploy": "yarn workspace infrastructure deploy",
+    "monitoring:build": "turbo run build --filter=monitoring",
+    "monitoring:test": "turbo run test --filter=monitoring",
+    "monitoring:synth": "yarn workspace monitoring synth",
+    "monitoring:deploy": "yarn workspace monitoring deploy",
+    "monitoring:deploy:efs": "yarn workspace monitoring deploy:efs",
+    "monitoring:deploy:infra": "yarn workspace monitoring deploy:infra",
+    "monitoring:deploy:services": "yarn workspace monitoring deploy:services"
   },
   "packageManager": "yarn@4.0.0",
   "devDependencies": {
-    "turbo": "^2.6.1"
+    "@eslint/js": "^9.39.2",
+    "@jest/test-sequencer": "^30.2.0",
+    "eslint": "^9.39.2",
+    "turbo": "^2.6.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.49.0"
   },
   "dependencies": {
     "quokka-treasure-chest": "^1.0.3"

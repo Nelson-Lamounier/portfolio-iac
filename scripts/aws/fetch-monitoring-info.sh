@@ -83,38 +83,54 @@ if [ "${VPC_FOUND}" = "false" ]; then
 fi
 
 # =============================================================================
-# Fetch EC2 Private IP
+# Fetch EC2 Private IP - ALWAYS query ECS dynamically
 # =============================================================================
-# Try multiple SSM parameter paths
-EC2_PARAM_PATHS=(
-  "/compute/${ENVIRONMENT}/ec2-private-ip"
-  "/ecs/${ENVIRONMENT}/ec2-private-ip"
-)
+# EC2 IPs can change when instances are replaced, so we always query the
+# current running instance from ECS cluster instead of relying on SSM cache
 
 echo ""
-for EC2_PARAM_NAME in "${EC2_PARAM_PATHS[@]}"; do
-  echo "Trying EC2 Private IP from: ${EC2_PARAM_NAME}"
-  EC2_PRIVATE_IP=$(aws ssm get-parameter \
-    --name "${EC2_PARAM_NAME}" \
-    --query 'Parameter.Value' \
+echo "Fetching EC2 Private IP from ECS cluster (dynamic)..."
+
+# Get container instance from ECS cluster
+CLUSTER_NAME="ecs-cluster-${ENVIRONMENT}"
+CONTAINER_INSTANCE_ARN=$(aws ecs list-container-instances \
+  --cluster "${CLUSTER_NAME}" \
+  --query 'containerInstanceArns[0]' \
+  --output text \
+  --region "${AWS_REGION}" 2>/dev/null || echo "")
+
+if [ -n "${CONTAINER_INSTANCE_ARN}" ] && [ "${CONTAINER_INSTANCE_ARN}" != "None" ]; then
+  EC2_INSTANCE_ID=$(aws ecs describe-container-instances \
+    --cluster "${CLUSTER_NAME}" \
+    --container-instances "${CONTAINER_INSTANCE_ARN}" \
+    --query 'containerInstances[0].ec2InstanceId' \
     --output text \
     --region "${AWS_REGION}" 2>/dev/null || echo "")
   
-  if [ -n "${EC2_PRIVATE_IP}" ] && [ "${EC2_PRIVATE_IP}" != "None" ]; then
-    EC2_FOUND="true"
-    echo "✓ EC2 Private IP: ${EC2_PRIVATE_IP}"
-    break
+  if [ -n "${EC2_INSTANCE_ID}" ] && [ "${EC2_INSTANCE_ID}" != "None" ]; then
+    EC2_PRIVATE_IP=$(aws ec2 describe-instances \
+      --instance-ids "${EC2_INSTANCE_ID}" \
+      --query 'Reservations[0].Instances[0].PrivateIpAddress' \
+      --output text \
+      --region "${AWS_REGION}" 2>/dev/null || echo "")
+    
+    if [ -n "${EC2_PRIVATE_IP}" ] && [ "${EC2_PRIVATE_IP}" != "None" ]; then
+      EC2_FOUND="true"
+      echo "✓ EC2 Private IP (from ECS): ${EC2_PRIVATE_IP}"
+      echo "  Instance ID: ${EC2_INSTANCE_ID}"
+      echo "  Cluster: ${CLUSTER_NAME}"
+    fi
   fi
-done
+fi
 
 if [ "${EC2_FOUND}" = "false" ]; then
-  echo "⚠ EC2 Private IP not found in SSM"
-  echo "  Tried: ${EC2_PARAM_PATHS[*]}"
-  echo "  Will try to fetch from ECS cluster..."
+  echo "⚠ EC2 Private IP not found in ECS cluster"
+  echo "  Cluster: ${CLUSTER_NAME}"
+  echo "  Ensure ComputeStack-${ENVIRONMENT} is deployed with running tasks"
 fi
 
 # =============================================================================
-# Alternative: Try to fetch from CloudFormation outputs directly
+# Fallback: Try to fetch VPC from CloudFormation if SSM failed
 # =============================================================================
 if [ "${VPC_FOUND}" = "false" ]; then
   echo ""
@@ -128,41 +144,6 @@ if [ "${VPC_FOUND}" = "false" ]; then
   if [ -n "${VPC_ID}" ] && [ "${VPC_ID}" != "None" ]; then
     VPC_FOUND="true"
     echo "✓ VPC ID (from CFN): ${VPC_ID}"
-  fi
-fi
-
-if [ "${EC2_FOUND}" = "false" ]; then
-  echo ""
-  echo "Trying to fetch EC2 IP from ECS cluster..."
-  
-  # Get container instance from ECS cluster
-  CLUSTER_NAME="ecs-cluster-${ENVIRONMENT}"
-  CONTAINER_INSTANCE_ARN=$(aws ecs list-container-instances \
-    --cluster "${CLUSTER_NAME}" \
-    --query 'containerInstanceArns[0]' \
-    --output text \
-    --region "${AWS_REGION}" 2>/dev/null || echo "")
-  
-  if [ -n "${CONTAINER_INSTANCE_ARN}" ] && [ "${CONTAINER_INSTANCE_ARN}" != "None" ]; then
-    EC2_INSTANCE_ID=$(aws ecs describe-container-instances \
-      --cluster "${CLUSTER_NAME}" \
-      --container-instances "${CONTAINER_INSTANCE_ARN}" \
-      --query 'containerInstances[0].ec2InstanceId' \
-      --output text \
-      --region "${AWS_REGION}" 2>/dev/null || echo "")
-    
-    if [ -n "${EC2_INSTANCE_ID}" ] && [ "${EC2_INSTANCE_ID}" != "None" ]; then
-      EC2_PRIVATE_IP=$(aws ec2 describe-instances \
-        --instance-ids "${EC2_INSTANCE_ID}" \
-        --query 'Reservations[0].Instances[0].PrivateIpAddress' \
-        --output text \
-        --region "${AWS_REGION}" 2>/dev/null || echo "")
-      
-      if [ -n "${EC2_PRIVATE_IP}" ] && [ "${EC2_PRIVATE_IP}" != "None" ]; then
-        EC2_FOUND="true"
-        echo "✓ EC2 Private IP (from ECS): ${EC2_PRIVATE_IP}"
-      fi
-    fi
   fi
 fi
 

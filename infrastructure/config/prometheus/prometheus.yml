@@ -1,0 +1,99 @@
+# @format
+# Prometheus Configuration for Pipeline Monitoring
+# All services run on the same EC2 instance, use localhost
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: 'pipeline'
+    cluster: 'pipeline-monitoring'
+
+# Load alert rules
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    metrics_path: /prometheus/metrics
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+
+  # Node Exporter - System metrics (EC2 instance metrics)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['localhost:9100']
+        labels:
+          service: 'node-exporter'
+          instance: 'pipeline-monitoring'
+
+  # Grafana metrics (uses dynamic port mapping)
+  # Note: Port changes on each deployment, check with: docker ps | grep grafana
+  # - job_name: 'grafana'
+  #   static_configs:
+  #     - targets: ['localhost:32775']  # Update port after each deployment
+  #       labels:
+  #         service: 'grafana'
+  #   metrics_path: /metrics
+
+  # ========================================
+  # Cross-Account Scraping via VPC Peering
+  # ========================================
+  # Development Environment - Node Exporter
+  - job_name: 'node-exporter-development'
+    static_configs:
+      - targets: ['10.1.0.35:9100']
+        labels:
+          service: 'node-exporter'
+          environment: 'development'
+          account: 'development'
+
+  # Development Environment - Next.js Application
+  - job_name: 'nextjs-development'
+    metrics_path: /api/metrics
+    static_configs:
+      - targets: ['10.1.0.35:3000']
+        labels:
+          service: 'nextjs'
+          environment: 'development'
+          account: 'development'
+
+  # Staging Environment (future)
+  # - job_name: 'node-exporter-staging'
+  #   static_configs:
+  #     - targets: ['10.2.x.x:9100']
+  #       labels:
+  #         service: 'node-exporter'
+  #         environment: 'staging'
+  #         account: 'staging'
+
+  # - job_name: 'nextjs-staging'
+  #   metrics_path: /api/metrics
+  #   static_configs:
+  #     - targets: ['10.2.x.x:3000']
+  #       labels:
+  #         service: 'nextjs'
+  #         environment: 'staging'
+  #         account: 'staging'
+
+  # Production Environment (future)
+  # - job_name: 'node-exporter-production'
+  #   static_configs:
+  #     - targets: ['10.3.x.x:9100']
+  #       labels:
+  #         service: 'node-exporter'
+  #         environment: 'production'
+  #         account: 'production'
+
+  # - job_name: 'nextjs-production'
+  #   metrics_path: /api/metrics
+  #   static_configs:
+  #     - targets: ['10.3.x.x:3000']
+  #       labels:
+  #         service: 'nextjs'
+  #         environment: 'production'
+  #         account: 'production'

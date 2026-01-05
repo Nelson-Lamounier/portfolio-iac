@@ -6,6 +6,7 @@ import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as cdk from "aws-cdk-lib";
 import { NagSuppressions } from "cdk-nag";
+
 import { SuppressionManager } from "../../../cdk-nag";
 
 export interface AlbConstructProps {

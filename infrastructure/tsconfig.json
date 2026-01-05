@@ -18,12 +18,19 @@
     "experimentalDecorators": true,
     "strictPropertyInitialization": false,
     "typeRoots": ["./node_modules/@types"],
+    "types": ["node"],
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "outDir": "dist"
   },
-  "include": ["bin/**/*", "lib/**/*"],
-  "exclude": ["node_modules", "cdk.out", "test"]
+  "include": [
+    "bin/**/*",
+    "lib/**/*",
+    "config/**/*",
+    "types/**/*",
+    "lambda/**/*"
+  ],
+  "exclude": ["node_modules", "cdk.out"]
 }

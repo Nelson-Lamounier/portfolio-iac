@@ -5,6 +5,7 @@ import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as logs from "aws-cdk-lib/aws-logs";
 import { Tags } from "aws-cdk-lib";
 import { Construct } from "constructs";
+
 import { EcsTaskExecutionRole } from "../../iam";
 
 export interface NodeExporterConstructProps {
@@ -35,14 +36,15 @@ export class NodeExporterConstruct extends Construct {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    // Use centralized ECS task execution role construct
+    // Use centralized ECS task execution role construct with CloudWatch Logs permissions
     const executionRoleConstruct = new EcsTaskExecutionRole(
       this,
       "ExecutionRole",
       {
         envName: props.envName,
         enablePublicEcr: true, // Node Exporter uses public Docker Hub image
-        logGroupArn: this.logGroup.logGroupArn,
+        enableCloudWatchLogs: true, // Required for awslogs driver
+        logGroupArn: this.logGroup.logGroupArn, // Grant permissions to specific log group
       }
     );
     const executionRole = executionRoleConstruct.role;
@@ -71,10 +73,20 @@ export class NodeExporterConstruct extends Construct {
     const container = this.taskDefinition.addContainer("node-exporter", {
       image: ecs.ContainerImage.fromRegistry("prom/node-exporter:latest"),
       memoryReservationMiB: props.memoryReservationMiB || 64,
+      // Use awslogs driver - enables ECS console "Logs" tab
       logging: ecs.LogDrivers.awsLogs({
-        streamPrefix: "node-exporter",
         logGroup: this.logGroup,
+        streamPrefix: "node-exporter",
       }),
+      environment: {
+        // Logging configuration - CRITICAL for awslogs driver
+        // Node Exporter outputs to STDOUT/STDERR by default
+        // The awslogs driver captures STDOUT/STDERR automatically
+        // No additional configuration needed - Node Exporter logs to console by default
+        // Force task definition update on each deployment
+        // This ensures ECS creates a new task definition revision and deploys it
+        DEPLOYMENT_TIMESTAMP: Date.now().toString(),
+      },
       command: [
         "--path.procfs=/host/proc",
         "--path.sysfs=/host/sys",
@@ -127,6 +139,10 @@ export class NodeExporterConstruct extends Construct {
       minHealthyPercent: 0, // Allow stopping all tasks during deployment
       maxHealthyPercent: 100, // Only one task per instance
     });
+
+    // Grant CloudWatch Logs write permissions to execution role
+    // This is required for the awslogs driver to create log streams and put log events
+    this.logGroup.grantWrite(executionRole);
 
     // Tag resources
     Tags.of(this.service).add("Environment", props.envName);

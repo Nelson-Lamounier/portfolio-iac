@@ -4,6 +4,7 @@ import * as cdk from "aws-cdk-lib";
 import * as ecr from "aws-cdk-lib/aws-ecr";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import { Construct } from "constructs";
+
 import { EcrConstruct } from "../../constructs/storage/ecr-construct";
 
 export interface StorageStackProps extends cdk.StackProps {

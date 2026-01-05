@@ -1,0 +1,10 @@
+# @format
+apiVersion: 1
+datasources:
+- name: Prometheus
+  type: prometheus
+  uid: prometheus
+  access: proxy
+  url: http://HOST_IP:9090/prometheus
+  isDefault: true
+  editable: true
