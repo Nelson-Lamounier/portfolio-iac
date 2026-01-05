@@ -429,15 +429,19 @@ export class MonitoringEfsStack extends cdk.Stack {
     // Use HOST_IP_PLACEHOLDER which will be replaced at runtime with the EC2 instance's private IP
     // This is necessary because Grafana runs in BRIDGE network mode and cannot access
     // Prometheus (which runs in HOST mode) via localhost
+    // NOTE: The 'uid' field is REQUIRED for Grafana datasource provisioning
+    // Without it, Grafana will fail with "data source not found" error
     const grafanaDatasourceConfig = {
       apiVersion: 1,
       datasources: [
         {
           name: "Prometheus",
           type: "prometheus",
+          uid: "prometheus", // REQUIRED: Unique identifier for the datasource
           access: "proxy",
           url: "http://HOST_IP_PLACEHOLDER:9090/prometheus",
           isDefault: true,
+          editable: true, // Allow editing via UI
         },
       ],
     };
